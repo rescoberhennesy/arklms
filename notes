@@ -1,0 +1,303 @@
+ARK LEARNING MANAGEMENT SYSTEM (TEACHER-CENTERED)
+
+MAIN OBJECTIVES:
+- To eliminate material distribution inefficiencies and submission management chaos through the design and implementation of a 
+  centralized digital repository and automated tracking system that organizes learning materials by academic period, 
+  enables digital submission tracking across sections, and provides real-time visibility of assignment status. 
+- To reduce excessive assessment creation workload and address the critical lack of supplemental learning materials through 
+  the integration of AI-powered instructional support tools that automate diverse question generation, analyze content quality, 
+  and generate adaptive learning materials.     
+- To automate student progress monitoring and enable early intervention through the development of intelligent monitoring systems 
+  that identify at-risk students based on performance baselines and provide data-driven insights into assignment effectiveness.                                                                                
+- To resolve platform usability failures through the creation of customized role-specific dashboards that consolidate fragmented 
+  workflows into unified, intuitive interfaces for both teaching personnel and students.    
+
+ (1) CENTRALIZED DIGITAL REPOSITORY and AUTOMATED TRACKING SYSTEM
+     ~organizes learning materials by academic period
+     ~enables digital submission tracking across sections   
+     ~provides real-time visibilty of assignment status
+
+ (2) INTEGRATION OF AI-POWERED INSTRUCTIONAL SUPPORT TOOLS 
+     ~automate diverse question generation
+     ~analyze content quality
+     ~generate adoptive learning materials
+
+ (3) DEVELOMENT OF INTELLIGENT MONITORING SYSTEM
+     ~identifies at-risk students based on performance baselines
+     ~provide data-driven insights into assigment effectiveness     
+
+ (4) CREATION OF CUSTOMIZED ROLE-SPECIFIC DASHBOARDS 
+     ~consolidate fragmented workflows into unified, intuitive interface for both teachers and students
+
+---------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
+April 29, 2026 (Wednesday)
+~Creation of ALMS Main Page (not started)
+  --Top Navigation Bar
+     (Left-most side)
+     >>Ark Logo
+     >>Name of the Institution
+
+     (Right-most side)
+     >>Login button
+
+  --Hero section
+     >>photo slider, greetings, intro
+
+  --Footer
+     (Left side)
+     >>about ark
+
+     (Right side)
+     >>Location, contact, socmed link
+
+*Admin will create the users' accounts (teachers and students)
+ >>will use microsoft
+ 
+
+
+We will be developing a learning management system that will have 3 users (admin, teachers, and students)
+*Admin 
+  ~will be the one to provide accounts for the teachers and students using microsoft entra
+    *(accounts should be stored in supabase as well as inside the admin's dashboard)
+  
+  TOP NAVIGATION BAR
+    (left-most side)
+    >>Collapse icon (hides detailed sidebar navigation and shows only the sidebar icons)
+    >>Name of the navigation (for example, if it navigates dashboard then 'Dashboard' will be the name beside the collapse icon) 
+
+    (right-most side)
+    >>notification icon (we'll make it function soon but for now, it'll be just a display)
+    >>Profile of the admin (Profile photo (could be generated using the user's initials) then their full name and username below)
+
+  SIDEBAR NAVIGATION
+    --Ark Logo at the top then Institution's Name beside it
+    --Overview (gray)
+      --Dashboard
+        >>shows the system users analytics the admin have created such as the total number of students and teachers' accounts created, could also show a graph
+    --Management (gray)
+      --Teachers
+        >>shows the total number of teachers
+        >>has a table that shows the details of the teachers' account 
+      --Students
+        >>shows the total number of students
+        >>has a table that shows the details of the students' account 
+
+*Teachers 
+  --will be the one to upload learning materials such as module, activities
+  
+  TOP NAVIGATION BAR
+    (left-most side)
+    >>Collapse icon (hides detailed sidebar navigation and shows only the sidebar icons)
+    >>Name of the navigation (for example, if it navigates dashboard then 'Dashboard' will be the name beside the collapse icon) 
+
+    (right-most side)
+    >>notification icon (we'll make it function soon but for now, it'll be just a display)
+    >>Profile of the admin (Profile photo (could be generated using the user's initials) then their full name and username below)
+  
+  SIDEBAR NAVIGATION
+    --Ark Logo at the top then Institution's Name beside it
+    --Overview (gray)
+      --Dashboard
+        >>
+    --Management (gray)
+      --My Classes
+        >> 
+        >>
+      --Archives
+        >>
+
+*Students 
+  --will be the one to view the uploaded learning materials such as the modules and activities
+
+  TOP NAVIGATION BAR
+    (left-most side)
+    >>Collapse icon (hides detailed sidebar navigation and shows only the sidebar icons)
+    >>Name of the navigation (for example, if it navigates dashboard then 'Dashboard' will be the name beside the collapse icon) 
+
+    (right-most side)
+    >>notification icon (we'll make it function soon but for now, it'll be just a display)
+    >>Profile of the admin (Profile photo (could be generated using the user's initials) then their full name and username below)
+  
+  SIDEBAR NAVIGATION
+    --Ark Logo at the top then Institution's Name beside it
+    --Overview (gray)
+      --Dashboard
+        >>
+    --Management (gray)
+      --My Classes
+        >> 
+        >>
+      --Archives
+        >>
+
+
+We will be developing a learning management system that will have 3 users (admin, teachers, and students)
+*Admin 
+  ~creates accounts for teachers and students using microsoft entra
+    *(accounts should be stored in supabase)
+*Teachers 
+  --creates class (just like in google classroom)
+    >>each class should be named by Name of Subject, Name of the Section, and Semester
+    >>just like in google classroom, there should be an invitation code because it was the client's preference to use google classroom as a UX reference; 
+      teachers will copy the code then send it to the students (codes can be sent to messenger tho, teachers will just copy them and paste it there)
+  --will be the one to upload learning materials such as modules
+  --uploads activities and quizzes with due dates that can be connected to the calendar 
+  --acquire grades from activities and quizzes (so there should be a gradebook where the grades of the students' activities and quizzes are stored)
+    >>activities and quizzes can be automatically checked by the system unless they are essay and needs to be read and manually checked by the teachers
+    then they'll just put the score then the system will automatically put it inside the gradebook part once checked
+  --send announcements
+*Students 
+  --joins the class created by the teacher thru codes sent by the teacher
+  --will be the one to view/access the uploaded learning materials such as the modules and activities
+  --will be the one to submit their activities inside the system
+  --takes quizzes
+
+
+I have already DONE the following btw:
+bashed: pnpm create next-app@latest then followed the next steps by it until I have created the project folder
+project name: arkadian_lms
+Inclusions:
+Typescript
+ESLint
+Tailwind CSS
+etc...
+Intialized Supabase 
+Started Supabase (will serve as storage, database, authentication, so basically, part of the system's backend)
+
+For today's task, we'll focus on creating the main page (I already have a repo of this but we'll change the login, because we'll switch to microsoft 
+entra so teach me how to set it up. That is where the admin will create the accounts of the students and teaachers. As for the students and teachers, they
+will have to go to the systems main page and click login button at the top nav to login their accounts created by the admin so that they can access
+their own dashboard(to be designed soon)
+
+
+Think of yourself as a Senior UI/UX Designer and a Full-Stack Developer specializing in Next.js 14 (App Router), Supabase, and Tailwind CSS.
+
+Project Overview:
+We'll be building a Learning Management System (LMS) called Arkadian LMS (ALMS).
+    Tech Stack: Next.js (pnpm), TypeScript, Tailwind CSS, Standard CSS, Supabase (Auth, DB, Storage).
+    Authentication: Microsoft Entra ID (Azure AD) integrated via Supabase Auth.
+    User Roles: Admin, Teacher, Student.
+
+Task:
+Help me architect and build the Main Landing Page and the Authentication Flow (use STI's main page as a reference above, I'll later modify it). 
+Specifically, I need to integrate Microsoft Entra so that the Admin can create and manage accounts in Entra, and users can sign in via the LMS.
+System Requirements & User Roles:
+    Admin Flow: * Creates/provides accounts for Teachers and Students via Microsoft Entra.
+        Data must sync/persist in a Supabase profiles table.
+        Dashboard includes: User analytics (Total students/teachers) and management tables.
+    Teacher Flow (UX Reference: Google Classroom):
+        Creates Classes (Name, Section, Semester).
+        Generates/shares "Invitation Codes" for students to join.
+        Uploads modules, creates activities/quizzes with due dates (calendar sync).
+        Manages a Gradebook (auto-checked quizzes + manual grading for essays).
+    Student Flow:
+        Joins classes via codes.
+        Accesses learning materials and submits assignments.
+        Takes quizzes within the system.
+UI/UX Specifications (Shared Layout): (I'll provide some photos for the sidebar reference)
+    Top Navigation Bar:
+        Left: Collapse Sidebar Icon + Dynamic Page Title (e.g., "Dashboard").
+        Right: Notification icon + Profile (Avatar generated by initials, Full Name, and Username).
+    Sidebar Navigation:
+        Header: "Ark" Logo + Institution Name.
+        Sections: "Overview" (Dashboard) and "Management" (Role-specific links).
+        Behavior: Collapsible to icons-only view.
+
+Current Project State:
+    Project initialized with pnpm create next-app@latest.
+    Supabase is running locally (status: local development setup running).
+    Goal for this session: Focus on setting up the Microsoft Entra login logic and the responsive Top Nav/Sidebar layout that changes based on the user's role.
+
+Instructions for you (Claude):
+    For now, we'll focus on building the main page where the login button resides and make the accounts work to access each user's dashboard.
+    Provide the step-by-step configuration for Microsoft Entra within the Supabase dashboard/config.
+    Provide the Next.js code for a Shared Dashboard Layout including the collapsible sidebar and dynamic top nav.
+    Explain how to handle role-based redirection after a successful Microsoft login.   
+    (please provide full/detailed step-by-step processes as well as the specific file and inside file location where to put or modify the codes)
+    
+    (as per each dashbords,we'll make it function next time so for now, we'll just build the interfaces. We'll build one feature at a time, no need to rush
+    so focus on our task for today which are written above for you Claude.)
+    
+    PS. current project folder and file structure is shown above, let me know what's missing as well as the things I need to install. The name of the
+    files should match the features, so it won't be difficult to locate them later on once the project get bigger. The project should be well-structured and 
+    organized so it won't be difficult to search for each files/folders.
+    Shouldn't there be src in the project? If necessary, can u include it? Put the whole project folder and files structure including the existing ones.
+    And also the dashboard sample is also shown above, use it as a reference especially the sidebar navigation. 
+    And about the microsoft entra, as u can see STI elms shown above uses it, u can use it as a reference.
+
+ 
+ arkadian_lms/
+├── .next/
+├── node_modules/
+├── public/
+│   └── ark-logo.svg                          ← Place your Ark logo here
+├── src/                                       ← NEW: all app code lives here
+│   ├── app/
+│   │   ├── (auth)/                           ← Auth-only route group
+│   │   │   ├── login/
+│   │   │   │   └── page.tsx                  ← Admin email/password login
+│   │   │   └── layout.tsx
+│   │   ├── (dashboard)/                      ← Protected route group
+│   │   │   ├── admin/
+│   │   │   │   ├── dashboard/page.tsx
+│   │   │   │   ├── teachers/page.tsx
+│   │   │   │   ├── students/page.tsx
+│   │   │   │   └── sections/page.tsx
+│   │   │   ├── teacher/
+│   │   │   │   ├── dashboard/page.tsx
+│   │   │   │   ├── classes/page.tsx
+│   │   │   │   └── gradebook/page.tsx
+│   │   │   ├── student/
+│   │   │   │   ├── dashboard/page.tsx
+│   │   │   │   └── classes/page.tsx
+│   │   │   └── layout.tsx                    ← Shared dashboard layout
+│   │   ├── auth/
+│   │   │   ├── callback/route.ts             ← OAuth callback handler
+│   │   │   └── signout/route.ts
+│   │   ├── globals.css
+│   │   ├── layout.tsx                        ← Root layout
+│   │   └── page.tsx                          ← Landing page (STI-inspired)
+│   ├── components/
+│   │   ├── auth/
+│   │   │   └── login-modal.tsx               ← Microsoft + Admin login modal
+│   │   ├── dashboard/
+│   │   │   ├── sidebar.tsx                   ← Collapsible sidebar
+│   │   │   ├── topbar.tsx                    ← Dynamic top nav
+│   │   │   ├── nav-config.ts                 ← Role-based nav items
+│   │   │   └── user-avatar.tsx               ← Initials avatar
+│   │   ├── landing/
+│   │   │   ├── hero.tsx
+│   │   │   └── header.tsx
+│   │   └── ui/
+│   │       └── icons.tsx                     ← Centralized icon exports
+│   ├── lib/
+│   │   ├── supabase/
+│   │   │   ├── client.ts                     ← Browser client
+│   │   │   ├── server.ts                     ← Server client
+│   │   │   └── middleware.ts                 ← Session refresh helper
+│   │   └── utils.ts                          ← cn() helper, initials, etc.
+│   ├── types/
+│   │   └── database.ts                       ← Profile, Role types
+│   └── middleware.ts                         ← Next.js middleware (route protection)
+├── supabase/
+│   ├── .branches/
+│   ├── .temp/
+│   ├── snippets/
+│   ├── migrations/                           ← NEW: SQL migrations
+│   │   └── 20260429000000_init_profiles.sql
+│   └── config.toml
+├── .env.local                                ← NEW: env vars
+├── .gitignore
+├── AGENTS.md
+├── CLAUDE.md
+├── eslint.config.mjs
+├── next-env.d.ts
+├── next.config.ts
+├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── postcss.config.mjs
+├── README.md
+├── tsconfig.json
+└── workflow
