@@ -53,6 +53,26 @@ April 29, 2026 (Wednesday)
 
 *Admin will create the users' accounts (teachers and students)
  >>will use microsoft
+
+ April 30, 2026
+ *created sample accounts for each users (admin, student, teacher) ~saved in supabase
+ *each user can now access their own dashboards
+
+ Test Accounts:
+ Email: admintest@alms.onmicrosoft.com
+ Password: KimSunwoo1108
+ Dispay Name: LMS Admin
+ Role: Admin
+
+ Email: teachertest@alms.onmicrosoft.com
+ Password: KimSunwoo1108
+ Display Name: LMS Teacher
+ Role: Teacher
+
+ Email: studenttest@alms.microsoft.com
+ Password: KimSunwoo1108
+ Display Name: LMS Student
+ Role: Student
  
 
 

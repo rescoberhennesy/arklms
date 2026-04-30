@@ -4,20 +4,27 @@ import { createClient } from '@/lib/supabase/client'
 
 export default function LandingNavbar() {
   const handleLogin = async () => {
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'azure',
-      options: {
-        scopes: 'email openid profile User.Read',
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
+  const supabase = createClient()
 
-    if (error) {
-      console.error('Microsoft login error:', error.message)
-      alert('Login failed. Please try again.')
-    }
+  // Clear any stale session before starting fresh OAuth
+  await supabase.auth.signOut()
+
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'azure',
+    options: {
+      scopes: 'email openid profile User.Read',
+      redirectTo: `${window.location.origin}/auth/callback`,
+      queryParams: {
+        prompt: 'select_account', // Forces Microsoft to show sign-in page every time
+      },
+    },
+  })
+
+  if (error) {
+    console.error('Microsoft login error:', error.message)
+    alert('Login failed. Please try again.')
   }
+}
 
   return (
     <header className="nav-wrap">
