@@ -32,31 +32,20 @@ MAIN OBJECTIVES:
 ---------------------------------------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------------
 April 29, 2026 (Wednesday)
-~Creation of ALMS Main Page (not started)
-  --Top Navigation Bar
-     (Left-most side)
-     >>Ark Logo
-     >>Name of the Institution
+*Creation of ALMS Main Page
+*Logged in Microsoft Entra and created a tenant
+   domain name: alms@onmicrosoft.com
+   organization name: Ark Learning Management System
+*Tried to link azure to supabase
+*Microsoft linked to log in button
+*Once the user clicks the log in button, they will be directed to microsoft sign page (working) 
 
-     (Right-most side)
-     >>Login button
-
-  --Hero section
-     >>photo slider, greetings, intro
-
-  --Footer
-     (Left side)
-     >>about ark
-
-     (Right side)
-     >>Location, contact, socmed link
-
-*Admin will create the users' accounts (teachers and students)
- >>will use microsoft
-
+ ------------------------------------------------------------------------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------------------------------------------------------------------------
  April 30, 2026
  *created sample accounts for each users (admin, student, teacher) ~saved in supabase
  *each user can now access their own dashboards
+ *user quantity data is also saved in admin dashboard
 
  Test Accounts:
  Email: admintest@alms.onmicrosoft.com
@@ -74,6 +63,15 @@ April 29, 2026 (Wednesday)
  Display Name: LMS Student
  Role: Student
  
+ ----------------------------------------------------------------------------------------------------------------------------------------------------
+ ----------------------------------------------------------------------------------------------------------------------------------------------------
+ May 1, 2026
+ Tasks:
+   ~Fix each sidebar designs (done)
+   ~Fix the top bar navigation design as well as the profile drop down
+   ~Put 'log out' in Profile Drop Down
+   ~Teacher creating a class
+   ~teacher can upload learning material
 
 
 We will be developing a learning management system that will have 3 users (admin, teachers, and students)
@@ -174,92 +172,18 @@ We will be developing a learning management system that will have 3 users (admin
   --takes quizzes
 
 
-I have already DONE the following btw:
-bashed: pnpm create next-app@latest then followed the next steps by it until I have created the project folder
-project name: arkadian_lms
-Inclusions:
-Typescript
-ESLint
-Tailwind CSS
-etc...
-Intialized Supabase 
-Started Supabase (will serve as storage, database, authentication, so basically, part of the system's backend)
-
-For today's task, we'll focus on creating the main page (I already have a repo of this but we'll change the login, because we'll switch to microsoft 
-entra so teach me how to set it up. That is where the admin will create the accounts of the students and teaachers. As for the students and teachers, they
-will have to go to the systems main page and click login button at the top nav to login their accounts created by the admin so that they can access
-their own dashboard(to be designed soon)
-
-
-Think of yourself as a Senior UI/UX Designer and a Full-Stack Developer specializing in Next.js 14 (App Router), Supabase, and Tailwind CSS.
-
-Project Overview:
-We'll be building a Learning Management System (LMS) called Arkadian LMS (ALMS).
-    Tech Stack: Next.js (pnpm), TypeScript, Tailwind CSS, Standard CSS, Supabase (Auth, DB, Storage).
-    Authentication: Microsoft Entra ID (Azure AD) integrated via Supabase Auth.
-    User Roles: Admin, Teacher, Student.
-
-Task:
-Help me architect and build the Main Landing Page and the Authentication Flow (use STI's main page as a reference above, I'll later modify it). 
-Specifically, I need to integrate Microsoft Entra so that the Admin can create and manage accounts in Entra, and users can sign in via the LMS.
-System Requirements & User Roles:
-    Admin Flow: * Creates/provides accounts for Teachers and Students via Microsoft Entra.
-        Data must sync/persist in a Supabase profiles table.
-        Dashboard includes: User analytics (Total students/teachers) and management tables.
-    Teacher Flow (UX Reference: Google Classroom):
-        Creates Classes (Name, Section, Semester).
-        Generates/shares "Invitation Codes" for students to join.
-        Uploads modules, creates activities/quizzes with due dates (calendar sync).
-        Manages a Gradebook (auto-checked quizzes + manual grading for essays).
-    Student Flow:
-        Joins classes via codes.
-        Accesses learning materials and submits assignments.
-        Takes quizzes within the system.
-UI/UX Specifications (Shared Layout): (I'll provide some photos for the sidebar reference)
-    Top Navigation Bar:
-        Left: Collapse Sidebar Icon + Dynamic Page Title (e.g., "Dashboard").
-        Right: Notification icon + Profile (Avatar generated by initials, Full Name, and Username).
-    Sidebar Navigation:
-        Header: "Ark" Logo + Institution Name.
-        Sections: "Overview" (Dashboard) and "Management" (Role-specific links).
-        Behavior: Collapsible to icons-only view.
-
-Current Project State:
-    Project initialized with pnpm create next-app@latest.
-    Supabase is running locally (status: local development setup running).
-    Goal for this session: Focus on setting up the Microsoft Entra login logic and the responsive Top Nav/Sidebar layout that changes based on the user's role.
-
-Instructions for you (Claude):
-    For now, we'll focus on building the main page where the login button resides and make the accounts work to access each user's dashboard.
-    Provide the step-by-step configuration for Microsoft Entra within the Supabase dashboard/config.
-    Provide the Next.js code for a Shared Dashboard Layout including the collapsible sidebar and dynamic top nav.
-    Explain how to handle role-based redirection after a successful Microsoft login.   
-    (please provide full/detailed step-by-step processes as well as the specific file and inside file location where to put or modify the codes)
-    
-    (as per each dashbords,we'll make it function next time so for now, we'll just build the interfaces. We'll build one feature at a time, no need to rush
-    so focus on our task for today which are written above for you Claude.)
-    
-    PS. current project folder and file structure is shown above, let me know what's missing as well as the things I need to install. The name of the
-    files should match the features, so it won't be difficult to locate them later on once the project get bigger. The project should be well-structured and 
-    organized so it won't be difficult to search for each files/folders.
-    Shouldn't there be src in the project? If necessary, can u include it? Put the whole project folder and files structure including the existing ones.
-    And also the dashboard sample is also shown above, use it as a reference especially the sidebar navigation. 
-    And about the microsoft entra, as u can see STI elms shown above uses it, u can use it as a reference.
-
- 
  arkadian_lms/
 ├── .next/
 ├── node_modules/
 ├── public/
-│   └── ark-logo.svg                          ← Place your Ark logo here
-├── src/                                       ← NEW: all app code lives here
+│   └── ark-logo.svg                          
+├── src/                                       
 │   ├── app/
-│   │   ├── (auth)/                           ← Auth-only route group
+│   │   ├── (auth)/                           
 │   │   │   ├── login/
-│   │   │   │   └── page.tsx                  ← Admin email/password login
+│   │   │   │   └── page.tsx                 
 │   │   │   └── layout.tsx
-│   │   ├── (dashboard)/                      ← Protected route group
-│   │   │   ├── admin/
+│   │   ├── (dashboard)/                      
 │   │   │   │   ├── dashboard/page.tsx
 │   │   │   │   ├── teachers/page.tsx
 │   │   │   │   ├── students/page.tsx
@@ -271,44 +195,43 @@ Instructions for you (Claude):
 │   │   │   ├── student/
 │   │   │   │   ├── dashboard/page.tsx
 │   │   │   │   └── classes/page.tsx
-│   │   │   └── layout.tsx                    ← Shared dashboard layout
+│   │   │   └── layout.tsx                    
 │   │   ├── auth/
-│   │   │   ├── callback/route.ts             ← OAuth callback handler
+│   │   │   ├── callback/route.ts             
 │   │   │   └── signout/route.ts
 │   │   ├── globals.css
-│   │   ├── layout.tsx                        ← Root layout
-│   │   └── page.tsx                          ← Landing page (STI-inspired)
+│   │   ├── layout.tsx                       
+│   │   └── page.tsx                          
 │   ├── components/
 │   │   ├── auth/
-│   │   │   └── login-modal.tsx               ← Microsoft + Admin login modal
+│   │   │   └── login-modal.tsx              
 │   │   ├── dashboard/
-│   │   │   ├── sidebar.tsx                   ← Collapsible sidebar
-│   │   │   ├── topbar.tsx                    ← Dynamic top nav
-│   │   │   ├── nav-config.ts                 ← Role-based nav items
-│   │   │   └── user-avatar.tsx               ← Initials avatar
+│   │   │   ├── sidebar.tsx                   
+│   │   │   ├── topbar.tsx                   
+│   │   │   ├── nav-config.ts                 
+│   │   │   └── user-avatar.tsx               
 │   │   ├── landing/
 │   │   │   ├── hero.tsx
 │   │   │   └── header.tsx
 │   │   └── ui/
-│   │       └── icons.tsx                     ← Centralized icon exports
+│   │       └── icons.tsx                     
 │   ├── lib/
 │   │   ├── supabase/
-│   │   │   ├── client.ts                     ← Browser client
-│   │   │   ├── server.ts                     ← Server client
-│   │   │   └── middleware.ts                 ← Session refresh helper
-│   │   └── utils.ts                          ← cn() helper, initials, etc.
+│   │   │   ├── client.ts                     
+│   │   │   ├── server.ts                     
+│   │   │   └── middleware.ts                 
+│   │   └── utils.ts                          
 │   ├── types/
-│   │   └── database.ts                       ← Profile, Role types
-│   └── middleware.ts                         ← Next.js middleware (route protection)
+│   │   └── database.ts                       
+│   └── middleware.ts                         
 ├── supabase/
 │   ├── .branches/
 │   ├── .temp/
 │   ├── snippets/
-│   ├── migrations/                           ← NEW: SQL migrations
+│   ├── migrations/                           
 │   │   └── 20260429000000_init_profiles.sql
 │   └── config.toml
-├── .env.local                                ← NEW: env vars
-├── .gitignore
+├── .env.local                                
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── eslint.config.mjs
@@ -320,4 +243,381 @@ Instructions for you (Claude):
 ├── postcss.config.mjs
 ├── README.md
 ├── tsconfig.json
-└── workflow
+└── notes
+
+
+
+  20260502010000_classes_and_enrollments.sql
+
+  -- =====================================================================
+-- Migration: Classes and Enrollments
+-- Date: 2026-05-02
+-- Purpose: Core schema for teacher-created classes (Google Classroom style)
+--   - classes: a teacher's class for a subject in a given semester.
+--     "section" is a free-text label owned by the teacher (no central
+--     sections table); the modal autocompletes from the teacher's own
+--     past values via a DISTINCT query.
+--   - class_enrollments: students enrolled in a class
+--   - Invite codes: 7-char unambiguous lowercase+digit, like Google Classroom
+--
+-- Schema is designed for a single teacher-per-class today, but RLS policies
+-- route through is_class_teacher() so co-teachers can be added later by
+-- introducing a class_teachers table without rewriting policies.
+-- =====================================================================
+
+
+-- =====================================================================
+-- 1. CLASSES TABLE
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.classes (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  teacher_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,                                    -- "Web Development"
+  section       TEXT,                                             -- "BSIT-3A" (free text, teacher-owned)
+  subject_code  TEXT,                                             -- "IT-301"
+  semester      TEXT NOT NULL,                                    -- "1st Sem 2026-2027"
+  description   TEXT,
+  color         TEXT NOT NULL DEFAULT '#dc2626',                  -- auto-assigned hex
+  invite_code   TEXT NOT NULL UNIQUE,                             -- 7-char, e.g., "gabxk2p"
+  is_archived   BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS classes_teacher_id_idx     ON public.classes (teacher_id);
+CREATE INDEX IF NOT EXISTS classes_invite_code_idx    ON public.classes (invite_code);
+CREATE INDEX IF NOT EXISTS classes_is_archived_idx    ON public.classes (is_archived);
+-- Speeds up the autocomplete query: DISTINCT section WHERE teacher_id = ?
+CREATE INDEX IF NOT EXISTS classes_teacher_section_idx ON public.classes (teacher_id, section);
+
+
+-- =====================================================================
+-- 2. CLASS_ENROLLMENTS TABLE
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.class_enrollments (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id    UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
+  student_id  UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  enrolled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (class_id, student_id)
+);
+
+CREATE INDEX IF NOT EXISTS class_enrollments_class_id_idx   ON public.class_enrollments (class_id);
+CREATE INDEX IF NOT EXISTS class_enrollments_student_id_idx ON public.class_enrollments (student_id);
+
+
+-- =====================================================================
+-- 3. INVITE CODE GENERATOR
+-- =====================================================================
+-- 7-char codes from an unambiguous alphabet (no 0/o/1/l/i to avoid confusion).
+-- ~31^7 ≈ 27 billion combinations; collisions are vanishingly rare,
+-- but we still retry up to 5 times against the UNIQUE constraint.
+CREATE OR REPLACE FUNCTION public.generate_invite_code()
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  alphabet  TEXT := 'abcdefghjkmnpqrstuvwxyz23456789';  -- no 0,o,1,l,i
+  result    TEXT;
+  i         INT;
+  attempt   INT := 0;
+BEGIN
+  LOOP
+    result := '';
+    FOR i IN 1..7 LOOP
+      result := result || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    END LOOP;
+
+    -- Check uniqueness against existing classes
+    IF NOT EXISTS (SELECT 1 FROM public.classes WHERE invite_code = result) THEN
+      RETURN result;
+    END IF;
+
+    attempt := attempt + 1;
+    IF attempt >= 5 THEN
+      RAISE EXCEPTION 'Could not generate unique invite code after 5 attempts';
+    END IF;
+  END LOOP;
+END;
+$$;
+
+
+-- =====================================================================
+-- 4. AUTO-ASSIGN INVITE CODE & UPDATED_AT TRIGGERS
+-- =====================================================================
+-- Auto-generate invite_code on insert if not provided
+CREATE OR REPLACE FUNCTION public.classes_set_invite_code()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.invite_code IS NULL OR NEW.invite_code = '' THEN
+    NEW.invite_code := public.generate_invite_code();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS classes_set_invite_code_trigger ON public.classes;
+CREATE TRIGGER classes_set_invite_code_trigger
+  BEFORE INSERT ON public.classes
+  FOR EACH ROW EXECUTE FUNCTION public.classes_set_invite_code();
+
+-- Auto-update updated_at on UPDATE
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS classes_updated_at_trigger ON public.classes;
+CREATE TRIGGER classes_updated_at_trigger
+  BEFORE UPDATE ON public.classes
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+-- =====================================================================
+-- 5. is_class_teacher() — central authorization helper
+-- =====================================================================
+-- All teacher-side RLS policies route through this function.
+-- Today: returns TRUE if user is the class's teacher_id.
+-- Tomorrow (when co-teachers ship): also check class_teachers table.
+-- Updating this one function will retroactively grant all teacher
+-- privileges to co-teachers across every policy.
+CREATE OR REPLACE FUNCTION public.is_class_teacher(p_class_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.classes
+    WHERE id = p_class_id AND teacher_id = p_user_id
+  );
+$$;
+
+
+-- =====================================================================
+-- 6. ENABLE ROW LEVEL SECURITY
+-- =====================================================================
+ALTER TABLE public.classes           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.class_enrollments ENABLE ROW LEVEL SECURITY;
+
+
+-- =====================================================================
+-- 7. RLS POLICIES — CLASSES
+-- =====================================================================
+-- Teachers can SELECT their own classes
+DROP POLICY IF EXISTS "classes_select_teacher" ON public.classes;
+CREATE POLICY "classes_select_teacher"
+  ON public.classes FOR SELECT
+  TO authenticated
+  USING (public.is_class_teacher(id, auth.uid()));
+
+-- Students can SELECT classes they are enrolled in
+DROP POLICY IF EXISTS "classes_select_enrolled_student" ON public.classes;
+CREATE POLICY "classes_select_enrolled_student"
+  ON public.classes FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.class_enrollments
+      WHERE class_enrollments.class_id = classes.id
+        AND class_enrollments.student_id = auth.uid()
+    )
+  );
+
+-- Admins can SELECT all classes
+DROP POLICY IF EXISTS "classes_select_admin" ON public.classes;
+CREATE POLICY "classes_select_admin"
+  ON public.classes FOR SELECT
+  TO authenticated
+  USING (public.get_user_role(auth.uid()) = 'admin');
+
+-- Teachers can INSERT classes (only with themselves as teacher_id)
+DROP POLICY IF EXISTS "classes_insert_teacher" ON public.classes;
+CREATE POLICY "classes_insert_teacher"
+  ON public.classes FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    public.get_user_role(auth.uid()) = 'teacher'
+    AND teacher_id = auth.uid()
+  );
+
+-- Teachers can UPDATE their own classes (route through is_class_teacher)
+DROP POLICY IF EXISTS "classes_update_teacher" ON public.classes;
+CREATE POLICY "classes_update_teacher"
+  ON public.classes FOR UPDATE
+  TO authenticated
+  USING (public.is_class_teacher(id, auth.uid()))
+  WITH CHECK (public.is_class_teacher(id, auth.uid()));
+
+-- Teachers can DELETE their own classes
+-- (UI uses archive, but DELETE is exposed for future admin tools / cleanup)
+DROP POLICY IF EXISTS "classes_delete_teacher" ON public.classes;
+CREATE POLICY "classes_delete_teacher"
+  ON public.classes FOR DELETE
+  TO authenticated
+  USING (public.is_class_teacher(id, auth.uid()));
+
+-- Admins can do anything on classes
+DROP POLICY IF EXISTS "classes_admin_all" ON public.classes;
+CREATE POLICY "classes_admin_all"
+  ON public.classes FOR ALL
+  TO authenticated
+  USING (public.get_user_role(auth.uid()) = 'admin')
+  WITH CHECK (public.get_user_role(auth.uid()) = 'admin');
+
+
+-- =====================================================================
+-- 8. RLS POLICIES — CLASS_ENROLLMENTS
+-- =====================================================================
+-- Teachers can SELECT enrollments for their own classes (to see roster)
+DROP POLICY IF EXISTS "enrollments_select_teacher" ON public.class_enrollments;
+CREATE POLICY "enrollments_select_teacher"
+  ON public.class_enrollments FOR SELECT
+  TO authenticated
+  USING (public.is_class_teacher(class_id, auth.uid()));
+
+-- Students can SELECT their own enrollments
+DROP POLICY IF EXISTS "enrollments_select_self" ON public.class_enrollments;
+CREATE POLICY "enrollments_select_self"
+  ON public.class_enrollments FOR SELECT
+  TO authenticated
+  USING (student_id = auth.uid());
+
+-- Admins can SELECT all enrollments
+DROP POLICY IF EXISTS "enrollments_select_admin" ON public.class_enrollments;
+CREATE POLICY "enrollments_select_admin"
+  ON public.class_enrollments FOR SELECT
+  TO authenticated
+  USING (public.get_user_role(auth.uid()) = 'admin');
+
+-- Students can INSERT their own enrollment (used by join-via-code flow next session)
+DROP POLICY IF EXISTS "enrollments_insert_self" ON public.class_enrollments;
+CREATE POLICY "enrollments_insert_self"
+  ON public.class_enrollments FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    student_id = auth.uid()
+    AND public.get_user_role(auth.uid()) = 'student'
+  );
+
+-- Teachers can DELETE enrollments in their classes (kick students)
+DROP POLICY IF EXISTS "enrollments_delete_teacher" ON public.class_enrollments;
+CREATE POLICY "enrollments_delete_teacher"
+  ON public.class_enrollments FOR DELETE
+  TO authenticated
+  USING (public.is_class_teacher(class_id, auth.uid()));
+
+-- Students can DELETE their own enrollment (leave class)
+DROP POLICY IF EXISTS "enrollments_delete_self" ON public.class_enrollments;
+CREATE POLICY "enrollments_delete_self"
+  ON public.class_enrollments FOR DELETE
+  TO authenticated
+  USING (student_id = auth.uid());
+
+
+-- =====================================================================
+-- 9. GRANTS
+-- =====================================================================
+-- Standard grants so policies can run; RLS still restricts row visibility.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.classes           TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.class_enrollments TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.generate_invite_code()                TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_class_teacher(UUID, UUID)          TO authenticated;
+
+20260430000000_init_profiles.sql
+
+-- Create role enum
+CREATE TYPE user_role AS ENUM ('admin', 'teacher', 'student');
+
+-- Profiles table (synced with auth.users)
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  username TEXT UNIQUE,
+  avatar_url TEXT,
+  role user_role NOT NULL DEFAULT 'student',
+  institution TEXT DEFAULT 'Arkadian Institution',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- RLS: Users can read their own profile
+CREATE POLICY "Users can view own profile"
+  ON public.profiles FOR SELECT
+  USING (auth.uid() = id);
+
+-- RLS: Users can update their own profile (limited fields)
+CREATE POLICY "Users can update own profile"
+  ON public.profiles FOR UPDATE
+  USING (auth.uid() = id);
+
+-- RLS: Admins can view all profiles
+CREATE POLICY "Admins can view all profiles"
+  ON public.profiles FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- RLS: Admins can insert/update/delete profiles
+CREATE POLICY "Admins can manage all profiles"
+  ON public.profiles FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- Function to handle new user signup (auto-create profile)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, username, avatar_url, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+    split_part(NEW.email, '@', 1),
+    NEW.raw_user_meta_data->>'avatar_url',
+    'student' -- Default role; admin will update later
+  );
+  RETURN NEW;
+END;
+$$;
+
+-- Trigger to auto-create profile on signup
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_profiles_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

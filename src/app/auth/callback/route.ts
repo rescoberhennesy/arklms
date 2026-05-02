@@ -13,15 +13,23 @@ export async function GET(request: Request) {
       const { data: { user } } = await supabase.auth.getUser()
 
       if (user) {
-        const { data: profile } = await supabase
+        // 1. Fetch profile with NO caching to ensure we get the fresh 'teacher' role
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .single()
 
-        const role = profile?.role || 'student'
-        let redirectPath = '/student/dashboard'
+        if (profileError || !profile) {
+          console.error('Profile fetch error:', profileError)
+          // If we can't find a profile, don't just guess 'student'
+          return NextResponse.redirect(`${origin}/unauthorized?reason=no_profile`)
+        }
 
+        const role = profile.role
+        console.log('User Role detected:', role) // Check your terminal for this!
+
+        let redirectPath = '/student/dashboard'
         if (role === 'admin') redirectPath = '/admin/dashboard'
         else if (role === 'teacher') redirectPath = '/teacher/dashboard'
 

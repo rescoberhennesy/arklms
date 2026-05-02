@@ -1,0 +1,147 @@
+/* Sidebar Layout */
+.sidebar {
+  width: 280px;
+  background-color: #0c0c0c; 
+  border-right: 1px solid #1f1f23;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+/* Header Spacing */
+.sidebar-header {
+  padding: 32px 24px; 
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.logo-img {
+  width: 70px;
+  height: 70px;
+}
+
+.logo-text {
+  display: flex;
+  flex-direction: column;
+  
+}
+
+.logo-text span {
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.2;
+  letter-spacing: 0.5px;
+}
+
+/* Navigation Spacing */
+.sidebar-nav {
+  flex: 1; /* Takes up all available space */
+  padding: 0 16px;
+}
+
+.nav-section {
+  margin-bottom: 32px; /* Gap between groups */
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #52525b;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin: 16px 0 16px 12px;
+  display: block;
+}
+
+.nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 14px 16px; /* Taller items */
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 8px; /* Vertical space between buttons */
+}
+
+.nav-item:hover {
+  background-color: #1a1a1a;
+  color: white;
+}
+
+.nav-item.active {
+  background-color: #e02424; /* Red accent from your code */
+  color: #ffffff;
+  box-shadow: 0 10px 15px -3px rgba(224, 36, 36, 0.3);
+}
+
+.nav-item-content {
+  display: flex;
+  align-items: center;
+  gap: 14px; /* Space between icon and text */
+}
+
+.nav-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Footer Section */
+.sidebar-footer {
+  padding: 24px 16px;
+  border-top: 1px solid #1f1f23;
+}
+
+.logout-btn {
+  color: #a1a1aa;
+  margin-bottom: 0;
+}
+
+.logout-btn:hover {
+  height: 50px;
+  background-color: rgba(224, 36, 36, 0.1);
+  color: #ef4444;
+}
+
+/* Collapsed State */
+.sidebar.collapsed {
+  width: 88px;
+}
+
+.sidebar.collapsed .sidebar-header,
+.sidebar.collapsed .sidebar-footer {
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.sidebar.collapsed .logo-container {
+  width: 40px;
+  height: 40px;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+}
+
+/* Stats Styling */
+.stat-value-large {
+  font-size: 48px;
+  font-weight: 800;
+  margin: 12px 0 0 0;
+  color: white;
+}

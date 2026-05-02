@@ -25,7 +25,7 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-slate-900">
+      <div className="flex min-h-screen bg-[#f5f5f5]">
         <Sidebar role={profile.role} />
         <div className="flex-1 flex flex-col">
           <TopNavbar profile={profile} />

@@ -49,8 +49,6 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       title: 'Management',
       items: [
         { label: 'Classes', href: '/teacher/classes', icon: BookOpen },
-        { label: 'Gradebook', href: '/teacher/gradebook', icon: ClipboardList },
-        { label: 'Calendar', href: '/teacher/calendar', icon: Calendar },
       ],
     },
   ],
@@ -65,7 +63,6 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       title: 'Learning',
       items: [
         { label: 'My Classes', href: '/student/classes', icon: BookOpen },
-        { label: 'Assignments', href: '/student/assignments', icon: FileText },
       ],
     },
   ],

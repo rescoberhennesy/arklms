@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogOut } from 'lucide-react'
+import { LogOut, LayoutDashboard, BookOpen } from 'lucide-react'
 import { useSidebar } from '@/context/SidebarContext'
 import { navigationConfig } from '@/config/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { UserRole } from '@/types/user'
 import { cn } from '@/lib/utils/cn'
+import './Sidebar.css' 
 
 interface SidebarProps {
   role: UserRole
@@ -19,6 +20,7 @@ export default function Sidebar({ role, institutionName = 'Ark Learning Manageme
   const { isCollapsed } = useSidebar()
   const pathname = usePathname()
   const router = useRouter()
+  
   const sections = navigationConfig[role]
 
   const handleSignOut = async () => {
@@ -29,53 +31,81 @@ export default function Sidebar({ role, institutionName = 'Ark Learning Manageme
   }
 
   return (
-    <aside
-      className={cn(
-        'h-screen bg-slate-950 border-r border-slate-800 flex flex-col transition-all duration-300 sticky top-0',
-        isCollapsed ? 'w-20' : 'w-64'
-      )}
-    >
-      {/* Logo Header */}
-      <div className="p-4 border-b border-slate-800 flex items-center gap-3">
-        <div className="w-10 h-10 bg-red-600 rounded flex items-center justify-center flex-shrink-0">
-          <span className="text-white font-bold text-sm">ARK</span>
-        </div>
-        {!isCollapsed && (
-          <div className="overflow-hidden">
-            <p className="text-white font-bold text-sm leading-tight">Ark Learning</p>
-            <p className="text-white font-bold text-sm leading-tight">Management System</p>
+   <aside
+  className={cn(
+    'sidebar', 
+    'h-screen bg-[#0c0c0c] border-r border-white/5 flex flex-col transition-all duration-300 sticky top-0',
+    isCollapsed ? 'collapsed w-20' : 'w-72' 
+  )}
+>
+    
+      {/* Institution Header */}
+      <div className={cn('sidebar-header', 'p-8 mb-4')}>
+        <div className="flex items-center gap-4">
+          <div className="logo-container flex-shrink-0 overflow-hidden p-1 flex items-center justify-center">
+            <img 
+              src="/Ark Logo.png" 
+              alt="Logo" 
+              className="logo-img w-full h-full object-contain"
+            />
           </div>
-        )}
+          {!isCollapsed && (
+            <div className="logo-text flex flex-col">
+              <span className="text-white font-extrabold text-[13px] leading-tight tracking-tight uppercase">
+                Ark Learning
+              </span>
+              <span className="text-white font-extrabold text-[13px] leading-tight tracking-tight uppercase">
+                Management System
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="divider px-6 mb-8">
+        <div className="h-[1px] bg-white/5 w-full" />
       </div>
 
       {/* Nav Sections */}
-      <nav className="flex-1 overflow-y-auto py-4">
+      <nav className={cn('sidebar-nav', 'flex-1 overflow-y-auto px-4')}>
         {sections.map((section) => (
-          <div key={section.title} className="mb-4">
+          <div key={section.title} className="nav-section mb-10">
             {!isCollapsed && (
-              <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              <p className="section-label px-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-5">
                 {section.title}
               </p>
             )}
-            <ul className="space-y-1 px-3">
+            <ul className="space-y-3">
               {section.items.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
+                        'nav-item', 
+                        'flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-200 group',
                         isActive
-                          ? 'bg-red-600 text-white'
-                          : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                          ? 'active bg-red-600 text-white shadow-lg shadow-red-600/20'
+                          : 'text-slate-400 hover:bg-white/5 hover:text-white',
                         isCollapsed && 'justify-center'
                       )}
                       title={isCollapsed ? item.label : undefined}
                     >
-                      <Icon size={20} className="flex-shrink-0" />
-                      {!isCollapsed && <span className="text-sm font-medium">{item.label}</span>}
+                      <Icon 
+                        size={22} 
+                        className={cn(
+                          "nav-icon flex-shrink-0 transition-transform group-hover:scale-110",
+                          isActive ? "text-white" : "text-slate-400"
+                        )} 
+                      />
+                      {!isCollapsed && (
+                        <span className="nav-label text-[14px] font-semibold tracking-wide">
+                          {item.label}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 )
@@ -85,18 +115,19 @@ export default function Sidebar({ role, institutionName = 'Ark Learning Manageme
         ))}
       </nav>
 
-      {/* Sign Out */}
-      <div className="p-3 border-t border-slate-800">
+      {/* Footer / Sign Out Section */}
+      <div className={cn('sidebar-footer', 'p-6 mt-auto border-t border-white/5')}>
         <button
           onClick={handleSignOut}
           className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors w-full',
+            'logout-btn', // Standard CSS Name
+            'flex items-center gap-4 px-4 py-4 rounded-xl text-slate-400 hover:bg-red-950/20 hover:text-red-500 transition-all w-full group',
             isCollapsed && 'justify-center'
           )}
           title={isCollapsed ? 'Sign out' : undefined}
         >
-          <LogOut size={20} className="flex-shrink-0" />
-          {!isCollapsed && <span className="text-sm font-medium">Sign out</span>}
+          <LogOut size={22} className="flex-shrink-0 group-hover:-translate-x-1 transition-transform" />
+          {!isCollapsed && <span className="text-sm font-bold tracking-wide">Sign out</span>}
         </button>
       </div>
     </aside>

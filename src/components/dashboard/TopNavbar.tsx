@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useSidebar } from '@/context/SidebarContext'
 import ProfileDropdown from './ProfileDropdown'
 import type { Profile } from '@/types/user'
+import { cn } from '@/lib/utils/cn'
 
 interface TopNavbarProps {
   profile: Profile
@@ -22,26 +23,34 @@ export default function TopNavbar({ profile }: TopNavbarProps) {
   const title = getPageTitle(pathname)
 
   return (
-    <header className="bg-slate-950 border-b border-slate-800 px-6 py-3 flex items-center justify-between sticky top-0 z-40">
-      <div className="flex items-center gap-4">
+    <header className="h-24 bg-[#f5f5f5]/80 backdrop-blur-md border-b border-white/5 px-8 flex items-center justify-between sticky top-0 z-40">
+      <div className="flex items-center gap-8">
+        {/* Added extra margin-left (ml-2) and bigger gap to breathe near sidebar */}
         <button
           onClick={toggle}
-          className="text-slate-300 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition"
+          className="ml-2 text-slate-400 hover:text-white p-2.5 rounded-xl hover:bg-white/5 transition-all active:scale-95"
           aria-label="Toggle sidebar"
         >
-          <Menu size={20} />
+          <Menu size={24} />
         </button>
-        <h1 className="text-white text-xl font-semibold">{title}</h1>
+        
+        <div className="flex flex-col">
+          <h1 className="text-black text-2xl font-bold tracking-tight">{title}</h1>
+        
+        </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-6">
         <button
-          className="text-slate-300 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition relative"
+          className="text-slate-400 hover:text-white p-3 rounded-xl hover:bg-white/5 transition-all relative group"
           aria-label="Notifications"
         >
-          <Bell size={20} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+          <Bell size={24} className="group-hover:rotate-12 transition-transform" />
+          <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-600 border-2 border-[#0c0c0c] rounded-full"></span>
         </button>
+
+        {/* Separator Line */}
+        <div className="h-8 w-[1px] bg-white/10 mx-2" />
 
         <ProfileDropdown profile={profile} />
       </div>
