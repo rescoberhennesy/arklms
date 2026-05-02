@@ -1,198 +1,244 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import {
-  type ActionResult,
-  type ClassRow,
-  type CreateClassInput,
-  pickClassColor,
+import type {
+  ClassFormInput,
+  ClassRow,
+  TeacherClassListItem,
+  InviteExpirationHours,
+  Semester,
+  ActionResult,
 } from '@/types/class';
-import type { SupabaseClient } from '@supabase/supabase-js';
 
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
-type AuthSuccess = { ok: true; userId: string; supabase: SupabaseClient };
-type AuthFailure = { ok: false; error: string };
-type AuthResult = AuthSuccess | AuthFailure;
-
-async function requireUserWithClient(): Promise<AuthResult> {
+async function requireAuthUserId() {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
-    console.log('[requireUser] Auth failed:', error);
-    return { ok: false, error: 'Not authenticated.' };
-  }
-  console.log('[requireUser] Authenticated as:', data.user.id, data.user.email);
-  return { ok: true, userId: data.user.id, supabase };
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) redirect('/');
+  return { supabase, userId: user.id };
 }
 
-// ---------------------------------------------------------------------------
-// Read actions
-// ---------------------------------------------------------------------------
-
-export async function listMyClasses(
-  includeArchived = false,
-): Promise<ActionResult<ClassRow[]>> {
-  const auth = await requireUserWithClient();
-  if (!auth.ok) return auth;
-
-  let query = auth.supabase
-    .from('classes')
-    .select('*')
-    .eq('teacher_id', auth.userId)
-    .order('created_at', { ascending: false });
-
-  if (!includeArchived) {
-    query = query.eq('is_archived', false);
-  }
-
-  const { data, error } = await query;
-  console.log('[listMyClasses] Found', data?.length ?? 0, 'classes for user', auth.userId);
-  if (error) {
-    console.log('[listMyClasses] Error:', error);
-    return { ok: false, error: error.message };
-  }
-  return { ok: true, data: data as ClassRow[] };
+function validateSemester(value: unknown): Semester {
+  if (value === '1st Semester' || value === '2nd Semester') return value;
+  throw new Error('Semester must be either "1st Semester" or "2nd Semester"');
 }
 
-export async function getClassById(
-  classId: string,
-): Promise<ActionResult<ClassRow>> {
-  const auth = await requireUserWithClient();
-  if (!auth.ok) return auth;
+// --------------------------------------------------------------------------
+// READS
+// --------------------------------------------------------------------------
 
-  const { data, error } = await auth.supabase
-    .from('classes')
-    .select('*')
-    .eq('id', classId)
-    .single();
+export async function listMyClasses(): Promise<ActionResult<TeacherClassListItem[]>> {
+  try {
+    const { supabase, userId } = await requireAuthUserId();
 
-  if (error) return { ok: false, error: error.message };
-  if (!data) return { ok: false, error: 'Class not found.' };
-  return { ok: true, data: data as ClassRow };
+    const { data, error } = await supabase
+      .from('classes')
+      .select(`*, class_enrollments(count)`)
+      .eq('teacher_id', userId)
+      .order('is_archived', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const formatted = (data ?? []).map((row: any) => {
+      const enrolled_count = row.class_enrollments?.[0]?.count ?? 0;
+      const { class_enrollments: _drop, ...rest } = row;
+      return { ...rest, enrolled_count } as TeacherClassListItem;
+    });
+
+    return { ok: true, data: formatted };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to list classes' };
+  }
+}
+
+export async function getClassById(id: string): Promise<ActionResult<ClassRow | null>> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return { ok: true, data: data as ClassRow | null };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to load class' };
+  }
 }
 
 export async function listMySectionSuggestions(): Promise<ActionResult<string[]>> {
-  const auth = await requireUserWithClient();
-  if (!auth.ok) return auth;
+  try {
+    const { supabase, userId } = await requireAuthUserId();
+    const { data, error } = await supabase
+      .from('classes')
+      .select('section')
+      .eq('teacher_id', userId)
+      .not('section', 'is', null);
 
-  const { data, error } = await auth.supabase
-    .from('classes')
-    .select('section')
-    .eq('teacher_id', auth.userId)
-    .not('section', 'is', null);
-
-  if (error) return { ok: false, error: error.message };
-
-  const unique = Array.from(
-    new Set(
-      (data ?? [])
-        .map((row) => (row as { section: string | null }).section)
-        .filter((s): s is string => !!s && s.trim().length > 0),
-    ),
-  ).sort((a, b) => a.localeCompare(b));
-
-  return { ok: true, data: unique };
+    if (error) throw error;
+    const set = new Set<string>((data ?? []).map((r: any) => r.section).filter(Boolean));
+    return { ok: true, data: Array.from(set).sort() };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to list sections' };
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Write actions
-// ---------------------------------------------------------------------------
+export async function listMyClassNameSuggestions(): Promise<ActionResult<string[]>> {
+  try {
+    const { supabase, userId } = await requireAuthUserId();
+    const { data, error } = await supabase
+      .from('classes')
+      .select('name')
+      .eq('teacher_id', userId);
 
-export async function createClass(
-  input: CreateClassInput,
-): Promise<ActionResult<ClassRow>> {
-  console.log('[createClass] CALLED with input:', JSON.stringify(input));
-
-  const auth = await requireUserWithClient();
-  if (!auth.ok) {
-    console.log('[createClass] Aborting - not authenticated');
-    return auth;
+    if (error) throw error;
+    const set = new Set<string>((data ?? []).map((r: any) => r.name).filter(Boolean));
+    return { ok: true, data: Array.from(set).sort() };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to list class names' };
   }
-
-  const name = input.name?.trim();
-  const semester = input.semester?.trim();
-  if (!name) return { ok: false, error: 'Class name is required.' };
-  if (!semester) return { ok: false, error: 'Semester is required.' };
-  if (name.length > 200) {
-    return { ok: false, error: 'Class name must be 200 characters or fewer.' };
-  }
-
-  console.log('[createClass] Inserting as user:', auth.userId);
-
-  const { data, error } = await auth.supabase
-    .from('classes')
-    .insert({
-      teacher_id: auth.userId,
-      name,
-      semester,
-      section: input.section?.trim() || null,
-      subject_code: input.subject_code?.trim() || null,
-      description: input.description?.trim() || null,
-      color: pickClassColor(name + Date.now().toString()),
-    })
-    .select('*')
-    .single();
-
-  console.log('[createClass] DB returned error:', JSON.stringify(error, null, 2));
-  console.log('[createClass] DB returned data:', JSON.stringify(data, null, 2));
-
-  if (error) return { ok: false, error: error.message };
-
-  revalidatePath('/teacher/classes');
-  revalidatePath('/teacher/dashboard');
-  return { ok: true, data: data as ClassRow };
 }
 
-export async function setClassArchived(
-  classId: string,
-  archived: boolean,
-): Promise<ActionResult<ClassRow>> {
-  const auth = await requireUserWithClient();
-  if (!auth.ok) return auth;
+// --------------------------------------------------------------------------
+// WRITES
+// --------------------------------------------------------------------------
 
-  const { data, error } = await auth.supabase
-    .from('classes')
-    .update({ is_archived: archived })
-    .eq('id', classId)
-    .select('*')
-    .single();
+export async function createClass(input: ClassFormInput): Promise<ActionResult<ClassRow>> {
+  try {
+    const { supabase, userId } = await requireAuthUserId();
+    const semester = validateSemester(input.semester);
 
-  if (error) return { ok: false, error: error.message };
+    const { data: codeData, error: codeError } = await supabase.rpc('generate_invite_code');
+    if (codeError) throw codeError;
 
-  revalidatePath('/teacher/classes');
-  revalidatePath('/teacher/dashboard');
-  revalidatePath(`/teacher/classes/${classId}`);
-  return { ok: true, data: data as ClassRow };
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from('classes')
+      .insert({
+        teacher_id: userId,
+        name: input.name.trim(),
+        section: input.section?.trim() || null,
+        semester,
+        description: input.description?.trim() || null,
+        color: input.color ?? null,
+        cover_photo_url: input.cover_photo_url ?? null,
+        invite_code: codeData as string,
+        invite_code_expires_at: expiresAt,
+        is_archived: false,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    revalidatePath('/teacher/classes');
+    revalidatePath('/teacher/dashboard');
+    return { ok: true, data: data as ClassRow };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to create class' };
+  }
+}
+
+export async function updateClass(id: string, input: ClassFormInput): Promise<ActionResult<ClassRow>> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const semester = validateSemester(input.semester);
+
+    const { data, error } = await supabase
+      .from('classes')
+      .update({
+        name: input.name.trim(),
+        section: input.section?.trim() || null,
+        semester,
+        description: input.description?.trim() || null,
+        color: input.color ?? null,
+        cover_photo_url: input.cover_photo_url ?? null,
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    revalidatePath('/teacher/classes');
+    revalidatePath(`/teacher/classes/${id}`);
+    return { ok: true, data: data as ClassRow };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to update class' };
+  }
+}
+
+export async function setClassArchived(id: string, archived: boolean): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const { error } = await supabase.from('classes').update({ is_archived: archived }).eq('id', id);
+    if (error) throw error;
+    revalidatePath('/teacher/classes');
+    revalidatePath(`/teacher/classes/${id}`);
+    return { ok: true, data: undefined };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to archive/unarchive' };
+  }
+}
+
+export async function deleteClass(id: string): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const { error } = await supabase.from('classes').delete().eq('id', id);
+    if (error) throw error;
+    revalidatePath('/teacher/classes');
+    revalidatePath('/teacher/dashboard');
+    return { ok: true, data: undefined };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to delete class' };
+  }
 }
 
 export async function regenerateInviteCode(
   classId: string,
-): Promise<ActionResult<ClassRow>> {
-  const auth = await requireUserWithClient();
-  if (!auth.ok) return auth;
+  expiresInHours: InviteExpirationHours = 24 * 7,
+): Promise<ActionResult<{ invite_code: string; invite_code_expires_at: string | null }>> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const { data, error } = await supabase.rpc('regenerate_class_invite_code', {
+      p_class_id: classId,
+      p_expires_in_hours: expiresInHours,
+    });
+    if (error) throw error;
 
-  const { data: codeData, error: codeError } = await auth.supabase.rpc(
-    'generate_invite_code',
-  );
-  if (codeError) return { ok: false, error: codeError.message };
-  if (!codeData || typeof codeData !== 'string') {
-    return { ok: false, error: 'Invite code generator returned no value.' };
+    const row = Array.isArray(data) ? data[0] : data;
+    revalidatePath(`/teacher/classes/${classId}`);
+    return {
+      ok: true,
+      data: {
+        invite_code: row.invite_code,
+        invite_code_expires_at: row.invite_code_expires_at ?? null,
+      },
+    };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to regenerate code' };
   }
+}
 
-  const { data, error } = await auth.supabase
-    .from('classes')
-    .update({ invite_code: codeData })
-    .eq('id', classId)
-    .select('*')
-    .single();
-
-  if (error) return { ok: false, error: error.message };
-
-  revalidatePath('/teacher/classes');
-  revalidatePath(`/teacher/classes/${classId}`);
-  return { ok: true, data: data as ClassRow };
+export async function setInviteCodeDisabled(classId: string, disabled: boolean): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const { error } = await supabase.from('classes').update({ invite_code_disabled: disabled }).eq('id', classId);
+    if (error) throw error;
+    revalidatePath(`/teacher/classes/${classId}`);
+    return { ok: true, data: undefined };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Failed to toggle invite code' };
+  }
 }

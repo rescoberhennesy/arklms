@@ -1,6 +1,8 @@
+// src/app/(dashboard)/teacher/dashboard/page.tsx
 import Link from 'next/link';
+import { Users } from 'lucide-react';
 import { listMyClasses } from '@/lib/actions/classes';
-import ClassCard from '@/components/teacher/ClassCard';
+import type { TeacherClassListItem } from '@/types/class';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,9 +56,9 @@ export default async function TeacherDashboardPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {recentClasses.map((c) => (
-              <ClassCard key={c.id} classRow={c} />
+              <RecentClassCard key={c.id} cls={c} />
             ))}
           </div>
         )}
@@ -71,5 +73,38 @@ function StatCard({ label, value }: { label: string; value: number }) {
       <p className="text-sm font-medium text-gray-600">{label}</p>
       <p className="mt-1 text-3xl font-bold text-gray-900">{value}</p>
     </div>
+  );
+}
+
+function RecentClassCard({ cls }: { cls: TeacherClassListItem }) {
+  const color = cls.color ?? '#FCA5A5';
+  return (
+    <Link
+      href={`/teacher/classes/${cls.id}`}
+      className="block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+    >
+      <div className="relative h-24" style={{ backgroundColor: color }}>
+        <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/15" />
+        <div className="absolute inset-x-0 bottom-0 p-3">
+          <h3 className="truncate text-base font-semibold text-white drop-shadow-sm">
+            {cls.name}
+          </h3>
+          {cls.section && (
+            <p className="truncate text-xs text-white/90 drop-shadow-sm">
+              {cls.section}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center justify-between p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          {cls.semester}
+        </p>
+        <div className="flex items-center gap-1 text-xs text-gray-600">
+          <Users className="h-3.5 w-3.5" />
+          <span>{cls.enrolled_count}</span>
+        </div>
+      </div>
+    </Link>
   );
 }

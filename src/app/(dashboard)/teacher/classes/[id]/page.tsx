@@ -2,11 +2,17 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { getClassById } from '@/lib/actions/classes';
-import { createClient } from '@/lib/supabase/server';
+import {
+  listPendingJoinRequests,
+  listClassRoster,
+} from '@/lib/actions/enrollments';
+import { CopyButton } from '@/components/teacher/CopyButton';
+import { InviteCodePanel } from '@/components/teacher/InviteCodePanel';
+import { StudentsTab } from '@/components/teacher/StudentsTab';
 
 export const dynamic = 'force-dynamic';
 
-const TABS = ['stream', 'modules', 'people', 'grades'] as const;
+const TABS = ['stream', 'modules', 'activities', 'students', 'grades'] as const;
 type Tab = (typeof TABS)[number];
 
 interface PageProps {
@@ -25,9 +31,22 @@ export default async function ClassDetailPage({
     ? (tabParam as Tab)
     : 'stream';
 
-  const result = await getClassById(id);
-  if (!result.ok) notFound();
-  const klass = result.data;
+  const classRes = await getClassById(id);
+  if (!classRes.ok) notFound();
+  const klass = classRes.data;
+  if (!klass) notFound();
+
+  // Pre-fetch students-tab data on the server when that tab is active
+  let pendingRequests: Awaited<ReturnType<typeof listPendingJoinRequests>> = [];
+  let roster: Awaited<ReturnType<typeof listClassRoster>> = [];
+  if (tab === 'students') {
+    [pendingRequests, roster] = await Promise.all([
+      listPendingJoinRequests(klass.id),
+      listClassRoster(klass.id),
+    ]);
+  }
+
+  const headerColor = klass.color ?? '#FCA5A5';
 
   return (
     <div className="space-y-6">
@@ -39,37 +58,46 @@ export default async function ClassDetailPage({
         Back to classes
       </Link>
 
+      {/* Header */}
       <div
-        className="rounded-xl px-6 py-8 text-white shadow-sm"
-        style={{ backgroundColor: klass.color }}
+        className="relative overflow-hidden rounded-xl px-6 py-8 text-white shadow-sm"
+        style={{ backgroundColor: headerColor }}
       >
-        <h1 className="text-3xl font-bold">{klass.name}</h1>
-        {klass.section && (
-          <p className="mt-1 text-base font-medium text-white/90">
-            {klass.section}
-          </p>
-        )}
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-white/90">
-          {klass.subject_code && <span>{klass.subject_code}</span>}
-          <span>{klass.semester}</span>
-          <span className="ml-auto">
-            Invite code:{' '}
-            <code className="rounded bg-white/20 px-2 py-0.5 font-mono">
-              {klass.invite_code}
-            </code>
-          </span>
+        <div className="absolute inset-0 bg-gradient-to-br from-black/0 to-black/15" />
+        <div className="relative">
+          <h1 className="text-3xl font-bold drop-shadow-sm">{klass.name}</h1>
+          {klass.section && (
+            <p className="mt-1 text-base font-medium text-white/90 drop-shadow-sm">
+              {klass.section}
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/90">
+            <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
+              {klass.semester}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-white/80">
+                Code
+              </span>
+              <code className="rounded bg-white/20 px-2 py-0.5 font-mono text-sm">
+                {klass.invite_code}
+              </code>
+              <CopyButton text={klass.invite_code} />
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Tabs */}
       <nav className="border-b border-gray-200">
-        <div className="-mb-px flex gap-6">
+        <div className="-mb-px flex gap-6 overflow-x-auto">
           {TABS.map((t) => {
             const isActive = t === tab;
             return (
               <Link
                 key={t}
                 href={`/teacher/classes/${id}?tab=${t}`}
-                className={`border-b-2 px-1 py-3 text-sm font-medium capitalize transition ${
+                className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium capitalize transition ${
                   isActive
                     ? 'border-red-600 text-red-600'
                     : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
@@ -83,141 +111,78 @@ export default async function ClassDetailPage({
       </nav>
 
       <div>
-        {tab === 'stream' && <StreamTab description={klass.description} />}
+        {tab === 'stream' && (
+          <StreamTab
+            description={klass.description}
+            classId={klass.id}
+            inviteCode={klass.invite_code}
+            inviteCodeExpiresAt={klass.invite_code_expires_at}
+            inviteCodeDisabled={klass.invite_code_disabled}
+          />
+        )}
         {tab === 'modules' && <ComingSoonTab title="Modules" />}
-        {tab === 'people' && <PeopleTab classId={klass.id} />}
+        {tab === 'activities' && <ComingSoonTab title="Activities" />}
+        {tab === 'students' && (
+          <StudentsTab
+            classId={klass.id}
+            initialPending={pendingRequests}
+            initialRoster={roster}
+          />
+        )}
         {tab === 'grades' && <ComingSoonTab title="Grades" />}
       </div>
     </div>
   );
 }
 
-function StreamTab({ description }: { description: string | null }) {
+function StreamTab({
+  description,
+  classId,
+  inviteCode,
+  inviteCodeExpiresAt,
+  inviteCodeDisabled,
+}: {
+  description: string | null;
+  classId: string;
+  inviteCode: string;
+  inviteCodeExpiresAt: string | null;
+  inviteCodeDisabled: boolean;
+}) {
   return (
-    <div className="space-y-4">
-      {description && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            About this class
-          </h3>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">
-            {description}
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="space-y-4 lg:col-span-2">
+        {description && (
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+              About this class
+            </h3>
+            <p className="whitespace-pre-wrap text-sm text-gray-700">{description}</p>
+          </div>
+        )}
+        <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
+          <h2 className="text-lg font-semibold text-gray-900">Class stream</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Announcements and class activity will appear here.
           </p>
         </div>
-      )}
-      <ComingSoonTab
-        title="Class Stream"
-        description="Announcements, posts, and class activity will appear here."
-      />
+      </div>
+      <div className="lg:col-span-1">
+        <InviteCodePanel
+          classId={classId}
+          initialCode={inviteCode}
+          initialExpiresAt={inviteCodeExpiresAt}
+          initialDisabled={inviteCodeDisabled}
+        />
+      </div>
     </div>
   );
 }
 
-function ComingSoonTab({
-  title,
-  description = 'This feature is coming soon.',
-}: {
-  title: string;
-  description?: string;
-}) {
+function ComingSoonTab({ title }: { title: string }) {
   return (
     <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
       <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-      <p className="mt-1 text-sm text-gray-600">{description}</p>
-    </div>
-  );
-}
-
-async function PeopleTab({ classId }: { classId: string }) {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('class_enrollments')
-    .select(
-      `
-      id,
-      enrolled_at,
-      profiles:student_id (
-        id,
-        email,
-        full_name,
-        avatar_url
-      )
-    `,
-    )
-    .eq('class_id', classId)
-    .order('enrolled_at', { ascending: true });
-
-  if (error) {
-    return (
-      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        Could not load students: {error.message}
-      </div>
-    );
-  }
-
-type ProfileRef = {
-    id: string;
-    email: string;
-    full_name: string | null;
-    avatar_url: string | null;
-  };
-  type EnrollmentRow = {
-    id: string;
-    enrolled_at: string;
-    profiles: ProfileRef | ProfileRef[] | null;
-  };
-
-  const enrollments = ((data ?? []) as unknown as EnrollmentRow[]).map((row) => ({
-    id: row.id,
-    enrolled_at: row.enrolled_at,
-    // Supabase sometimes returns the joined relation as a single-item array;
-    // normalize to a single object (or null) for cleaner rendering below.
-    profile: Array.isArray(row.profiles) ? row.profiles[0] ?? null : row.profiles,
-  }));
-
-  if (enrollments.length === 0) {
-    return (
-      <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">No students yet</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Share the invite code with students so they can join the class.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Student
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Email
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Joined
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
-          {enrollments.map((e) => (
-            <tr key={e.id}>
-              <td className="px-4 py-3 text-sm text-gray-900">
-                {e.profile?.full_name ?? '—'}
-              </td>
-              <td className="px-4 py-3 text-sm text-gray-700">
-                {e.profile?.email ?? '—'}
-              </td>
-              <td className="px-4 py-3 text-sm text-gray-500">
-                {new Date(e.enrolled_at).toLocaleDateString()}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <p className="mt-1 text-sm text-gray-600">This feature is coming soon.</p>
     </div>
   );
 }

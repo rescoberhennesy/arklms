@@ -1,18 +1,28 @@
-import { listMyClasses } from '@/lib/actions/classes';
-import ClassesView from '@/components/teacher/ClassesView';
+import {
+  listMyClasses,
+  listMyClassNameSuggestions,
+  listMySectionSuggestions,
+} from '@/lib/actions/classes';
+import { ClassesView } from '@/components/teacher/ClassesView';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TeacherClassesPage() {
-  const result = await listMyClasses();
+  const [classesRes, namesRes, sectionsRes] = await Promise.all([
+    listMyClasses(),
+    listMyClassNameSuggestions(),
+    listMySectionSuggestions(),
+  ]);
 
-  if (!result.ok) {
-    return (
-      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        Could not load classes: {result.error}
-      </div>
-    );
-  }
+  const initialClasses = classesRes.ok ? classesRes.data : [];
+  const nameSuggestions = namesRes.ok ? namesRes.data : [];
+  const sectionSuggestions = sectionsRes.ok ? sectionsRes.data : [];
 
-  return <ClassesView initialClasses={result.data} />;
+  return (
+    <ClassesView
+      initialClasses={initialClasses}
+      nameSuggestions={nameSuggestions}
+      sectionSuggestions={sectionSuggestions}
+    />
+  );
 }

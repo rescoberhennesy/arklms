@@ -1,167 +1,160 @@
+// src/components/teacher/ClassCard.tsx
 'use client';
 
 import Link from 'next/link';
-import { useState, useTransition, useRef, useEffect } from 'react';
-import { MoreVertical, Copy, RefreshCw, Archive, ArchiveRestore, Check } from 'lucide-react';
-import {
-  setClassArchived,
-  regenerateInviteCode,
-} from '@/lib/actions/classes';
-import type { ClassRow } from '@/types/class';
+import { useState, useRef, useEffect } from 'react';
+import { MoreVertical, Copy, Pencil, Archive, ArchiveRestore, Trash2, Users } from 'lucide-react';
+import type { TeacherClassListItem } from '@/types/class';
+import { cn } from '@/lib/utils/cn';
 
 interface ClassCardProps {
-  classRow: ClassRow;
+  cls: TeacherClassListItem;
+  onCopyCode: (code: string) => void;
+  onEdit: (cls: TeacherClassListItem) => void;
+  onToggleArchive: (cls: TeacherClassListItem) => void;
+  onDelete: (cls: TeacherClassListItem) => void;
 }
 
-export default function ClassCard({ classRow }: ClassCardProps) {
+const DEFAULT_COLOR = '#FCA5A5';
+
+export function ClassCard({
+  cls,
+  onCopyCode,
+  onEdit,
+  onToggleArchive,
+  onDelete,
+}: ClassCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    if (!menuOpen) return;
+    function onDocClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     }
-    if (menuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false);
     }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [menuOpen]);
 
-  const stop = (e: React.MouseEvent | React.KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  async function handleCopyCode(e: React.MouseEvent) {
-    stop(e);
-    try {
-      await navigator.clipboard.writeText(classRow.invite_code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError('Could not copy to clipboard.');
-    }
-    setMenuOpen(false);
-  }
-
-  function handleRegenerateCode(e: React.MouseEvent) {
-    stop(e);
-    setMenuOpen(false);
-    if (!confirm('Reset the invite code? Old code will stop working immediately.')) {
-      return;
-    }
-    startTransition(async () => {
-      const res = await regenerateInviteCode(classRow.id);
-      if (!res.ok) setError(res.error);
-    });
-  }
-
-  function handleToggleArchive(e: React.MouseEvent) {
-    stop(e);
-    setMenuOpen(false);
-    startTransition(async () => {
-      const res = await setClassArchived(classRow.id, !classRow.is_archived);
-      if (!res.ok) setError(res.error);
-    });
-  }
+  const color = cls.color ?? DEFAULT_COLOR;
+  const hasCover = !!cls.cover_photo_url;
 
   return (
-    <Link
-      href={`/teacher/classes/${classRow.id}`}
-      className="group relative block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-500"
+    <div
+      className={cn(
+        'group relative flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md',
+        cls.is_archived && 'opacity-70',
+      )}
     >
-      <div
-        className="relative h-24 px-4 py-3"
-        style={{ backgroundColor: classRow.color }}
+      <Link
+        href={`/teacher/classes/${cls.id}`}
+        className="relative block h-28 w-full"
+        style={hasCover ? undefined : { backgroundColor: color }}
       >
-        <h3 className="line-clamp-2 pr-10 text-lg font-semibold text-white">
-          {classRow.name}
-        </h3>
-        {classRow.section && (
-          <p className="mt-1 text-sm font-medium text-white/90">
-            {classRow.section}
-          </p>
+        {hasCover && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cls.cover_photo_url ?? ''}
+            alt=""
+            className="h-full w-full object-cover"
+          />
         )}
-
-        <div ref={menuRef} className="absolute right-2 top-2">
-          <button
-            type="button"
-            aria-label="Class options"
-            onClick={(e) => {
-              stop(e);
-              setMenuOpen((v) => !v);
-            }}
-            className="rounded-full p-1.5 text-white/90 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/60"
-          >
-            <MoreVertical size={18} />
-          </button>
-
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-9 z-10 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-              onClick={stop}
-            >
-              <MenuItem
-                icon={copied ? <Check size={16} /> : <Copy size={16} />}
-                label={copied ? 'Copied!' : `Copy code: ${classRow.invite_code}`}
-                onClick={handleCopyCode}
-              />
-              <MenuItem
-                icon={<RefreshCw size={16} />}
-                label="Reset invite code"
-                onClick={handleRegenerateCode}
-                disabled={isPending}
-              />
-              <div className="my-1 border-t border-gray-100" />
-              <MenuItem
-                icon={
-                  classRow.is_archived ? (
-                    <ArchiveRestore size={16} />
-                  ) : (
-                    <Archive size={16} />
-                  )
-                }
-                label={classRow.is_archived ? 'Restore class' : 'Archive class'}
-                onClick={handleToggleArchive}
-                disabled={isPending}
-              />
-            </div>
+        <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/15" />
+        <div className="absolute inset-x-0 bottom-0 p-4">
+          <h3 className="truncate text-lg font-semibold text-white drop-shadow-sm">
+            {cls.name}
+          </h3>
+          {cls.section && (
+            <p className="truncate text-sm text-white/90 drop-shadow-sm">
+              {cls.section}
+            </p>
           )}
         </div>
+      </Link>
+
+      <div ref={menuRef} className="absolute right-2 top-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenuOpen((v) => !v);
+          }}
+          className="rounded-full bg-white/85 p-1.5 text-gray-700 shadow-sm hover:bg-white"
+          aria-label="Class actions"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+            <MenuItem
+              icon={<Copy className="h-4 w-4" />}
+              label="Copy code"
+              onClick={() => {
+                setMenuOpen(false);
+                onCopyCode(cls.invite_code);
+              }}
+            />
+            <MenuItem
+              icon={<Pencil className="h-4 w-4" />}
+              label="Edit"
+              onClick={() => {
+                setMenuOpen(false);
+                onEdit(cls);
+              }}
+            />
+            <MenuItem
+              icon={
+                cls.is_archived ? (
+                  <ArchiveRestore className="h-4 w-4" />
+                ) : (
+                  <Archive className="h-4 w-4" />
+                )
+              }
+              label={cls.is_archived ? 'Unarchive' : 'Archive'}
+              onClick={() => {
+                setMenuOpen(false);
+                onToggleArchive(cls);
+              }}
+            />
+            <div className="border-t border-gray-100" />
+            <MenuItem
+              icon={<Trash2 className="h-4 w-4" />}
+              label="Delete"
+              destructive
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete(cls);
+              }}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="p-4">
-        {classRow.subject_code && (
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {classRow.subject_code}
-          </p>
-        )}
-        <p className="mt-1 text-sm text-gray-700">{classRow.semester}</p>
-        {classRow.description && (
-          <p className="mt-2 line-clamp-2 text-sm text-gray-600">
-            {classRow.description}
-          </p>
-        )}
-        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-          <span className="text-xs text-gray-500">Invite code</span>
-          <code className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-800">
-            {classRow.invite_code}
-          </code>
+      <Link
+        href={`/teacher/classes/${cls.id}`}
+        className="flex flex-1 flex-col gap-2 p-4"
+      >
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          {cls.semester}
+        </p>
+        <div className="mt-auto flex items-center gap-1.5 text-sm text-gray-600">
+          <Users className="h-4 w-4" />
+          <span>
+            {cls.enrolled_count} {cls.enrolled_count === 1 ? 'student' : 'students'}
+          </span>
         </div>
-      </div>
-
-      {error && (
-        <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
-          {error}
-        </div>
-      )}
-    </Link>
+      </Link>
+    </div>
   );
 }
 
@@ -169,23 +162,24 @@ function MenuItem({
   icon,
   label,
   onClick,
-  disabled = false,
+  destructive,
 }: {
   icon: React.ReactNode;
   label: string;
-  onClick: (e: React.MouseEvent) => void;
-  disabled?: boolean;
+  onClick: () => void;
+  destructive?: boolean;
 }) {
   return (
     <button
       type="button"
-      role="menuitem"
       onClick={onClick}
-      disabled={disabled}
-      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+      className={cn(
+        'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50',
+        destructive ? 'text-red-600 hover:bg-red-50' : 'text-gray-700',
+      )}
     >
-      <span className="text-gray-500">{icon}</span>
-      <span className="truncate">{label}</span>
+      {icon}
+      <span>{label}</span>
     </button>
   );
 }
