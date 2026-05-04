@@ -35,6 +35,16 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // /join/<code> needs special handling: signed-out users should bounce to
+  // landing with a `next` param so they return here after auth.
+  // We do this in middleware (rather than in the page itself) because
+  // Next.js 16 redirect() drops query strings.
+  if (pathname.startsWith('/join/') && !user) {
+    const target = new URL('/', request.url)
+    target.searchParams.set('next', pathname + request.nextUrl.search)
+    return NextResponse.redirect(target)
+  }
+
   // Protected routes - require authentication
   const protectedPaths = ['/admin', '/teacher', '/student']
   const isProtected = protectedPaths.some((path) => pathname.startsWith(path))
@@ -42,6 +52,7 @@ export async function updateSession(request: NextRequest) {
   if (isProtected && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
+    url.search = ''
     return NextResponse.redirect(url)
   }
 

@@ -1,30 +1,43 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LandingNavbar() {
+  const searchParams = useSearchParams()
+
   const handleLogin = async () => {
-  const supabase = createClient()
+    const supabase = createClient()
 
-  // Clear any stale session before starting fresh OAuth
-  await supabase.auth.signOut()
+    // Clear any stale session before starting fresh OAuth
+    await supabase.auth.signOut()
 
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'azure',
-    options: {
-      scopes: 'email openid profile User.Read',
-      redirectTo: `${window.location.origin}/auth/callback`,
-      queryParams: {
-        prompt: 'select_account', // Forces Microsoft to show sign-in page every time
+    // Carry ?next=... through OAuth so /auth/callback can redirect back
+    const rawNext = searchParams.get('next')
+    const safeNext =
+      rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
+        ? rawNext
+        : null
+    const callbackUrl = safeNext
+      ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
+      : `${window.location.origin}/auth/callback`
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        scopes: 'email openid profile User.Read',
+        redirectTo: callbackUrl,
+        queryParams: {
+          prompt: 'select_account',
+        },
       },
-    },
-  })
+    })
 
-  if (error) {
-    console.error('Microsoft login error:', error.message)
-    alert('Login failed. Please try again.')
+    if (error) {
+      console.error('Microsoft login error:', error.message)
+      alert('Login failed. Please try again.')
+    }
   }
-}
 
   return (
     <header className="nav-wrap">

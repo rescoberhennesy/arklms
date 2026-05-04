@@ -225,3 +225,57 @@ export async function removeEnrollment(
   if (error) throw new Error(`Failed to remove student: ${error.message}`);
   revalidatePath(`/teacher/classes/${classId}`);
 }
+// --------------------------------------------------------------------------
+// STUDENT — class detail
+// --------------------------------------------------------------------------
+
+export type StudentClassDetail = {
+  id: string;
+  name: string;
+  section: string | null;
+  semester: string;
+  color: string | null;
+  cover_photo_url: string | null;
+  description: string | null;
+  teacher_name: string | null;
+  enrolled_at: string;
+};
+
+export async function getStudentClassById(
+  classId: string,
+): Promise<StudentClassDetail | null> {
+  const { supabase, userId } = await requireAuthUserId();
+
+  const { data, error } = await supabase
+    .from('class_enrollments')
+    .select(
+      `
+        enrolled_at,
+        classes:class_id (
+          id, name, section, semester, color, cover_photo_url, description,
+          teacher:teacher_id ( full_name )
+        )
+      `,
+    )
+    .eq('class_id', classId)
+    .eq('student_id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to load class: ${error.message}`);
+  if (!data) return null;
+
+  const c: any = data.classes;
+  if (!c) return null;
+
+  return {
+    id: c.id,
+    name: c.name,
+    section: c.section,
+    semester: c.semester,
+    color: c.color,
+    cover_photo_url: c.cover_photo_url,
+    description: c.description,
+    teacher_name: c.teacher?.full_name ?? null,
+    enrolled_at: data.enrolled_at,
+  };
+}
