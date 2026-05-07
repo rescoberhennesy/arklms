@@ -5,6 +5,9 @@ import { getStudentClassById } from '@/lib/actions/enrollments';
 import LeaveClassButton from '@/components/student/LeaveClassButton';
 import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
+import StreamView from '@/components/dashboard/StreamView';
+import { listAnnouncements } from '@/lib/actions/announcements';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +49,19 @@ export default async function StudentClassDetailPage({
 
   if (!klass) {
     redirect('/student/classes');
+  }
+
+  // Pre-fetch stream-tab data on the server when that tab is active
+  let announcements: Awaited<ReturnType<typeof listAnnouncements>> = [];
+  let currentUserId = '';
+  if (tab === 'stream') {
+    const supabase = await createClient();
+    const [{ data: { user } }, anns] = await Promise.all([
+      supabase.auth.getUser(),
+      listAnnouncements(klass.id),
+    ]);
+    currentUserId = user?.id ?? '';
+    announcements = anns;
   }
 
   const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
@@ -113,7 +129,14 @@ export default async function StudentClassDetailPage({
       </nav>
 
       <div>
-        {tab === 'stream' && <StreamTab description={klass.description} />}
+        {tab === 'stream' && (
+          <StreamTab
+            description={klass.description}
+            classId={klass.id}
+            announcements={announcements}
+            currentUserId={currentUserId}
+          />
+        )}
         {tab === 'modules' && <ComingSoonTab title="Modules" />}
         {tab === 'activities' && <ComingSoonTab title="Activities" />}
         {tab === 'grades' && <ComingSoonTab title="Grades" />}
@@ -122,7 +145,17 @@ export default async function StudentClassDetailPage({
   );
 }
 
-function StreamTab({ description }: { description: string | null }) {
+function StreamTab({
+  description,
+  classId,
+  announcements,
+  currentUserId,
+}: {
+  description: string | null;
+  classId: string;
+  announcements: Awaited<ReturnType<typeof listAnnouncements>>;
+  currentUserId: string;
+}) {
   return (
     <div className="space-y-4">
       {description && (
@@ -135,12 +168,12 @@ function StreamTab({ description }: { description: string | null }) {
           </p>
         </div>
       )}
-      <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">Class stream</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Announcements and class activity will appear here.
-        </p>
-      </div>
+      <StreamView
+        classId={classId}
+        announcements={announcements}
+        currentUserId={currentUserId}
+        isTeacher={false}
+      />
     </div>
   );
 }

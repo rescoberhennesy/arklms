@@ -9,8 +9,11 @@ import {
 } from '@/lib/actions/enrollments';
 import { CopyButton } from '@/components/teacher/CopyButton';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
+import StreamView from '@/components/dashboard/StreamView';
 import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
 import { StudentsTab } from '@/components/teacher/StudentsTab';
+import { listAnnouncements } from '@/lib/actions/announcements';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +49,19 @@ export default async function ClassDetailPage({
       listPendingJoinRequests(klass.id),
       listClassRoster(klass.id),
     ]);
+  }
+
+  // Pre-fetch stream-tab data on the server when that tab is active
+  let announcements: Awaited<ReturnType<typeof listAnnouncements>> = [];
+  let currentUserId = '';
+  if (tab === 'stream') {
+    const supabase = await createClient();
+    const [{ data: { user } }, anns] = await Promise.all([
+      supabase.auth.getUser(),
+      listAnnouncements(klass.id),
+    ]);
+    currentUserId = user?.id ?? '';
+    announcements = anns;
   }
 
   const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
@@ -128,6 +144,8 @@ export default async function ClassDetailPage({
             inviteCode={klass.invite_code}
             inviteCodeExpiresAt={klass.invite_code_expires_at}
             inviteCodeDisabled={klass.invite_code_disabled}
+            announcements={announcements}
+            currentUserId={currentUserId}
           />
         )}
         {tab === 'modules' && <ComingSoonTab title="Modules" />}
@@ -151,12 +169,16 @@ function StreamTab({
   inviteCode,
   inviteCodeExpiresAt,
   inviteCodeDisabled,
+  announcements,
+  currentUserId,
 }: {
   description: string | null;
   classId: string;
   inviteCode: string;
   inviteCodeExpiresAt: string | null;
   inviteCodeDisabled: boolean;
+  announcements: Awaited<ReturnType<typeof listAnnouncements>>;
+  currentUserId: string;
 }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -169,12 +191,12 @@ function StreamTab({
             <p className="whitespace-pre-wrap text-sm text-gray-700">{description}</p>
           </div>
         )}
-        <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold text-gray-900">Class stream</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Announcements and class activity will appear here.
-          </p>
-        </div>
+        <StreamView
+          classId={classId}
+          announcements={announcements}
+          currentUserId={currentUserId}
+          isTeacher={true}
+        />
       </div>
       <div className="lg:col-span-1">
         <InviteCodeStrip
