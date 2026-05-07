@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { previewClassByCode } from '@/lib/actions/joinPreview';
-import JoinConfirmCard from '@/components/students/JoinConfirmCard';
+import JoinConfirmCard from '@/components/student/JoinConfirmCard';
 
 export const dynamic = 'force-dynamic';
 

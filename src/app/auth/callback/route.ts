@@ -31,7 +31,6 @@ export async function GET(request: Request) {
         }
 
         const role = profile.role
-        console.log('User Role detected:', role)
 
         // Honor `next` if present and safe; otherwise fall back to role dashboard.
         if (next) {

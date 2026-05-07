@@ -1,8 +1,8 @@
-// src/app/(dashboard)/teacher/dashboard/page.tsx
 import Link from 'next/link';
 import { Users } from 'lucide-react';
 import { listMyClasses } from '@/lib/actions/classes';
 import type { TeacherClassListItem } from '@/types/class';
+import ClassCover from '@/components/dashboard/ClassCover';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,14 +77,16 @@ function StatCard({ label, value }: { label: string; value: number }) {
 }
 
 function RecentClassCard({ cls }: { cls: TeacherClassListItem }) {
-  const color = cls.color ?? '#FCA5A5';
   return (
     <Link
       href={`/teacher/classes/${cls.id}`}
       className="block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md"
     >
-      <div className="relative h-24" style={{ backgroundColor: color }}>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/15" />
+      <ClassCover
+        url={cls.cover_photo_url}
+        color={cls.color}
+        className="h-24 w-full"
+      >
         <div className="absolute inset-x-0 bottom-0 p-3">
           <h3 className="truncate text-base font-semibold text-white drop-shadow-sm">
             {cls.name}
@@ -95,7 +97,7 @@ function RecentClassCard({ cls }: { cls: TeacherClassListItem }) {
             </p>
           )}
         </div>
-      </div>
+      </ClassCover>
       <div className="flex items-center justify-between p-3">
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
           {cls.semester}

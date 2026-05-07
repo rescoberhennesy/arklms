@@ -76,6 +76,7 @@ export interface StudentClassListItem {
   cover_photo_url: string | null;
   teacher_name: string | null;
   enrolled_at: string;
+  is_archived: boolean;
 }
 
 /**
@@ -121,6 +122,7 @@ export const INVITE_EXPIRATION_PRESETS = [
   { label: 'Never',    hours: null },
 ] as const;
 
+
 export type InviteExpirationHours = number | null;
 
 /**
@@ -139,7 +141,11 @@ export const CLASS_COLORS = [
   '#D6D3D1', // stone-300
 ] as const;
 
+export const DEFAULT_CLASS_COLOR = CLASS_COLORS[0];
+
+
 /**
+
  * Pick a deterministic color from the palette.
  */
 export function pickClassColor(seed: string): string {

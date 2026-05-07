@@ -72,14 +72,17 @@ export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
       `,
     )
     .eq('student_id', userId)
-    .order('enrolled_at', { ascending: false });
+    .order('display_order', { ascending: true });
 
   if (error) throw new Error(`Failed to list enrolled classes: ${error.message}`);
 
-  return (data ?? [])
+  // Active classes first, archived after. Each block keeps the student's
+  // drag order via display_order (already the .order above). The two-pass
+  // sort below partitions by is_archived without disturbing inner order.
+  const items = (data ?? [])
     .map((row: any) => {
       const c = row.classes;
-      if (!c || c.is_archived) return null;
+      if (!c) return null;
       return {
         id: c.id,
         name: c.name,
@@ -89,9 +92,15 @@ export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
         cover_photo_url: c.cover_photo_url,
         teacher_name: c.teacher?.full_name ?? null,
         enrolled_at: row.enrolled_at,
+        is_archived: c.is_archived,
       } as StudentClassListItem;
     })
     .filter((x): x is StudentClassListItem => x !== null);
+
+  return [
+    ...items.filter((c) => !c.is_archived),
+    ...items.filter((c) => c.is_archived),
+  ];
 }
 
 export async function listMyPendingRequests(): Promise<
@@ -278,4 +287,60 @@ export async function getStudentClassById(
     teacher_name: c.teacher?.full_name ?? null,
     enrolled_at: data.enrolled_at,
   };
+}
+
+
+export async function reorderMyEnrollments(orderedClassIds: string[]): Promise<void> {
+  const { supabase } = await requireAuthUserId();
+  const { error } = await supabase.rpc('reorder_my_enrollments', {
+    p_class_ids: orderedClassIds,
+  });
+  if (error) throw new Error(`Failed to reorder enrollments: ${error.message}`);
+}
+
+
+export async function leaveClass(classId: string): Promise<void> {
+  const { supabase, userId } = await requireAuthUserId();
+  const { error } = await supabase
+    .from('class_enrollments')
+    .delete()
+    .eq('class_id', classId)
+    .eq('student_id', userId);
+  if (error) throw new Error(`Failed to leave class: ${error.message}`);
+}
+
+
+export async function listMyRejectedRequests(): Promise <
+  Array<{ id: string; class_id: string; class_name: string; decided_at: string }>
+> {
+  const { supabase, userId } = await requireAuthUserId();
+  const { data, error } = await supabase
+    .from('class_join_requests')
+    .select(`id, class_id, decided_at, classes:class_id ( name )`)
+    .eq('student_id', userId)
+    .eq('status', 'rejected')
+    .order('decided_at', { ascending: false });
+
+  if (error) throw new Error(`Failed to list rejected requests: ${error.message}`);
+
+  return (data ?? [])
+    .filter((row: any) => row.decided_at !== null)
+    .map((row: any) => ({
+      id: row.id,
+      class_id: row.class_id,
+      class_name: row.classes?.name ?? '(unknown class)',
+      decided_at: row.decided_at,
+    }));
+}
+
+export async function dismissRejectedRequest(requestId: string): Promise<void> {
+  const { supabase } = await requireAuthUserId();
+  const { error } = await supabase
+    .from('class_join_requests')
+    .delete()
+    .eq('id', requestId)
+    .eq('status', 'rejected');
+  if (error) throw new Error(`Failed to dismiss request: ${error.message}`);
+  revalidatePath('/student/classes');
+  revalidatePath('/student/dashboard');
 }

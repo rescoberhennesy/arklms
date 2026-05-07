@@ -11,8 +11,12 @@ import {
   updateClass,
   setClassArchived,
   deleteClass,
+  reorderMyClasses,
 } from '@/lib/actions/classes';
 import type { ClassFormInput, TeacherClassListItem } from '@/types/class';
+import { useRouter } from 'next/navigation';
+import SortableClassGrid from '@/components/dashboard/SortableClassGrid';
+import SortableItem from '@/components/dashboard/SortableItem';
 
 interface ClassesViewProps {
   initialClasses: TeacherClassListItem[];
@@ -30,11 +34,38 @@ export function ClassesView({
   nameSuggestions,
   sectionSuggestions,
 }: ClassesViewProps) {
+  const router = useRouter();
   const [classes, setClasses] = useState(initialClasses);
   const [formState, setFormState] = useState<FormState>({ kind: 'closed' });
   const [deleteTarget, setDeleteTarget] = useState<TeacherClassListItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  async function handleReorder(orderedIds: string[]) {
+    // Snapshot pre-drag order so we can roll back on server failure.
+    const snapshot = classes;
+
+    // Apply optimistically so `active` reflects the new order on the next
+    // render. Without this the inline grid would snap back because the
+    // parent's `classes` state still has the old order.
+    setClasses((prev) => {
+      const byId = new Map(prev.map((c) => [c.id, c]));
+      const reordered = orderedIds
+        .map((id) => byId.get(id))
+        .filter((c): c is TeacherClassListItem => Boolean(c));
+      // Append any items not in orderedIds (e.g. archived classes that
+      // weren't part of the dragged set) so we don't drop them.
+      const known = new Set(orderedIds);
+      const rest = prev.filter((c) => !known.has(c.id));
+      return [...reordered, ...rest];
+    });
+
+    const res = await reorderMyClasses(orderedIds);
+    if (!res.ok) {
+      setClasses(snapshot);
+      showToast(res.error || 'Could not save new order');
+    }
+  }
 
   function showToast(message: string) {
     setToast(message);
@@ -137,18 +168,21 @@ export function ClassesView({
       )}
 
       {active.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {active.map((cls) => (
-            <ClassCard
-              key={cls.id}
-              cls={cls}
-              onCopyCode={handleCopyCode}
-              onEdit={(c) => setFormState({ kind: 'edit', cls: c as TeacherClassListItem })}
-              onToggleArchive={handleToggleArchive}
-              onDelete={(c) => setDeleteTarget(c as TeacherClassListItem)}
-            />
-          ))}
-        </div>
+        <SortableClassGrid
+          items={active}
+          onReorder={handleReorder}
+          renderItem={(cls) => (
+            <SortableItem id={cls.id}>
+              <ClassCard
+                cls={cls}
+                onCopyCode={handleCopyCode}
+                onEdit={(c) => setFormState({ kind: 'edit', cls: c as TeacherClassListItem })}
+                onToggleArchive={handleToggleArchive}
+                onDelete={(c) => setDeleteTarget(c as TeacherClassListItem)}
+              />
+            </SortableItem>
+          )}
+        />
       )}
 
       {archived.length > 0 && (
@@ -156,18 +190,20 @@ export function ClassesView({
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
             Archived
           </h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {archived.map((cls) => (
+          <SortableClassGrid
+            items={archived}
+            onReorder={() => {}}
+            disabled
+            renderItem={(cls) => (
               <ClassCard
-                key={cls.id}
                 cls={cls}
                 onCopyCode={handleCopyCode}
                 onEdit={(c) => setFormState({ kind: 'edit', cls: c as TeacherClassListItem })}
                 onToggleArchive={handleToggleArchive}
                 onDelete={(c) => setDeleteTarget(c as TeacherClassListItem)}
               />
-            ))}
-          </div>
+            )}
+          />
         </div>
       )}
 

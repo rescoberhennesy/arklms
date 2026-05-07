@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { requestJoinClassByCode } from '@/lib/actions/enrollments';
+import { DEFAULT_CLASS_COLOR } from '@/types/class';
 
 type Props = {
   code: string;
@@ -63,7 +64,7 @@ export default function JoinConfirmCard({
     });
   }
 
-  const color = classColor ?? '#FCA5A5';
+  const color = classColor ?? DEFAULT_CLASS_COLOR;
 
   if (submitted.kind === 'success') {
     return (

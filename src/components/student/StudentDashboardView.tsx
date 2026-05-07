@@ -4,16 +4,17 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Users } from 'lucide-react';
 import type { StudentClassListItem } from '@/types/class';
+import ClassCover from '@/components/dashboard/ClassCover';
 import JoinClassModal from './JoinClassModal';
 
 type Props = {
-  enrolledCount: number;
+  activeCount: number;
   pendingCount: number;
   recentClasses: StudentClassListItem[];
 };
 
 export default function StudentDashboardView({
-  enrolledCount,
+  activeCount,
   pendingCount,
   recentClasses,
 }: Props) {
@@ -38,7 +39,7 @@ export default function StudentDashboardView({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label="Enrolled classes" value={enrolledCount} />
+        <StatCard label="Active classes" value={activeCount} />
         <StatCard label="Pending requests" value={pendingCount} />
       </div>
 
@@ -89,14 +90,16 @@ function StatCard({ label, value }: { label: string; value: number }) {
 }
 
 function RecentClassCard({ cls }: { cls: StudentClassListItem }) {
-  const color = cls.color ?? '#FCA5A5';
   return (
     <Link
       href={`/student/classes/${cls.id}`}
       className="block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md"
     >
-      <div className="relative h-24" style={{ backgroundColor: color }}>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/15" />
+      <ClassCover
+        url={cls.cover_photo_url}
+        color={cls.color}
+        className="h-24 w-full"
+      >
         <div className="absolute inset-x-0 bottom-0 p-3">
           <h3 className="truncate text-base font-semibold text-white drop-shadow-sm">
             {cls.name}
@@ -107,7 +110,7 @@ function RecentClassCard({ cls }: { cls: StudentClassListItem }) {
             </p>
           )}
         </div>
-      </div>
+      </ClassCover>
       <div className="flex items-center justify-between p-3">
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
           {cls.semester}

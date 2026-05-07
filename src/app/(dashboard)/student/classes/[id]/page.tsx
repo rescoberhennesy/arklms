@@ -2,6 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { getStudentClassById } from '@/lib/actions/enrollments';
+import LeaveClassButton from '@/components/student/LeaveClassButton';
+import { DEFAULT_CLASS_COLOR } from '@/types/class';
+import SetPageTitle from '@/components/dashboard/SetPageTitle';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,10 +48,11 @@ export default async function StudentClassDetailPage({
     redirect('/student/classes');
   }
 
-  const headerColor = klass.color ?? '#FCA5A5';
+  const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
 
   return (
     <div className="space-y-6">
+      <SetPageTitle title={klass.name} />
       <Link
         href="/student/classes"
         className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
@@ -63,6 +67,9 @@ export default async function StudentClassDetailPage({
         style={{ backgroundColor: headerColor }}
       >
         <div className="absolute inset-0 bg-gradient-to-br from-black/0 to-black/15" />
+        <div className="absolute right-4 top-4 z-10">
+          <LeaveClassButton classId={klass.id} className={klass.name} />
+        </div>
         <div className="relative">
           <h1 className="text-3xl font-bold drop-shadow-sm">{klass.name}</h1>
           {klass.section && (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { RefreshCw, Lock, Unlock, AlertTriangle } from 'lucide-react';
 import {
   regenerateInviteCode,
@@ -72,7 +72,14 @@ export function InviteCodePanel({
 
   const expiry = formatExpiry(expiresAt);
   const inactive = disabled || expiry.expired;
-  const joinUrl = typeof window !== 'undefined' ? `${window.location.origin}/join/${code}` : `/join/${code}`;
+
+  // Compute the join URL on the client only -- window is unavailable during
+  // SSR, and using `typeof window !== 'undefined'` directly causes a
+  // hydration mismatch on the readOnly input that displays it.
+  const [joinUrl, setJoinUrl] = useState<string>('');
+  useEffect(() => {
+    setJoinUrl(`${window.location.origin}/join/${code}`);
+  }, [code]);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

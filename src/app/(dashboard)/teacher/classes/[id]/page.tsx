@@ -1,13 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Settings } from 'lucide-react';
 import { getClassById } from '@/lib/actions/classes';
+import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import {
   listPendingJoinRequests,
   listClassRoster,
 } from '@/lib/actions/enrollments';
 import { CopyButton } from '@/components/teacher/CopyButton';
-import { InviteCodePanel } from '@/components/teacher/InviteCodePanel';
+import SetPageTitle from '@/components/dashboard/SetPageTitle';
+import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
 import { StudentsTab } from '@/components/teacher/StudentsTab';
 
 export const dynamic = 'force-dynamic';
@@ -46,10 +48,11 @@ export default async function ClassDetailPage({
     ]);
   }
 
-  const headerColor = klass.color ?? '#FCA5A5';
+  const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
 
   return (
     <div className="space-y-6">
+      <SetPageTitle title={klass.name} />
       <Link
         href="/teacher/classes"
         className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
@@ -64,6 +67,13 @@ export default async function ClassDetailPage({
         style={{ backgroundColor: headerColor }}
       >
         <div className="absolute inset-0 bg-gradient-to-br from-black/0 to-black/15" />
+        <Link
+          href={`/teacher/classes/${klass.id}/settings`}
+          className="absolute right-4 top-4 z-10 rounded-full bg-white/20 p-2 text-white shadow-sm hover:bg-white/30"
+          aria-label="Class settings"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
         <div className="relative">
           <h1 className="text-3xl font-bold drop-shadow-sm">{klass.name}</h1>
           {klass.section && (
@@ -167,11 +177,11 @@ function StreamTab({
         </div>
       </div>
       <div className="lg:col-span-1">
-        <InviteCodePanel
+        <InviteCodeStrip
           classId={classId}
-          initialCode={inviteCode}
-          initialExpiresAt={inviteCodeExpiresAt}
-          initialDisabled={inviteCodeDisabled}
+          code={inviteCode}
+          expiresAt={inviteCodeExpiresAt}
+          disabled={inviteCodeDisabled}
         />
       </div>
     </div>

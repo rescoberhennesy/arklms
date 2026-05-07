@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from 'react';
 import { MoreVertical, Copy, Pencil, Archive, ArchiveRestore, Trash2, Users } from 'lucide-react';
 import type { TeacherClassListItem } from '@/types/class';
 import { cn } from '@/lib/utils/cn';
+import ClassCover from '@/components/dashboard/ClassCover';
 
 interface ClassCardProps {
   cls: TeacherClassListItem;
@@ -14,8 +15,6 @@ interface ClassCardProps {
   onToggleArchive: (cls: TeacherClassListItem) => void;
   onDelete: (cls: TeacherClassListItem) => void;
 }
-
-const DEFAULT_COLOR = '#FCA5A5';
 
 export function ClassCard({
   cls,
@@ -45,9 +44,6 @@ export function ClassCard({
     };
   }, [menuOpen]);
 
-  const color = cls.color ?? DEFAULT_COLOR;
-  const hasCover = !!cls.cover_photo_url;
-
   return (
     <div
       className={cn(
@@ -57,28 +53,24 @@ export function ClassCard({
     >
       <Link
         href={`/teacher/classes/${cls.id}`}
-        className="relative block h-28 w-full"
-        style={hasCover ? undefined : { backgroundColor: color }}
+        className="block"
       >
-        {hasCover && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={cls.cover_photo_url ?? ''}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/15" />
-        <div className="absolute inset-x-0 bottom-0 p-4">
-          <h3 className="truncate text-lg font-semibold text-white drop-shadow-sm">
-            {cls.name}
-          </h3>
-          {cls.section && (
-            <p className="truncate text-sm text-white/90 drop-shadow-sm">
-              {cls.section}
-            </p>
-          )}
-        </div>
+        <ClassCover
+          url={cls.cover_photo_url}
+          color={cls.color}
+          className="h-28 w-full"
+        >
+          <div className="absolute inset-x-0 bottom-0 p-4">
+            <h3 className="truncate text-lg font-semibold text-white drop-shadow-sm">
+              {cls.name}
+            </h3>
+            {cls.section && (
+              <p className="truncate text-sm text-white/90 drop-shadow-sm">
+                {cls.section}
+              </p>
+            )}
+          </div>
+        </ClassCover>
       </Link>
 
       <div ref={menuRef} className="absolute right-2 top-2">

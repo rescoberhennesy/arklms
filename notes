@@ -285,3 +285,289 @@ Tabs change from Stream / Modules / People / Grades → Stream / Modules / Activ
 The Students tab (formerly People) now shows pending join requests at the top with Approve/Reject buttons, then the enrolled roster, with a Remove button per student
 "Activities" is just a stub for now — that's a future session
 
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Arkadian LMS (ALMS) — Continuing Development (Session 5)
+
+I'm building Arkadian LMS, a Learning Management System for ARK Technological Institute Education System Inc. Picking up from Session 4.
+
+## 🎯 What was completed in Session 4
+
+### Phase 4 — Student side (the planned work)
+
+**Phase 4 step 1 — Join-by-code modal + `/student/classes` page (verified end-to-end):**
+- `src/components/students/JoinClassModal.tsx` (NEW) — code-entry dialog used from both student dashboard and student classes page. Handles three result `kind`s from `requestJoinClassByCode`: `'pending'`, `'already_enrolled'`, `'request_pending'`. Different success messages per branch. Submits via try/catch (matching `enrollments.ts` throw-on-error convention).
+- `src/components/students/StudentClassesView.tsx` (NEW) — read-only enrolled-class grid (no 3-dot menu, no edit/archive/delete), pending-requests section with Cancel button per request, "+ Join class" button at top.
+- `src/app/(dashboard)/student/classes/page.tsx` (REPLACED placeholder) — server component, calls `listMyEnrolledClasses` + `listMyPendingRequests` in `Promise.all`, hands off to `StudentClassesView`.
+
+**Phase 4 step 2 — Student dashboard:**
+- `src/components/students/StudentDashboardView.tsx` (NEW) — client wrapper for the join modal's open state. Two stat cards (Enrolled / Pending), recent classes section with same `RecentClassCard` pattern as teacher dashboard for visual consistency, "+ Join class" button.
+- `src/app/(dashboard)/student/dashboard/page.tsx` (REPLACED placeholder) — server component, fetches both lists, slices to top 3 recent classes.
+
+**Phase 4 step 3 — Shareable join link `/join/[code]`:**
+- New SQL function `preview_class_by_code(p_code)` — read-only RPC, returns `{ status, class_id, class_name, class_section, class_semester, class_color, teacher_name }`. Status is one of: `valid`, `not_found`, `disabled`, `expired`, `already_enrolled`, `request_pending`. Mirrors `request_join_class_by_code` validation but inserts nothing.
+- New enum type `public.join_preview_status` for the status column.
+- `src/lib/actions/joinPreview.ts` (NEW) — wrapper for the RPC, throws on auth failure but returns soft statuses as data so the UI can switch on them without try/catch hell.
+- `src/components/students/JoinConfirmCard.tsx` (NEW) — client component, shows class name/section/teacher in a colored card with a "Confirm and request to join" button. Submits via `requestJoinClassByCode` and renders success/error inline.
+- `src/app/(dashboard)/join/[code]/page.tsx` (NEW) — server page, gates on auth and role, switches on preview status to render one of: confirmation card (valid), already-enrolled InfoCard, pending-request InfoCard, error cards (not_found / disabled / expired), or NonStudentBlocked card (teacher/admin trying to join).
+- `src/components/landing/LandingNavbar.tsx` (MODIFIED) — reads `?next=` from current URL via `useSearchParams`, validates it's a relative path (`startsWith('/')`, not `startsWith('//')`), forwards to OAuth `redirectTo` as `?next=<encoded>`.
+- `src/app/(auth)/auth/callback/route.ts` (MODIFIED) — reads `next` from search params, validates with `safeNext()` helper (relative paths only, blocks protocol/host injection), redirects to `next` if present, otherwise falls back to role dashboard.
+- `src/lib/supabase/middleware.ts` (MODIFIED) — added a special-case block at the top: `if (pathname.startsWith('/join/') && !user)` builds a redirect to `/?next=<pathname+search>` using `searchParams.set()`. **This is the critical fix for the Next.js 16 redirect quirk — see learned constraints below.**
+
+**Phase 4 step 4 — Student class detail `/student/classes/[id]`:**
+- `getStudentClassById(classId)` (NEW) added to `src/lib/actions/enrollments.ts` — selects from `class_enrollments` joined to `classes` and `profiles`, scoped to the calling student. Relies on existing RLS (`class_enrollments` SELECT for own rows + `classes_select_enrolled_student` for joined class data). Returns `null` if not enrolled.
+- `StudentClassDetail` type and export from `enrollments.ts`.
+- `src/app/(dashboard)/student/classes/[id]/page.tsx` (NEW) — server page, validates the route param against a UUID regex BEFORE hitting the DB (otherwise non-UUIDs cause Postgres `invalid input syntax for type uuid` errors), wraps the data fetch in try/catch where any failure silently redirects to `/student/classes`. Tabs: Stream / Modules / Activities / Grades (no Students tab). Read-only header with name, section, semester, teacher name (no invite code visible).
+
+### Bonus work — three Session 3 SQL bugs found and fixed
+
+**These were latent bugs that Session 3 introduced but never tested with real data flows. The Phase 4 student-side work was the first time anything actually exercised these paths end-to-end, which is why they only surfaced now.**
+
+1. **`request_join_class_by_code` — ambiguous `class_id` reference.**
+   - Migration: `20260505010000_fix_request_join_class_ambiguity.sql`.
+   - Bug: function declared `RETURNS TABLE(class_id uuid, ...)` which creates an output column named `class_id`. Inside the body, `WHERE class_id = v_class.id` collided with that output parameter. Postgres raised `column reference "class_id" is ambiguous`.
+   - Fix: qualify all column references in WHERE/USING with table aliases (`ce.class_id`, `cjr.class_id`, etc.).
+
+2. **`is_class_teacher` argument order swapped in three places.**
+   - The function signature is `is_class_teacher(p_class_id uuid, p_user_id uuid)` — class first, user second.
+   - Five call sites correctly pass class first; three Session 3 call sites passed user first. All three silently returned false → policies/checks always denied teachers.
+   - **Migration `20260505020000_fix_class_join_requests_teacher_policies.sql`** — DROP+CREATE the two `class_join_requests` teacher RLS policies (`select_teacher`, `update_teacher`) with correct argument order.
+   - **Migration `20260505030000_fix_decide_join_request_argument_order.sql`** — `CREATE OR REPLACE FUNCTION decide_join_request` with corrected `is_class_teacher(v_request.class_id, v_user)` call. (Was raising `'not authorized'` on every Approve/Reject click.)
+   - **Migration `20260505040000_fix_regenerate_class_invite_code_argument_order.sql`** — same fix for `regenerate_class_invite_code`. (Reset Code button was broken too; not noticed in Phase 3b verification because reset wasn't actually clicked.)
+   - These bugs were 100% invisible in Phase 3a/3b verification because Phase 3 didn't have student-side flows to trigger teacher-side reactions.
+
+### Bonus work — Next.js 16 redirect query-string drop
+
+- **Discovery:** `redirect()` from `next/navigation` strips query strings from the Location header in Next.js 16 + Turbopack. Verified with curl: `redirect('/?foo=bar')` produces `location: /` with no query. This affects every `redirect()` call across the app.
+- **Workaround applied for `/join/[code]`:** the auth-gate redirect was moved from the page (`redirect('/?next=...')`) up into middleware (`NextResponse.redirect()` with `searchParams.set()`), which preserves query strings correctly.
+- **Page still has its `if (!user) redirect(...)` block** as a defensive fallback if middleware ever stops firing — but it's effectively unreachable.
+- **Other redirects in the codebase that use query params should be audited** if/when they're added. Current `redirect()` calls elsewhere only use path-only redirects (e.g. `/student/classes`, `/teacher/dashboard`), so they're fine.
+
+## 🛠️ Tech Stack & Setup (unchanged)
+
+- Framework: Next.js 16 (App Router, Turbopack) + TypeScript
+- Styling: Tailwind CSS + custom red/white theme
+- Backend: Supabase local CLI (`supabase start`). To exec SQL: `docker exec -i $(docker ps -q -f name=supabase_db) psql -U postgres -d postgres`
+- Auth: Microsoft Entra ID (Azure) via Supabase OAuth
+- Package Manager: pnpm
+- OS: Linux at `/home/eiah/Capstone/arkadian_lms`
+- Project structure: `src/` directory with `@/* → ./src/*`
+- Middleware file is `src/proxy.ts` (Next.js 16 renamed `middleware.ts → proxy.ts`)
+
+## 👤 Test accounts (Microsoft Entra)
+
+- `teachertest@alms.onmicrosoft.com` → role: teacher (UUID: `c5c425cb-40e1-4906-98d2-636a6b094a91`)
+- `studenttest@alms.onmicrosoft.com` → role: student (UUID: `e62b252a-9237-499e-8960-efd6dcc79739`)
+- `admintest@alms.onmicrosoft.com` → role: admin
+
+## 🗄️ Current Database State
+
+**Tables:** `profiles`, `classes`, `class_enrollments`, `class_join_requests`
+
+**Enums:** `user_role`, `join_request_status`, `join_preview_status` (NEW in Session 4)
+
+**Key functions:**
+- `get_user_role(uuid)`
+- `is_class_teacher(p_class_id uuid, p_user_id uuid)` — **class first, user second** (THIS IS THE NATURAL READING DESPITE WHAT EARLIER NOTES SUGGESTED)
+- `generate_invite_code()`
+- `regenerate_class_invite_code(p_class_id, p_expires_in_hours)` — fixed in Session 4
+- `request_join_class_by_code(p_code)` — fixed in Session 4
+- `decide_join_request(p_request_id, p_approve)` — fixed in Session 4
+- `preview_class_by_code(p_code)` — NEW in Session 4
+
+## 🎯 What I want to do next
+
+Based on a gap audit done at the end of Session 4, Session 5 work is sequenced into three phases (5a → 5b → 5c) before moving on to feature phases (6, 7, 8). The audit identified a number of features and bugs that are higher-impact than the original Option A/B/C/D plan suggested, particularly around teacher class management UX.
+
+### Phase 5a — Class management polish (the big one for this session)
+
+Three things teachers will hit on day 1 of real use, all naturally living together:
+
+**1. Cover photo upload (teacher side).**
+- Create Supabase Storage bucket `class-covers` with RLS: teacher of class can read/write their own folder; everyone can read publicly (since the URL is referenced from the class card).
+- Path convention: `class-covers/<class_id>/cover.<ext>`.
+- Upload UI in the class settings page (see #3). Replace existing color cover when present, but **keep color as a fallback AND tint a subtle gradient over the photo** so the class is still visually recognizable in lists, like Google Classroom.
+- Rendering: `cover_photo_url` already exists on the `classes` table — wire ClassCard, RecentClassCard, and the class detail page header to use it when present.
+
+**2. Class ordering — drag-and-drop with sensible defaults.**
+- Add `display_order` integer column to `classes` (per-teacher) AND to `class_enrollments` (per-student). Both default to creation/enrollment time so the unmoved order is "by recent."
+- Use `@dnd-kit/sortable` (lightweight, well-maintained). New classes get inserted at the TOP of the list (matches Google Classroom muscle memory).
+- Teacher can drag any card anywhere on `/teacher/classes`. Student can drag any card on `/student/classes`. Each persists independently — teacher and student see different orderings of "the same" list (correct).
+- Persist via a small server action that updates affected rows' `display_order`. Optimistic client-side reorder for snappy feel.
+- **Why drag-and-drop over pinned/recent:** it's the muscle-memory teachers already have from Google Classroom; we'll need `@dnd-kit` later for module/lesson ordering anyway, so the investment amortizes.
+
+**3. Class settings page `/teacher/classes/[id]/settings`.**
+- New "implicit sixth tab" linked from a gear icon in the class detail header (NOT in the main tabs row — settings are not a content tab).
+- Houses the heavy/irreversible settings: cover photo upload, archive, delete, full invite code controls (move InviteCodePanel here as the canonical location, leave a smaller copy-only widget on the Stream tab).
+- Keep the lightweight `ClassFormModal` (3-dot menu → Edit) for fast name/section/semester/color/description changes.
+
+### Phase 5b — UX gaps that will bite teachers/students fast
+
+**4. Archive must preserve student access.**
+Current bug: `listMyEnrolledClasses` filters out archived classes with `if (!c || c.is_archived) return null`. This means once a teacher archives a class, students *lose access* to past materials and grades — wrong. Fix: surface archived classes in a separate "Past classes" section on `/student/classes`, read-only.
+
+**5. Add unarchive + permanent-delete to archived class menu.**
+Right now archive is one-way from the UI. The 3-dot menu on archived class cards should offer Unarchive and a confirmation-gated Delete permanently.
+
+**6. Rejected join requests should be visible to the student.**
+When a teacher rejects a request, the row's status flips to `'rejected'` but it silently disappears from the student's pending list. Add a small "Rejected requests" sub-section under pending on `/student/classes` showing rejected ones with the rejection date, plus a Dismiss button (which deletes the row).
+
+**7. Student "Leave class" button.**
+Currently only the teacher can remove a student. Add a Leave class button in the student class detail page (with confirmation), which deletes the student's `class_enrollments` row.
+
+**8. "Copy invite link" button in InviteCodePanel.**
+Currently the panel copies the code; teachers also need to copy the full URL. Add a second copy button alongside that copies `${origin}/join/${code}`.
+
+### Phase 5c — Tech debt punch list (the original Session 5 plan)
+
+These are smaller but they should be cleared before more features pile up.
+
+**9. Topnav title bug.** `/teacher/classes/[id]` and `/student/classes/[id]` both show the route segment (UUID or invite code) in the topnav instead of the class name. Topnav lives in `src/components/dashboard/TopNavbar.tsx`. Fix likely involves a layout-level page-title context.
+
+**10. `classes` table INSERT RLS hole.** Two policies (`classes_insert_policy`, `unified_insert_classes`) both have NULL `with_check`, meaning ANY authenticated user can insert ANY class. Replace both with a single `with_check` policy: `teacher_id = auth.uid() AND get_user_role(auth.uid()) = 'teacher'`.
+
+**11. Folder rename.** `src/components/students/` → `src/components/student/` (singular) for consistency with `teacher/`. Update three import sites: `JoinConfirmCard`, `StudentClassesView`, `StudentDashboardView`, plus `JoinClassModal`.
+
+**12. Debug console.log cleanup.** Remove `console.log('[middleware]')` and `console.log('User Role detected:', role)` from `src/lib/supabase/middleware.ts` and `auth/callback/route.ts`.
+
+**13. Orphaned profile row.** Delete `admin@arklms.edu` orphan from `profiles`.
+
+### Phase 6 — Class Stream / Announcements (next session after Phase 5)
+
+The smallest real LMS-content feature; builds the post-creation patterns we'll reuse for modules/activities. Replaces the empty Stream tab placeholder. New tables:
+- `class_announcements` (id, class_id, author_id, body, created_at, updated_at, pinned)
+- `announcement_comments` (id, announcement_id, author_id, body, created_at)
+
+Teacher can post announcements with markdown body, optionally pin one. Students see announcements in reverse-chrono order (pinned first), can comment. Notifications come later.
+
+**Decision needed before building:** plain text, markdown (rendered with `react-markdown`), or full WYSIWYG (TipTap)? My recommendation: markdown stored, rendered with a small renderer. Cheaper than WYSIWYG, more powerful than plain text, and will reuse for module descriptions and assignment instructions. Decide once for the whole app.
+
+### Phase 7 — Modules / Content (medium-large)
+
+Teacher creates modules within a class. Each module has lessons. Lessons can be: rich text (markdown), file upload (PDF/doc/image via Supabase Storage), external link, embedded video. Students view modules in order with optional completion tracking. Reuses `@dnd-kit` from Phase 5a for module/lesson ordering.
+
+New tables: `class_modules` (id, class_id, title, description, display_order, is_published, created_at), `module_lessons` (id, module_id, title, lesson_type enum, content_markdown, file_url, link_url, video_url, display_order, created_at), `module_lesson_completions` (id, lesson_id, student_id, completed_at).
+
+### Phase 8 — Activities / Assignments + Grades (large)
+
+Assignment creation with due dates, submission window, point value. Student submission (text/file). Teacher grading. Grades populate the Grades tab. Ties into a future notifications system.
+
+### Future / not yet sequenced
+
+- Co-teachers / TAs (`class_teachers` junction with role enum)
+- Class duplication (copy modules/activities into a new class as template — requires Phases 7 & 8 done first)
+- Notifications system (bell icon in topnav currently has a red dot but does nothing)
+- Class search/filter on `/teacher/classes` once teachers accumulate many classes
+- Class roster CSV export
+- Topnav class color theming (pull class accent color into topnav when on a class detail page)
+
+## 🔑 Important learned constraints (DO NOT VIOLATE)
+
+- **Microsoft Entra OAuth does NOT populate `auth.jwt() ->> 'role'`** — never use that in RLS. Always use `public.get_user_role(auth.uid())` (SECURITY DEFINER function reading from `profiles`).
+- **Don't use `FOR ALL` RLS policies** — split into per-command policies (SELECT/INSERT/UPDATE/DELETE). The `FOR ALL` form short-circuits other PERMISSIVE policies on INSERT.
+- **Two server-action conventions in this codebase, do NOT mix:**
+  - `classes.ts` returns `ActionResult<T>` envelope — UI must check `res.ok` and access `res.data`.
+  - `enrollments.ts` and `joinPreview.ts` throw on error — UI must use try/catch.
+  - DO NOT "normalize" one to match the other. Match each call site to its action's existing signature.
+- **`is_class_teacher(p_class_id, p_user_id)` — CLASS FIRST, USER SECOND.** Session 3 wrote three call sites with arguments swapped, all silently returning false. When writing new code that calls this function, always pass `class_id` first. The natural English reading "is `<user>` the teacher of `<class>`" is misleading — the actual signature is class-first. Verify any call site before trusting it.
+- Sections and class names are free text owned by the teacher — autocomplete from the teacher's previous values (`SELECT DISTINCT section/name FROM classes WHERE teacher_id = auth.uid()`).
+- All joins require teacher approval — both code-entry and link-click paths create a pending `class_join_requests` row, NOT an instant enrollment.
+- Invite codes — 7-char (alphabet `abcdefghjkmnpqrstuvwxyz23456789`), 7-day default expiration, presets are 24h/7d/30d/Never, teachers can Reset and Disable.
+- **Next.js 16 + Turbopack: `redirect()` from `next/navigation` STRIPS QUERY STRINGS from the Location header.** Verified with curl. Workaround: do query-string-bearing redirects in middleware using `NextResponse.redirect()` with `searchParams.set()`, not in pages with `redirect('/?foo=bar')`. Path-only redirects (no `?`) work fine in pages.
+- **`(dashboard)`, `(auth)` are Next.js route groups** — they don't appear in URLs. So `src/app/(dashboard)/join/[code]/page.tsx` is served at `/join/<code>`, NOT `/dashboard/join/<code>`. Middleware path matching must use the actual URL paths.
+- **The `next` param flow for OAuth round-trip:** `/join/[code]` (signed-out) → middleware redirects to `/?next=/join/<code>` → LandingNavbar reads `?next=` and passes to OAuth `redirectTo` as `/auth/callback?next=<encoded>` → callback honors `next` if `safeNext()` validates it (must start with `/`, not `//`). Both navbar and callback have independent safety checks (belt-and-suspenders).
+- **Validate UUID-shaped route params before hitting the database.** Postgres raises `invalid input syntax for type uuid` on non-UUID strings, which surfaces as a loud error card. Pages with `[id]` segments should regex-check before querying, and treat any DB error as "not found, redirect."
+
+## ⚠️ CRITICAL: How to give me code (UNCHANGED FROM SESSION 4)
+
+- DO NOT run my code through Gemini, Copilot, or any other AI to "fix errors." Other AIs rewrite my code (changed import styles, wrapped actions in `{ok, data}` envelopes when they shouldn't, etc.) and break the contract between files. If something errors, paste the terminal output as text — not a screenshot, not a Gemini-edited version.
+- For files longer than ~50 lines, give me code as a bash heredoc (`cat > path << 'EOF' ... EOF`) so I can paste it as one block into my terminal without markdown link mangling.
+- **Heredoc gotcha learned in Session 4:** even with `'EOF'` quoting, generic-bracket TypeScript like `useState<{ kind: 'idle' }>` can have its `<` eaten on some terminal/clipboard combos. If TS errors complain about `,` or `<` near a generic, this is the culprit — open the file and check the literal bytes.
+- When I report errors, run `pnpm tsc --noEmit 2>&1 | head -80` and paste the text output before fixing — don't guess from screenshots.
+- **My terminal mangles `user.id`, `c.id`, `result.data`, etc. into markdown autolinks** like `[user.id](http://user.id)` when copying from rendered output. The actual files on disk are fine; it's only the rendered paste that's broken. Don't be alarmed when you see this in my pastes; verify with `sed -n` or `view` if uncertain.
+- One phase at a time, with verification between phases.
+
+## 📁 Project Structure (current state)
+
+```
+arkadian_lms/
+├── src/
+│   ├── app/
+│   │   ├── (auth)/auth/callback/route.ts ✅ (modified - honors `next` param)
+│   │   ├── (dashboard)/
+│   │   │   ├── layout.tsx
+│   │   │   ├── admin/{dashboard,teachers,students}/page.tsx
+│   │   │   ├── teacher/
+│   │   │   │   ├── dashboard/page.tsx
+│   │   │   │   ├── classes/page.tsx
+│   │   │   │   ├── classes/[id]/page.tsx
+│   │   │   │   ├── gradebook/page.tsx
+│   │   │   │   └── calendar/page.tsx
+│   │   │   ├── student/
+│   │   │   │   ├── dashboard/page.tsx ✅ (Phase 4 step 2)
+│   │   │   │   ├── classes/page.tsx ✅ (Phase 4 step 1)
+│   │   │   │   ├── classes/[id]/page.tsx ✅ (Phase 4 step 4 - read-only detail)
+│   │   │   │   └── assignments/page.tsx (still placeholder)
+│   │   │   └── join/[code]/page.tsx ✅ (Phase 4 step 3 - shareable join link)
+│   │   ├── api/auth/signout/route.ts
+│   │   └── unauthorized/page.tsx
+│   ├── components/
+│   │   ├── landing/{LandingNavbar ✅,HeroSection,Footer}.tsx
+│   │   ├── dashboard/{Sidebar,TopNavbar,ProfileDropdown}.tsx
+│   │   ├── teacher/
+│   │   │   ├── ClassCard.tsx
+│   │   │   ├── ClassFormModal.tsx
+│   │   │   ├── ClassesView.tsx
+│   │   │   ├── ConfirmDialog.tsx
+│   │   │   ├── CopyButton.tsx
+│   │   │   ├── InviteCodePanel.tsx
+│   │   │   └── StudentsTab.tsx
+│   │   └── students/  ⚠️ (NOTE: plural - inconsistent with teacher/, on Phase 5c punch list)
+│   │       ├── JoinClassModal.tsx ✅ (Phase 4 step 1)
+│   │       ├── StudentClassesView.tsx ✅ (Phase 4 step 1)
+│   │       ├── StudentDashboardView.tsx ✅ (Phase 4 step 2)
+│   │       └── JoinConfirmCard.tsx ✅ (Phase 4 step 3)
+│   ├── lib/
+│   │   ├── actions/
+│   │   │   ├── classes.ts (ActionResult envelope)
+│   │   │   ├── enrollments.ts ✅ (added getStudentClassById)
+│   │   │   └── joinPreview.ts ✅ (NEW - Phase 4 step 3)
+│   │   ├── supabase/{client,server,middleware ✅}.ts
+│   │   └── utils/{cn,getInitials}.ts
+│   ├── types/{user.ts,class.ts}
+│   └── proxy.ts
+└── supabase/
+    └── migrations/
+        ├── 20260430000000_init_profiles.sql
+        ├── 20260501010000_fix_rls_recursion.sql
+        ├── 20260502010000_classes_and_enrollments.sql
+        ├── 20260502020000_fix_classes_rls_and_jwt_dependency.sql
+        ├── 20260502030000_fix_classes_insert_use_security_definer.sql
+        ├── 20260502040000_finalize_classes_rls.sql
+        ├── 20260502050000_classes_session3.sql
+        ├── 20260505010000_fix_request_join_class_ambiguity.sql ✅ (Session 4 fix)
+        ├── 20260505020000_fix_class_join_requests_teacher_policies.sql ✅ (Session 4 fix)
+        ├── 20260505030000_fix_decide_join_request_argument_order.sql ✅ (Session 4 fix)
+        ├── 20260505040000_fix_regenerate_class_invite_code_argument_order.sql ✅ (Session 4 fix)
+        └── 20260505050000_add_preview_class_by_code.sql ✅ (Session 4 NEW)
+```
+
+## 🚧 Existing tech debt
+
+- **`AZURE_CLIENT_SECRET` was leaked in an even earlier chat** — needs regeneration in Azure Portal. Not blocking dev work, but blocking before any production deploy.
+- All Phase 5b and 5c items above are also tech debt; they're listed there because they're scheduled for Session 5.
+
+## 📋 Suggested Session 5 entry point
+
+Phase 5a is the largest and most interesting work; Phases 5b and 5c are smaller. The pragmatic sequence within Session 5 itself is:
+
+1. Start with Phase 5c #10 (the INSERT RLS hole) — it's a security bug and a 5-minute fix; clear it first.
+2. Phase 5c #11 (folder rename) — easier to do BEFORE Phase 5a, since 5a will add more files to that folder.
+3. Phase 5c #12, #13, #9 (cleanup, orphan delete, topnav title) — can interleave with 5a as low-stakes context switches.
+4. Phase 5a — cover photo upload, then drag-and-drop, then settings page (in that order, so settings page is built last with all its content known).
+5. Phase 5b — should fit if there's time, otherwise rolls to Session 6.
+
+If Session 5 ends mid-phase, write a checkpoint summary as we did at the end of Session 4 and continue in Session 6.
+
+is it possible if we do the uploading of learning materials as well

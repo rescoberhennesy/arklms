@@ -44,7 +44,7 @@ export async function listMyClasses(): Promise<ActionResult<TeacherClassListItem
       .select(`*, class_enrollments(count)`)
       .eq('teacher_id', userId)
       .order('is_archived', { ascending: true })
-      .order('created_at', { ascending: false });
+      .order('display_order', { ascending: true });
 
     if (error) throw error;
 
@@ -123,6 +123,15 @@ export async function createClass(input: ClassFormInput): Promise<ActionResult<C
 
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
+    const { data: minRow } = await supabase
+      .from('classes')
+      .select('display_order')
+      .eq('teacher_id', userId)
+      .order('display_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const newOrder = minRow ? (minRow.display_order as number) - 1 : 0;
+
     const { data, error } = await supabase
       .from('classes')
       .insert({
@@ -136,6 +145,7 @@ export async function createClass(input: ClassFormInput): Promise<ActionResult<C
         invite_code: codeData as string,
         invite_code_expires_at: expiresAt,
         is_archived: false,
+        display_order: newOrder,
       })
       .select('*')
       .single();
@@ -240,5 +250,94 @@ export async function setInviteCodeDisabled(classId: string, disabled: boolean):
     return { ok: true, data: undefined };
   } catch (e: any) {
     return { ok: false, error: e.message || 'Failed to toggle invite code' };
+  }
+}
+// --------------------------------------------------------------------------
+// Cover photo
+// --------------------------------------------------------------------------
+
+/**
+ * Persist a new cover_photo_url on a class, or clear it.
+ * The actual upload to Supabase Storage happens client-side (the bucket's
+ * RLS policies gate it). This action just records the resulting public URL.
+ *
+ * Pass `null` to remove the cover; the storage object is also deleted so we
+ * don't leak orphans. Pass a URL to set/replace.
+ *
+ * Note: when *replacing* a cover, the client overwrites the same storage path
+ * (`<class_id>/cover.<ext>`) with `upsert: true`, so no orphan cleanup is
+ * needed in the replace case. Only the explicit-remove path deletes the file.
+ */
+export async function setClassCoverUrl(
+  classId: string,
+  url: string | null,
+): Promise<ActionResult<{ cover_photo_url: string | null }>> {
+  try {
+    const { supabase } = await requireAuthUserId();
+
+    // If clearing, also delete the storage object(s) for this class.
+    // We list the folder and remove whatever's there -- this handles the
+    // case where the extension might have changed across uploads.
+    if (url === null) {
+      const { data: list, error: listErr } = await supabase
+        .storage
+        .from('class-covers')
+        .list(classId);
+
+      if (listErr) {
+        return { ok: false, error: listErr.message };
+      }
+
+      if (list && list.length > 0) {
+        const paths = list.map((f) => `${classId}/${f.name}`);
+        const { error: rmErr } = await supabase
+          .storage
+          .from('class-covers')
+          .remove(paths);
+        if (rmErr) {
+          return { ok: false, error: rmErr.message };
+        }
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('classes')
+      .update({ cover_photo_url: url })
+      .eq('id', classId)
+      .select('cover_photo_url')
+      .single();
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    revalidatePath('/teacher/classes');
+    revalidatePath(`/teacher/classes/${classId}`);
+    revalidatePath('/teacher/dashboard');
+
+    return {
+      ok: true,
+      data: { cover_photo_url: data.cover_photo_url as string | null },
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to update cover photo';
+    return { ok: false, error: msg };
+  }
+}
+
+
+export async function reorderMyClasses(orderedIds: string[]): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireAuthUserId();
+    const { error } = await supabase.rpc('reorder_my_classes', {
+      p_class_ids: orderedIds,
+    });
+    if (error) throw error;
+    revalidatePath('/teacher/classes');
+    revalidatePath('/teacher/dashboard');
+    return { ok: true, data: undefined };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to reorder classes';
+    return { ok: false, error: msg };
   }
 }

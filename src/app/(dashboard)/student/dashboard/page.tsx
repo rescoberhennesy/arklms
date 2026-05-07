@@ -2,7 +2,7 @@ import {
   listMyEnrolledClasses,
   listMyPendingRequests,
 } from '@/lib/actions/enrollments';
-import StudentDashboardView from '@/components/students/StudentDashboardView';
+import StudentDashboardView from '@/components/student/StudentDashboardView';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,13 @@ export default async function StudentDashboardPage() {
     );
   }
 
+  const activeClasses = enrolledClasses.filter((c) => !c.is_archived);
+
   return (
     <StudentDashboardView
-      enrolledCount={enrolledClasses.length}
+      activeCount={activeClasses.length}
       pendingCount={pendingRequests.length}
-      recentClasses={enrolledClasses.slice(0, 3)}
+      recentClasses={activeClasses.slice(0, 3)}
     />
   );
 }

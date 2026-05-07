@@ -114,22 +114,6 @@ export default function Sidebar({ role, institutionName = 'Ark Learning Manageme
           </div>
         ))}
       </nav>
-
-      {/* Footer / Sign Out Section */}
-      <div className={cn('sidebar-footer', 'p-6 mt-auto border-t border-white/5')}>
-        <button
-          onClick={handleSignOut}
-          className={cn(
-            'logout-btn', // Standard CSS Name
-            'flex items-center gap-4 px-4 py-4 rounded-xl text-slate-400 hover:bg-red-950/20 hover:text-red-500 transition-all w-full group',
-            isCollapsed && 'justify-center'
-          )}
-          title={isCollapsed ? 'Sign out' : undefined}
-        >
-          <LogOut size={22} className="flex-shrink-0 group-hover:-translate-x-1 transition-transform" />
-          {!isCollapsed && <span className="text-sm font-bold tracking-wide">Sign out</span>}
-        </button>
-      </div>
     </aside>
   )
 }
