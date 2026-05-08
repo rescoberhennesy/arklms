@@ -6,7 +6,9 @@ import LeaveClassButton from '@/components/student/LeaveClassButton';
 import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StreamView from '@/components/dashboard/StreamView';
+import StudentModulesView from '@/components/student/StudentModulesView';
 import { listAnnouncements } from '@/lib/actions/announcements';
+import { listModulesWithLessons } from '@/lib/actions/modules';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -28,8 +30,6 @@ export default async function StudentClassDetailPage({
   const { id } = await params;
   const { tab: tabParam } = await searchParams;
 
-  // Reject anything that isn't a UUID before hitting the database.
-  // Non-UUIDs (e.g. accidentally pasted invite codes) bounce silently.
   if (!UUID_RE.test(id)) {
     redirect('/student/classes');
   }
@@ -38,8 +38,6 @@ export default async function StudentClassDetailPage({
     ? (tabParam as Tab)
     : 'stream';
 
-  // Any error here — invalid id, RLS denial, not enrolled — means the student
-  // shouldn't be on this page. Bounce silently rather than leak a DB error.
   let klass;
   try {
     klass = await getStudentClassById(id);
@@ -51,7 +49,6 @@ export default async function StudentClassDetailPage({
     redirect('/student/classes');
   }
 
-  // Pre-fetch stream-tab data on the server when that tab is active
   let announcements: Awaited<ReturnType<typeof listAnnouncements>> = [];
   let currentUserId = '';
   if (tab === 'stream') {
@@ -62,6 +59,11 @@ export default async function StudentClassDetailPage({
     ]);
     currentUserId = user?.id ?? '';
     announcements = anns;
+  }
+
+  let modules: Awaited<ReturnType<typeof listModulesWithLessons>> = [];
+  if (tab === 'modules') {
+    modules = await listModulesWithLessons(klass.id);
   }
 
   const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
@@ -77,7 +79,6 @@ export default async function StudentClassDetailPage({
         Back to classes
       </Link>
 
-      {/* Header */}
       <div
         className="relative overflow-hidden rounded-xl px-6 py-8 text-white shadow-sm"
         style={{ backgroundColor: headerColor }}
@@ -106,7 +107,6 @@ export default async function StudentClassDetailPage({
         </div>
       </div>
 
-      {/* Tabs */}
       <nav className="border-b border-gray-200">
         <div className="-mb-px flex gap-6 overflow-x-auto">
           {TABS.map((t) => {
@@ -137,7 +137,9 @@ export default async function StudentClassDetailPage({
             currentUserId={currentUserId}
           />
         )}
-        {tab === 'modules' && <ComingSoonTab title="Modules" />}
+        {tab === 'modules' && (
+          <StudentModulesView classId={klass.id} modules={modules} />
+        )}
         {tab === 'activities' && <ComingSoonTab title="Activities" />}
         {tab === 'grades' && <ComingSoonTab title="Grades" />}
       </div>

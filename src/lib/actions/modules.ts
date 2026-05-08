@@ -10,6 +10,7 @@ export type ModuleSummary = {
   id: string;
   class_id: string;
   title: string;
+  description: string;
   term: ModuleTerm;
   display_order: number;
   created_at: string;
@@ -65,7 +66,7 @@ export async function listModulesWithLessons(
 
   const { data: modules, error: modErr } = await supabase
     .from('class_modules')
-    .select('id, class_id, title, term, display_order, created_at, updated_at')
+    .select('id, class_id, title, description, term, display_order, created_at, updated_at')
     .eq('class_id', classId)
     .order('term', { ascending: true })
     .order('display_order', { ascending: true });
@@ -96,11 +97,42 @@ export async function listModulesWithLessons(
   }));
 }
 
+/**
+ * Fetch a single module with its lessons. Used by the module page.
+ */
+export async function getModuleWithLessons(
+  moduleId: string,
+): Promise<ModuleWithLessons> {
+  const { supabase } = await requireAuth();
+
+  const { data: mod, error: modErr } = await supabase
+    .from('class_modules')
+    .select('id, class_id, title, description, term, display_order, created_at, updated_at')
+    .eq('id', moduleId)
+    .single();
+
+  if (modErr) throw new Error(`Failed to load module: ${modErr.message}`);
+
+  const { data: lessons, error: lessErr } = await supabase
+    .from('module_lessons')
+    .select('id, module_id, title, published, published_at, display_order, created_at, updated_at')
+    .eq('module_id', moduleId)
+    .order('display_order', { ascending: true });
+
+  if (lessErr) throw new Error(`Failed to list lessons: ${lessErr.message}`);
+
+  return {
+    ...(mod as ModuleSummary),
+    lessons: (lessons ?? []) as LessonSummary[],
+  };
+}
+
 export async function createModule(
   classId: string,
   title: string,
   term: ModuleTerm,
-): Promise<void> {
+  description = '',
+): Promise<{ moduleId: string }> {
   const { supabase } = await requireAuth();
   const trimmed = title.trim();
   if (!trimmed) throw new Error('Module title cannot be empty.');
@@ -116,13 +148,24 @@ export async function createModule(
 
   const nextOrder = (maxRow?.display_order ?? -1) + 1;
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('class_modules')
-    .insert({ class_id: classId, title: trimmed, term, display_order: nextOrder });
+    .insert({
+      class_id: classId,
+      title: trimmed,
+      description,
+      term,
+      display_order: nextOrder,
+    })
+    .select('id')
+    .single();
 
   if (error) throw new Error(`Failed to create module: ${error.message}`);
+
   revalidatePath(`/teacher/classes/${classId}`);
   revalidatePath(`/student/classes/${classId}`);
+
+  return { moduleId: data.id as string };
 }
 
 export async function renameModule(
@@ -144,14 +187,34 @@ export async function renameModule(
   if (data?.class_id) {
     revalidatePath(`/teacher/classes/${data.class_id}`);
     revalidatePath(`/student/classes/${data.class_id}`);
+    revalidatePath(`/teacher/classes/${data.class_id}/modules/${moduleId}`);
+  }
+}
+
+export async function updateModuleDescription(
+  moduleId: string,
+  description: string,
+): Promise<void> {
+  const { supabase } = await requireAuth();
+
+  const { data, error } = await supabase
+    .from('class_modules')
+    .update({ description })
+    .eq('id', moduleId)
+    .select('class_id')
+    .single();
+
+  if (error) throw new Error(`Failed to update description: ${error.message}`);
+  if (data?.class_id) {
+    revalidatePath(`/teacher/classes/${data.class_id}`);
+    revalidatePath(`/student/classes/${data.class_id}`);
+    revalidatePath(`/teacher/classes/${data.class_id}/modules/${moduleId}`);
   }
 }
 
 /**
  * Move a module to a different term. Inserts at the END of the destination
- * term's list (max display_order + 1). The vacated slot in the old term is
- * NOT renumbered -- gaps are fine since display_order only governs sort
- * order, not contiguity.
+ * term's list (max display_order + 1).
  */
 export async function setModuleTerm(
   moduleId: string,
@@ -187,6 +250,7 @@ export async function setModuleTerm(
   if (error) throw new Error(`Failed to change term: ${error.message}`);
   revalidatePath(`/teacher/classes/${pre.class_id}`);
   revalidatePath(`/student/classes/${pre.class_id}`);
+  revalidatePath(`/teacher/classes/${pre.class_id}/modules/${moduleId}`);
 }
 
 export async function deleteModule(moduleId: string): Promise<void> {
@@ -306,6 +370,7 @@ export async function createLesson(
 
   revalidatePath(`/teacher/classes/${mod.class_id}`);
   revalidatePath(`/student/classes/${mod.class_id}`);
+  revalidatePath(`/teacher/classes/${mod.class_id}/modules/${moduleId}`);
 
   return { lessonId: data.id as string, classId: mod.class_id as string };
 }
@@ -373,6 +438,7 @@ export async function deleteLesson(lessonId: string): Promise<void> {
   const { data: pre } = await supabase
     .from('module_lessons')
     .select(`
+      module_id,
       class_modules!inner ( class_id ),
       lesson_attachments ( file_path )
     `)
@@ -380,6 +446,7 @@ export async function deleteLesson(lessonId: string): Promise<void> {
     .maybeSingle();
 
   const classId = (pre?.class_modules as unknown as { class_id: string } | undefined)?.class_id;
+  const moduleId = pre?.module_id as string | undefined;
   const paths = ((pre?.lesson_attachments ?? []) as { file_path: string }[]).map((a) => a.file_path);
 
   if (paths.length > 0) {
@@ -401,6 +468,9 @@ export async function deleteLesson(lessonId: string): Promise<void> {
   if (classId) {
     revalidatePath(`/teacher/classes/${classId}`);
     revalidatePath(`/student/classes/${classId}`);
+    if (moduleId) {
+      revalidatePath(`/teacher/classes/${classId}/modules/${moduleId}`);
+    }
   }
 }
 
@@ -425,6 +495,7 @@ export async function reorderLessons(
   if (mod?.class_id) {
     revalidatePath(`/teacher/classes/${mod.class_id}`);
     revalidatePath(`/student/classes/${mod.class_id}`);
+    revalidatePath(`/teacher/classes/${mod.class_id}/modules/${moduleId}`);
   }
 }
 
@@ -521,4 +592,10 @@ export async function getSignedAttachmentUrl(
 
   if (error) throw new Error(`Failed to sign URL: ${error.message}`);
   return data.signedUrl;
+}
+
+export async function getModuleForStudent(
+  moduleId: string,
+): Promise<ModuleWithLessons> {
+  return getModuleWithLessons(moduleId);
 }

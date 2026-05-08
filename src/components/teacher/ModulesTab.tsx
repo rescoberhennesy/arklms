@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -23,7 +23,6 @@ import {
   Plus,
   ChevronDown,
   ChevronRight,
-  Pencil,
   Trash2,
   FileText,
   Loader2,
@@ -34,11 +33,9 @@ import {
   type ModuleWithLessons,
   type LessonSummary,
   createModule,
-  renameModule,
   setModuleTerm,
   deleteModule,
   reorderModules,
-  createLesson,
   deleteLesson,
   reorderLessons,
 } from '@/lib/actions/modules';
@@ -53,7 +50,16 @@ interface ModulesTabProps {
   initialModules: ModuleWithLessons[];
 }
 
-function groupByTerm(modules: ModuleWithLessons[]): Record<ModuleTerm, ModuleWithLessons[]> {
+const TERM_ACCENTS: Record<ModuleTerm, string> = {
+  prelim: 'border-blue-200 text-blue-800 bg-blue-50',
+  midterm: 'border-purple-200 text-purple-800 bg-purple-50',
+  prefinal: 'border-amber-200 text-amber-800 bg-amber-50',
+  final: 'border-rose-200 text-rose-800 bg-rose-50',
+};
+
+function groupByTerm(
+  modules: ModuleWithLessons[],
+): Record<ModuleTerm, ModuleWithLessons[]> {
   const groups: Record<ModuleTerm, ModuleWithLessons[]> = {
     prelim: [],
     midterm: [],
@@ -67,44 +73,241 @@ function groupByTerm(modules: ModuleWithLessons[]): Record<ModuleTerm, ModuleWit
   return groups;
 }
 
+// Stable signature used to detect when the server prop diverges from local
+// state (i.e. revalidation brought new data we should sync to).
+function modulesSignature(modules: ModuleWithLessons[]): string {
+  return modules
+    .map(
+      (m) =>
+        `${m.id}:${m.term}:${m.display_order}:${m.title}:${m.description}:${m.lessons.map((l) => `${l.id}:${l.display_order}:${l.title}:${l.published}`).join('|')}`,
+    )
+    .join(',');
+}
+
 export default function ModulesTab({ classId, initialModules }: ModulesTabProps) {
   const [modules, setModules] = useState<ModuleWithLessons[]>(initialModules);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync local state when server props change (after revalidation/refresh).
+  // Skip sync if the signatures already match, which means our optimistic
+  // local state is already consistent with the server.
+  const lastPropSig = useRef(modulesSignature(initialModules));
+  useEffect(() => {
+    const propSig = modulesSignature(initialModules);
+    if (propSig !== lastPropSig.current) {
+      lastPropSig.current = propSig;
+      setModules(initialModules);
+    }
+  }, [initialModules]);
 
   const grouped = groupByTerm(modules);
 
   return (
     <div className="space-y-6">
+      <AddModuleBar
+        classId={classId}
+        onError={setError}
+        onOptimisticAdd={(newModule) =>
+          setModules((prev) => [...prev, newModule])
+        }
+      />
+
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {modules.length === 0 && (
+      {modules.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
           <p className="text-sm font-medium text-gray-700">No modules yet</p>
           <p className="mt-1 text-xs text-gray-500">
-            Add a module under any term below to get started.
+            Click &quot;Add module&quot; above to create your first one.
           </p>
         </div>
+      ) : (
+        MODULE_TERMS.map((term) => (
+          <TermSection
+            key={term}
+            classId={classId}
+            term={term}
+            modules={grouped[term]}
+            onModulesChanged={(termModules) => {
+              setModules((prev) => {
+                const others = prev.filter((m) => m.term !== term);
+                return [...others, ...termModules];
+              });
+            }}
+            onError={setError}
+          />
+        ))
       )}
+    </div>
+  );
+}
 
-      {MODULE_TERMS.map((term) => (
-        <TermSection
-          key={term}
-          classId={classId}
-          term={term}
-          modules={grouped[term]}
-          onModulesChanged={(termModules) => {
-            setModules((prev) => {
-              const others = prev.filter((m) => m.term !== term);
-              return [...others, ...termModules];
-            });
-          }}
-          onError={setError}
-        />
-      ))}
+interface AddModuleBarProps {
+  classId: string;
+  onError: (msg: string | null) => void;
+  onOptimisticAdd: (module: ModuleWithLessons) => void;
+}
+
+function AddModuleBar({ classId, onError, onOptimisticAdd }: AddModuleBarProps) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [term, setTerm] = useState<ModuleTerm>('prelim');
+  const [isPending, startTransition] = useTransition();
+
+  function reset() {
+    setTitle('');
+    setDescription('');
+    setTerm('prelim');
+    setOpen(false);
+  }
+
+  function handleAdd() {
+    onError(null);
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    const trimmedDesc = description.trim();
+    const chosenTerm = term;
+
+    startTransition(async () => {
+      try {
+        const { moduleId } = await createModule(
+          classId,
+          trimmed,
+          chosenTerm,
+          trimmedDesc,
+        );
+        // Optimistic insert: place the new module at the END of its term
+        // bucket. Server-side, createModule sets display_order to max+1,
+        // so this is the correct position. We use a high temporary
+        // display_order to ensure it sorts last; the next prop sync will
+        // replace it with the canonical row.
+        const optimistic: ModuleWithLessons = {
+          id: moduleId,
+          class_id: classId,
+          title: trimmed,
+          description: trimmedDesc,
+          term: chosenTerm,
+          display_order: Number.MAX_SAFE_INTEGER,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          lessons: [],
+        };
+        onOptimisticAdd(optimistic);
+        reset();
+        router.refresh();
+      } catch (e) {
+        onError(e instanceof Error ? e.message : 'Failed to add module.');
+      }
+    });
+  }
+
+  if (!open) {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-red-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add module
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <h3 className="mb-3 text-sm font-semibold text-gray-900">New module</h3>
+      <div className="space-y-3">
+        <div>
+          <label
+            htmlFor="new-module-title"
+            className="mb-1 block text-xs font-medium text-gray-700"
+          >
+            Title
+          </label>
+          <input
+            id="new-module-title"
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Week 1 — Introduction to Algebra"
+            autoFocus
+            disabled={isPending}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAdd();
+              if (e.key === 'Escape') reset();
+            }}
+            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="new-module-term"
+            className="mb-1 block text-xs font-medium text-gray-700"
+          >
+            Term
+          </label>
+          <select
+            id="new-module-term"
+            value={term}
+            onChange={(e) => setTerm(e.target.value as ModuleTerm)}
+            disabled={isPending}
+            className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+          >
+            {MODULE_TERMS.map((t) => (
+              <option key={t} value={t}>
+                {MODULE_TERM_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label
+            htmlFor="new-module-description"
+            className="mb-1 block text-xs font-medium text-gray-700"
+          >
+            Description{' '}
+            <span className="font-normal text-gray-400">(optional)</span>
+          </label>
+          <textarea
+            id="new-module-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Brief overview of what this module covers. Markdown supported."
+            rows={3}
+            disabled={isPending}
+            className="w-full resize-y rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+          />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={reset}
+          disabled={isPending}
+          className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={isPending || !title.trim()}
+          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+          Add module
+        </button>
+      </div>
     </div>
   );
 }
@@ -117,13 +320,6 @@ interface TermSectionProps {
   onError: (msg: string | null) => void;
 }
 
-const TERM_ACCENTS: Record<ModuleTerm, string> = {
-  prelim: 'border-blue-200 text-blue-800 bg-blue-50',
-  midterm: 'border-purple-200 text-purple-800 bg-purple-50',
-  prefinal: 'border-amber-200 text-amber-800 bg-amber-50',
-  final: 'border-rose-200 text-rose-800 bg-rose-50',
-};
-
 function TermSection({
   classId,
   term,
@@ -132,29 +328,11 @@ function TermSection({
   onError,
 }: TermSectionProps) {
   const router = useRouter();
-  const [showAdd, setShowAdd] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
-
-  function handleAdd() {
-    onError(null);
-    const trimmed = newTitle.trim();
-    if (!trimmed) return;
-    startTransition(async () => {
-      try {
-        await createModule(classId, trimmed, term);
-        setNewTitle('');
-        setShowAdd(false);
-        router.refresh();
-      } catch (e) {
-        onError(e instanceof Error ? e.message : 'Failed to add module.');
-      }
-    });
-  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -192,7 +370,11 @@ function TermSection({
         </span>
       </header>
 
-      {modules.length > 0 && (
+      {modules.length === 0 ? (
+        <p className="px-3 text-xs italic text-gray-400">
+          No modules in {MODULE_TERM_LABELS[term]} yet.
+        </p>
+      ) : (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -222,60 +404,6 @@ function TermSection({
           </SortableContext>
         </DndContext>
       )}
-
-      <div className="mt-3">
-        {showAdd ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-            <input
-              type="text"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder={`Module title (under ${MODULE_TERM_LABELS[term]})`}
-              autoFocus
-              disabled={isPending}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAdd();
-                if (e.key === 'Escape') {
-                  setNewTitle('');
-                  setShowAdd(false);
-                }
-              }}
-              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-            />
-            <div className="mt-2 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setNewTitle('');
-                  setShowAdd(false);
-                }}
-                disabled={isPending}
-                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAdd}
-                disabled={isPending || !newTitle.trim()}
-                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                Add module
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:border-gray-400 hover:bg-gray-50 hover:text-gray-900"
-          >
-            <Plus className="h-4 w-4" />
-            Add module to {MODULE_TERM_LABELS[term]}
-          </button>
-        )}
-      </div>
     </section>
   );
 }
@@ -290,22 +418,16 @@ interface ModuleCardProps {
 function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCardProps) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(true);
-  const [renaming, setRenaming] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(module.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showAddLesson, setShowAddLesson] = useState(false);
-  const [newLessonTitle, setNewLessonTitle] = useState('');
   const [isPending, startTransition] = useTransition();
-  const [lessons, setLessons] = useState<LessonSummary[]>(module.lessons);
+
+  // Lessons render directly from props now (parent owns canonical state).
+  // Drag updates flow up via onLessonsReordered, which mutates parent state.
+  const lessons = module.lessons;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
-
-  if (module.lessons.map((l) => l.id).join(',') !==
-      lessons.map((l) => l.id).join(',')) {
-    setLessons(module.lessons);
-  }
 
   const {
     attributes,
@@ -322,25 +444,6 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
-
-  function handleRename() {
-    const trimmed = titleDraft.trim();
-    if (!trimmed || trimmed === module.title) {
-      setTitleDraft(module.title);
-      setRenaming(false);
-      return;
-    }
-    startTransition(async () => {
-      try {
-        await renameModule(module.id, trimmed);
-        setRenaming(false);
-        router.refresh();
-      } catch {
-        setTitleDraft(module.title);
-        setRenaming(false);
-      }
-    });
-  }
 
   function handleChangeTerm(nextTerm: ModuleTerm) {
     if (nextTerm === module.term) return;
@@ -359,21 +462,6 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
     router.refresh();
   }
 
-  function handleAddLesson() {
-    const trimmed = newLessonTitle.trim();
-    if (!trimmed) return;
-    startTransition(async () => {
-      try {
-        const { lessonId } = await createLesson(module.id, trimmed);
-        setNewLessonTitle('');
-        setShowAddLesson(false);
-        router.push(`/teacher/classes/${classId}/lessons/${lessonId}`);
-      } catch {
-        // ignore
-      }
-    });
-  }
-
   function handleLessonDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -383,16 +471,14 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
     if (oldIndex < 0 || newIndex < 0) return;
 
     const next = arrayMove(lessons, oldIndex, newIndex);
-    setLessons(next);
-    onLessonsReordered(next);
+    onLessonsReordered(next); // optimistic up to parent
 
     startTransition(async () => {
       try {
         await reorderLessons(module.id, next.map((l) => l.id));
         router.refresh();
       } catch {
-        setLessons(lessons);
-        onLessonsReordered(lessons);
+        onLessonsReordered(lessons); // rollback
       }
     });
   }
@@ -427,28 +513,12 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
           )}
         </button>
 
-        {renaming ? (
-          <input
-            type="text"
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={handleRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRename();
-              if (e.key === 'Escape') {
-                setTitleDraft(module.title);
-                setRenaming(false);
-              }
-            }}
-            autoFocus
-            disabled={isPending}
-            className="flex-1 rounded-md border border-gray-200 px-2 py-1 text-sm font-semibold focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-          />
-        ) : (
-          <h3 className="flex-1 text-sm font-semibold text-gray-900">
-            {module.title}
-          </h3>
-        )}
+        <Link
+          href={`/teacher/classes/${classId}/modules/${module.id}`}
+          className="flex-1 truncate text-sm font-semibold text-gray-900 hover:text-red-600"
+        >
+          {module.title}
+        </Link>
 
         <span className="text-xs text-gray-400">
           {lessons.length} {lessons.length === 1 ? 'lesson' : 'lessons'}
@@ -471,16 +541,6 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
 
         <button
           type="button"
-          onClick={() => setRenaming(true)}
-          disabled={isPending || renaming}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
-          aria-label="Rename"
-          title="Rename"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
           onClick={() => setConfirmDelete(true)}
           disabled={isPending}
           className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
@@ -493,7 +553,18 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
 
       {expanded && (
         <div className="border-t border-gray-100 bg-gray-50/50 px-3 py-2">
-          {lessons.length > 0 && (
+          {lessons.length === 0 ? (
+            <p className="px-1 py-2 text-xs italic text-gray-500">
+              No lessons yet.{' '}
+              <Link
+                href={`/teacher/classes/${classId}/modules/${module.id}`}
+                className="text-red-600 underline-offset-2 hover:underline"
+              >
+                Open module
+              </Link>{' '}
+              to add lessons.
+            </p>
+          ) : (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -514,56 +585,6 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
                 </ul>
               </SortableContext>
             </DndContext>
-          )}
-
-          {showAddLesson ? (
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="text"
-                value={newLessonTitle}
-                onChange={(e) => setNewLessonTitle(e.target.value)}
-                placeholder="Lesson title"
-                autoFocus
-                disabled={isPending}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddLesson();
-                  if (e.key === 'Escape') {
-                    setNewLessonTitle('');
-                    setShowAddLesson(false);
-                  }
-                }}
-                className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-              />
-              <button
-                type="button"
-                onClick={handleAddLesson}
-                disabled={isPending || !newLessonTitle.trim()}
-                className="inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewLessonTitle('');
-                  setShowAddLesson(false);
-                }}
-                disabled={isPending}
-                className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowAddLesson(true)}
-              className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add lesson
-            </button>
           )}
         </div>
       )}

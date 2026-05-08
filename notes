@@ -571,3 +571,26 @@ Phase 5a is the largest and most interesting work; Phases 5b and 5c are smaller.
 If Session 5 ends mid-phase, write a checkpoint summary as we did at the end of Session 4 and continue in Session 6.
 
 is it possible if we do the uploading of learning materials as well
+
+There should be "Add module" button at the very top of the Modules tab. That is where the teachers goping to create modules and choose which term. 
+The term organization below is separated from this part. Do you get my idea? Can we confirm first if u actually got it?
+
+
+
+Modules tab (the index/overview view):
+
+Top: "Add module" button (with title + term picker + description)
+Below: 4 term sections with module cards
+Each module card is expandable (chevron) — when expanded, it shows the list of lessons inline ({the lessons should be clickable, once a particular lesson
+is clicked, it will direct to the lesson}:just titles, drag handles, draft/published pills, delete × buttons)
+No "Add lesson" button on the Modules tab. Just the lesson list.
+Click a module title (or an "Open" button on the card) → navigate to the module page
+
+Module page (/teacher/classes/[id]/modules/[moduleId]):
+
+Module title (renameable here)
+Term selector
+Module-level metadata if any
+"Add lesson" button lives here
+Full list of lessons with all their detail (drag-reorder, delete with confirm, status pills, click-through to lesson detail page)
+"Back to Modules" link
