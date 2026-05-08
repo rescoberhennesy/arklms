@@ -12,7 +12,9 @@ import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StreamView from '@/components/dashboard/StreamView';
 import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
 import { StudentsTab } from '@/components/teacher/StudentsTab';
+import ModulesTab from '@/components/teacher/ModulesTab';
 import { listAnnouncements } from '@/lib/actions/announcements';
+import { listModulesWithLessons } from '@/lib/actions/modules';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -62,6 +64,12 @@ export default async function ClassDetailPage({
     ]);
     currentUserId = user?.id ?? '';
     announcements = anns;
+  }
+
+  // Pre-fetch modules-tab data on the server when that tab is active
+  let modules: Awaited<ReturnType<typeof listModulesWithLessons>> = [];
+  if (tab === 'modules') {
+    modules = await listModulesWithLessons(klass.id);
   }
 
   const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
@@ -148,7 +156,9 @@ export default async function ClassDetailPage({
             currentUserId={currentUserId}
           />
         )}
-        {tab === 'modules' && <ComingSoonTab title="Modules" />}
+        {tab === 'modules' && (
+          <ModulesTab classId={klass.id} initialModules={modules} />
+        )}
         {tab === 'activities' && <ComingSoonTab title="Activities" />}
         {tab === 'students' && (
           <StudentsTab
