@@ -28,9 +28,9 @@ export default async function DashboardLayout({
       <PageTitleProvider>
         <div className="flex min-h-screen bg-[#f5f5f5]">
           <Sidebar role={profile.role} />
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-w-0">
             <TopNavbar profile={profile} />
-            <main className="flex-1 p-6 overflow-auto">{children}</main>
+            <main className="flex-1 p-6 lg:p-8 overflow-auto">{children}</main>
           </div>
         </div>
       </PageTitleProvider>

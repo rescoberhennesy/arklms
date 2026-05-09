@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -60,6 +60,21 @@ const TERM_ACCENTS: Record<ModuleTerm, string> = {
   final: 'border-rose-200 text-rose-800 bg-rose-50',
 };
 
+// Signature covers everything that should trigger a local resync.
+// Includes lesson id+title+published so renames and publish toggles
+// from elsewhere (e.g. lesson page) flow back here on revalidation.
+function moduleSignature(m: ModuleWithLessons): string {
+  return [
+    m.id,
+    m.title,
+    m.term,
+    m.description,
+    m.lessons
+      .map((l) => `${l.id}:${l.title}:${l.published ? 1 : 0}`)
+      .join('|'),
+  ].join('§');
+}
+
 export default function ModuleEditor({ module, classId }: ModuleEditorProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -78,14 +93,44 @@ export default function ModuleEditor({ module, classId }: ModuleEditorProps) {
   const [isPending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Lessons (local optimistic copy for drag)
+  // Lessons (local copy for optimistic drag reorder)
   const [lessons, setLessons] = useState<LessonSummary[]>(module.lessons);
-  if (
-    module.lessons.map((l) => l.id).join(',') !==
-    lessons.map((l) => l.id).join(',')
-  ) {
+
+  // Prop-sync: when the server sends a new module signature
+  // (router.refresh after a mutation), pull canonical fields back in.
+  // Refs let us read editing state inside the effect without
+  // re-subscribing on every keystroke.
+  const sig = moduleSignature(module);
+  const lastSyncedSig = useRef(sig);
+  const titleEditingRef = useRef(titleEditing);
+  const descEditingRef = useRef(descEditing);
+  const isDescDirtyRef = useRef(isDescDirty);
+  titleEditingRef.current = titleEditing;
+  descEditingRef.current = descEditing;
+  isDescDirtyRef.current = isDescDirty;
+
+  useEffect(() => {
+    if (sig === lastSyncedSig.current) return;
+    lastSyncedSig.current = sig;
+
+    // Title: only sync if user isn't actively editing (would clobber
+    // their unsaved input).
+    if (!titleEditingRef.current) {
+      setTitleDraft(module.title);
+    }
+
+    // Description: always update savedDescription (it's the canonical
+    // server value). Only update the editor draft when the user isn't
+    // editing AND has no dirty changes.
+    setSavedDescription(module.description);
+    if (!descEditingRef.current && !isDescDirtyRef.current) {
+      setDescription(module.description);
+    }
+
+    // Lessons: always resync. Optimistic drag reorder is short-lived;
+    // by the time a refresh comes back, the server is canonical.
     setLessons(module.lessons);
-  }
+  }, [sig, module]);
 
   function handleSaveTitle() {
     const trimmed = titleDraft.trim();

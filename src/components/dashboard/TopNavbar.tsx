@@ -5,26 +5,19 @@ import { useSidebar } from '@/context/SidebarContext'
 import { usePageTitle } from '@/context/PageTitleContext'
 import ProfileDropdown from './ProfileDropdown'
 import type { Profile } from '@/types/user'
+import './TopNavbar.css'
 
 interface TopNavbarProps {
   profile: Profile
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-// Invite codes are 7 chars from a fixed alphabet; this catches them as
-// "opaque tokens" so we don't title-case them in the topnav.
 const INVITE_CODE_RE = /^[abcdefghjkmnpqrstuvwxyz23456789]{7}$/i
 
 function isOpaqueSegment(segment: string): boolean {
   return UUID_RE.test(segment) || INVITE_CODE_RE.test(segment)
 }
 
-/**
- * Fallback title derivation when no page has set an explicit title via
- * <SetPageTitle/>. If the last segment looks like an opaque id (UUID or
- * invite code), fall back to the parent segment's title rather than
- * rendering the raw token.
- */
 function getFallbackTitle(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean)
   if (segments.length === 0) return 'Dashboard'
@@ -45,30 +38,32 @@ export default function TopNavbar({ profile }: TopNavbarProps) {
   const title = explicitTitle ?? getFallbackTitle(pathname)
 
   return (
-    <header className="h-24 bg-[#f5f5f5]/80 backdrop-blur-md border-b border-[#000000]/5 px-8 flex items-center justify-between sticky top-0 z-40">
-      <div className="flex items-center gap-8">
+    <header className="topnav-glass h-[72px] px-6 lg:px-8 flex items-center justify-between sticky top-0 z-40">
+      <div className="flex items-center gap-5">
         <button
           onClick={toggle}
-          className="ml-2 text-slate-400 hover:text-[#000000] p-2.5 rounded-xl hover:bg-[#000000]/5 transition-all active:scale-95"
+          className="menu-btn p-2.5 rounded-xl"
           aria-label="Toggle sidebar"
         >
-          <Menu size={24} />
+          <Menu size={22} strokeWidth={1.8} />
         </button>
 
-        <div className="flex flex-col">
-          <h1 className="text-black text-2xl font-bold tracking-tight">{title}</h1>
-        </div>
+        <h1 className="text-gray-900 text-[22px] font-bold tracking-[-0.02em] select-none">
+          {title}
+        </h1>
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-2">
         <button
-          className="text-slate-400 hover:text-white p-3 rounded-xl hover:bg-white/5 transition-all relative group"
+          className="bell-btn p-2.5 rounded-xl"
           aria-label="Notifications"
         >
-          <Bell size={24} className="group-hover:rotate-12 transition-transform" />
-          <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-600 border-2 border-[#0c0c0c] rounded-full"></span>
+          <Bell size={21} strokeWidth={1.8} className="bell-icon" />
+          <span className="notification-badge absolute top-[9px] right-[9px] w-[9px] h-[9px] bg-red-500 border-[2.5px] border-white rounded-full" />
         </button>
-        <div className="h-8 w-[1px] bg-[#000000]/10 mx-2" />
+
+        <div className="topnav-divider mx-2" />
+
         <ProfileDropdown profile={profile} />
       </div>
     </header>
