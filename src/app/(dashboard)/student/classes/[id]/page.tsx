@@ -7,8 +7,12 @@ import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StreamView from '@/components/dashboard/StreamView';
 import StudentModulesView from '@/components/student/StudentModulesView';
+import StudentActivitiesTab from '@/components/student/StudentActivitiesTab';
+import StudentGradebookView from '@/components/student/StudentGradebookView';
 import { listAnnouncements } from '@/lib/actions/announcements';
 import { listModulesWithLessons } from '@/lib/actions/modules';
+import { listActivitiesForStudent } from '@/lib/actions/activities';
+import { getStudentGradebookView } from '@/lib/actions/gradebook';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -64,6 +68,17 @@ export default async function StudentClassDetailPage({
   let modules: Awaited<ReturnType<typeof listModulesWithLessons>> = [];
   if (tab === 'modules') {
     modules = await listModulesWithLessons(klass.id);
+  }
+
+  let activities: Awaited<ReturnType<typeof listActivitiesForStudent>> = [];
+  if (tab === 'activities') {
+    activities = await listActivitiesForStudent(klass.id);
+  }
+
+  let gradesView: Awaited<ReturnType<typeof getStudentGradebookView>> | null =
+    null;
+  if (tab === 'grades') {
+    gradesView = await getStudentGradebookView(klass.id);
   }
 
   const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
@@ -140,8 +155,12 @@ export default async function StudentClassDetailPage({
         {tab === 'modules' && (
           <StudentModulesView classId={klass.id} modules={modules} />
         )}
-        {tab === 'activities' && <ComingSoonTab title="Activities" />}
-        {tab === 'grades' && <ComingSoonTab title="Grades" />}
+        {tab === 'activities' && (
+          <StudentActivitiesTab classId={klass.id} activities={activities} />
+        )}
+        {tab === 'grades' && gradesView && (
+          <StudentGradebookView view={gradesView} />
+        )}
       </div>
     </div>
   );
@@ -176,15 +195,6 @@ function StreamTab({
         currentUserId={currentUserId}
         isTeacher={false}
       />
-    </div>
-  );
-}
-
-function ComingSoonTab({ title }: { title: string }) {
-  return (
-    <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-      <p className="mt-1 text-sm text-gray-600">This feature is coming soon.</p>
     </div>
   );
 }

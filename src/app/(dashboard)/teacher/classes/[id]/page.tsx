@@ -1,3 +1,5 @@
+// src/app/(dashboard)/teacher/classes/[id]/page.tsx
+
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, Settings } from 'lucide-react';
@@ -13,8 +15,12 @@ import StreamView from '@/components/dashboard/StreamView';
 import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
 import { StudentsTab } from '@/components/teacher/StudentsTab';
 import ModulesTab from '@/components/teacher/ModulesTab';
+import ActivitiesTab from '@/components/teacher/ActivitiesTab';
+import GradebookTab from '@/components/teacher/GradebookTab';
 import { listAnnouncements } from '@/lib/actions/announcements';
 import { listModulesWithLessons } from '@/lib/actions/modules';
+import { listActivitiesForTeacher } from '@/lib/actions/activities';
+import { getGradebookView } from '@/lib/actions/gradebook';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +78,17 @@ export default async function ClassDetailPage({
     modules = await listModulesWithLessons(klass.id);
   }
 
+  // Pre-fetch activities-tab data on the server when that tab is active
+  let activities: Awaited<ReturnType<typeof listActivitiesForTeacher>> = [];
+  if (tab === 'activities') {
+    activities = await listActivitiesForTeacher(klass.id);
+  }
+
+  // Pre-fetch gradebook-tab data on the server when that tab is active
+  let gradebookView: Awaited<ReturnType<typeof getGradebookView>> | null = null;
+  if (tab === 'grades') {
+    gradebookView = await getGradebookView(klass.id);
+  }
   const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
 
   return (
@@ -159,7 +176,9 @@ export default async function ClassDetailPage({
         {tab === 'modules' && (
           <ModulesTab classId={klass.id} initialModules={modules} />
         )}
-        {tab === 'activities' && <ComingSoonTab title="Activities" />}
+        {tab === 'activities' && (
+          <ActivitiesTab classId={klass.id} activities={activities} />
+        )}
         {tab === 'students' && (
           <StudentsTab
             classId={klass.id}
@@ -167,7 +186,9 @@ export default async function ClassDetailPage({
             initialRoster={roster}
           />
         )}
-        {tab === 'grades' && <ComingSoonTab title="Grades" />}
+        {tab === 'grades' && gradebookView && (
+          <GradebookTab view={gradebookView} classId={klass.id} />
+        )}
       </div>
     </div>
   );
