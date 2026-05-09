@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { getActivityForTeacher } from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
+import { getTeacherQuizView } from '@/lib/actions/quizzes';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import ActivityEditor from '@/components/teacher/ActivityEditor';
+import QuizEditor from '@/components/teacher/QuizEditor';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +38,11 @@ export default async function ActivityDetailPage({ params }: PageProps) {
     redirect(`/teacher/classes/${activity.classId}/activities/${activityId}`);
   }
 
+  const isQuiz = activity.activityKind === 'quiz';
+
+  // For quiz activities, fetch the quiz-specific view (questions + config + lock state).
+  const quizView = isQuiz ? await getTeacherQuizView(activityId) : null;
+
   return (
     <div className="space-y-6">
       <SetPageTitle title={`${activity.title} — ${klass.name}`} />
@@ -47,7 +54,15 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         Back to activities
       </Link>
 
-      <ActivityEditor activity={activity} classId={classId} />
+      {isQuiz && quizView ? (
+        <QuizEditor
+          activity={activity}
+          classId={classId}
+          initialQuizView={quizView}
+        />
+      ) : (
+        <ActivityEditor activity={activity} classId={classId} />
+      )}
     </div>
   );
 }

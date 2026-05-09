@@ -8,8 +8,13 @@ import type { ModuleTerm } from '@/lib/types/modules';
 
 // Enum mirrors of Postgres types -------------------------------------------
 
-export const ACTIVITY_KINDS = ['assignment'] as const;
+export const ACTIVITY_KINDS = ['assignment', 'quiz'] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+export const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = {
+  assignment: 'Assignment',
+  quiz: 'Quiz',
+};
 
 export const SUBMISSION_TYPES = ['file', 'text', 'both', 'none'] as const;
 export type SubmissionType = (typeof SUBMISSION_TYPES)[number];

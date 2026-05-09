@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { getActivityForStudent } from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
+import { getStudentAttemptView } from '@/lib/actions/quizzes';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StudentActivityView from '@/components/student/StudentActivityView';
+import StudentQuizFlow from '@/components/student/StudentQuizFlow';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +44,13 @@ export default async function StudentActivityPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) notFound();
 
+  const isQuiz = activity.activityKind === 'quiz';
+
+  // For quiz activities, prefetch attempt view (may be null if not started).
+  const initialAttemptView = isQuiz
+    ? await getStudentAttemptView(activityId).catch(() => null)
+    : null;
+
   return (
     <div className="space-y-6">
       <SetPageTitle title={`${activity.title} — ${klass.name}`} />
@@ -53,11 +62,19 @@ export default async function StudentActivityPage({ params }: PageProps) {
         Back to activities
       </Link>
 
-      <StudentActivityView
-        classId={classId}
-        activity={activity}
-        currentUserId={user.id}
-      />
+      {isQuiz ? (
+        <StudentQuizFlow
+          classId={classId}
+          activity={activity}
+          initialAttemptView={initialAttemptView}
+        />
+      ) : (
+        <StudentActivityView
+          classId={classId}
+          activity={activity}
+          currentUserId={user.id}
+        />
+      )}
     </div>
   );
 }

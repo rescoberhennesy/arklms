@@ -7,7 +7,7 @@ import { MODULE_TERMS, MODULE_TERM_LABELS } from '@/lib/types/modules';
 import {
   listActivitiesForTeacher,
   listActivitiesForStudent,
-  getOrCreateGradeWeights,
+  getGradeWeights,
 } from '@/lib/actions/activities';
 import { listClassRoster } from '@/lib/actions/enrollments';
 import type {
@@ -32,7 +32,6 @@ export type CellStatus =
 export interface GradebookCell {
   activityId: string;
   status: CellStatus;
-  // Only graded_released cells contribute to the subtotal.
   score: number | null;
   maxPoints: number;
   isLate: boolean;
@@ -108,12 +107,12 @@ export async function getGradebookView(
   const [activities, roster, weights] = await Promise.all([
     listActivitiesForTeacher(classId),
     listClassRoster(classId),
-    getOrCreateGradeWeights(classId).catch(() => null),
+    getGradeWeights(classId),
   ]);
 
   const isWeighted = weights !== null;
 
-  const termOrder: Record<ModuleTerm, number> = MODULE_TERMS.reduce(
+  const termOrder = MODULE_TERMS.reduce<Record<ModuleTerm, number>>(
     (acc, term, idx) => {
       acc[term] = idx;
       return acc;
@@ -122,7 +121,7 @@ export async function getGradebookView(
   );
 
   const activitiesOrdered: GradebookActivityHeader[] = activities
-    .map((a) => ({
+    .map((a): GradebookActivityHeader => ({
       id: a.id,
       title: a.title,
       term: a.term,
@@ -130,7 +129,7 @@ export async function getGradebookView(
       published: a.published,
       displayOrder: a.displayOrder,
     }))
-    .sort((x, y) => {
+    .sort((x: GradebookActivityHeader, y: GradebookActivityHeader) => {
       const t = termOrder[x.term] - termOrder[y.term];
       if (t !== 0) return t;
       return x.displayOrder - y.displayOrder;
@@ -236,7 +235,7 @@ export async function getGradebookView(
     };
 
     let finalPercent: number | null;
-    const availableTerms = MODULE_TERMS.filter(
+    const availableTerms: ModuleTerm[] = MODULE_TERMS.filter(
       (t) => termPercents[t] !== null,
     );
     if (availableTerms.length === 0) {
@@ -249,21 +248,22 @@ export async function getGradebookView(
         final: weights.finalPct,
       };
       const totalWeight = availableTerms.reduce(
-        (acc, t) => acc + weightOf[t],
+        (acc: number, t: ModuleTerm) => acc + weightOf[t],
         0,
       );
       if (totalWeight === 0) {
         finalPercent = null;
       } else {
         const weightedSum = availableTerms.reduce(
-          (acc, t) => acc + (termPercents[t] as number) * weightOf[t],
+          (acc: number, t: ModuleTerm) =>
+            acc + (termPercents[t] as number) * weightOf[t],
           0,
         );
         finalPercent = weightedSum / totalWeight;
       }
     } else {
       const sum = availableTerms.reduce(
-        (acc, t) => acc + (termPercents[t] as number),
+        (acc: number, t: ModuleTerm) => acc + (termPercents[t] as number),
         0,
       );
       finalPercent = sum / availableTerms.length;
@@ -454,19 +454,11 @@ export async function getStudentGradebookView(
   if (classErr) throw new Error(classErr.message);
   const className = (classRow as { name: string }).name;
 
-  // listActivitiesForStudent's RLS already filters to published + started,
-  // so drafts and not-yet-started activities never reach the student view.
   const activities = await listActivitiesForStudent(classId);
 
-  // Students may not have insert permission on class_grade_weights even
-  // when they CAN read it; if getOrCreate throws on insert, fall through
-  // to unweighted.
-  let weights: ClassGradeWeights | null = null;
-  try {
-    weights = await getOrCreateGradeWeights(classId);
-  } catch {
-    weights = null;
-  }
+  // getGradeWeights is read-only; null → unweighted fallback. Students
+  // have SELECT on class_grade_weights via RLS, so no try/catch needed.
+  const weights = await getGradeWeights(classId);
   const isWeighted = weights !== null;
 
   const now = Date.now();
@@ -552,7 +544,7 @@ export async function getStudentGradebookView(
   };
 
   let finalPercent: number | null;
-  const availableTerms = MODULE_TERMS.filter(
+  const availableTerms: ModuleTerm[] = MODULE_TERMS.filter(
     (t) => termPercents[t] !== null,
   );
   if (availableTerms.length === 0) {
@@ -565,21 +557,22 @@ export async function getStudentGradebookView(
       final: weights.finalPct,
     };
     const totalWeight = availableTerms.reduce(
-      (acc, t) => acc + weightOf[t],
+      (acc: number, t: ModuleTerm) => acc + weightOf[t],
       0,
     );
     if (totalWeight === 0) {
       finalPercent = null;
     } else {
       const weightedSum = availableTerms.reduce(
-        (acc, t) => acc + (termPercents[t] as number) * weightOf[t],
+        (acc: number, t: ModuleTerm) =>
+          acc + (termPercents[t] as number) * weightOf[t],
         0,
       );
       finalPercent = weightedSum / totalWeight;
     }
   } else {
     const sum = availableTerms.reduce(
-      (acc, t) => acc + (termPercents[t] as number),
+      (acc: number, t: ModuleTerm) => acc + (termPercents[t] as number),
       0,
     );
     finalPercent = sum / availableTerms.length;

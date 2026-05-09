@@ -7,7 +7,6 @@ import { exportGradebookToBase64 } from '@/lib/actions/gradebook';
 import type {
   GradebookView,
   GradebookCell,
-  CellStatus,
 } from '@/lib/actions/gradebook';
 import { MODULE_TERMS, MODULE_TERM_LABELS } from '@/lib/types/modules';
 import GradeWeightsModal from '@/components/teacher/GradeWeightsModal';
@@ -160,7 +159,7 @@ export default function GradebookTab({ view, classId }: GradebookTabProps) {
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <Scale className="h-4 w-4" />
-            Configure weights
+            {view.isWeighted ? 'Configure weights' : 'Set weights'}
           </button>
           <button
             type="button"
@@ -336,6 +335,7 @@ export default function GradebookTab({ view, classId }: GradebookTabProps) {
       <GradeWeightsModal
         open={weightsOpen}
         classId={classId}
+        weights={view.weights}
         onClose={() => setWeightsOpen(false)}
       />
     </div>

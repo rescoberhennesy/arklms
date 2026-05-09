@@ -24,10 +24,10 @@ interface ActivityRow {
   id: string;
   class_id: string;
   term: ModuleTerm;
-  activity_kind: 'assignment';
+  activity_kind: 'assignment' | 'quiz';
   title: string;
   description: string;
-  max_points: string | number; // numeric() arrives as string from PG
+  max_points: string | number;
   start_at: string;
   due_at: string;
   allow_late: boolean;
@@ -73,6 +73,16 @@ interface ProfileRow {
   id: string;
   full_name: string;
   email: string;
+}
+
+interface GradeWeightsRow {
+  class_id: string;
+  prelim_pct: string | number;
+  midterm_pct: string | number;
+  prefinal_pct: string | number;
+  final_pct: string | number;
+  created_at: string;
+  updated_at: string;
 }
 
 function mapActivity(r: ActivityRow): Activity {
@@ -133,6 +143,18 @@ function mapGrade(r: GradeRow): ActivityGrade {
     gradedBy: r.graded_by,
     gradedAt: r.graded_at,
     returnedAt: r.returned_at,
+  };
+}
+
+function mapGradeWeights(r: GradeWeightsRow): ClassGradeWeights {
+  return {
+    classId: r.class_id,
+    prelimPct: Number(r.prelim_pct),
+    midtermPct: Number(r.midterm_pct),
+    prefinalPct: Number(r.prefinal_pct),
+    finalPct: Number(r.final_pct),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 
@@ -613,7 +635,6 @@ export async function deleteActivity(activityId: string): Promise<void> {
     .single();
   if (actErr) throw new Error(actErr.message);
 
-  // Fetch submission IDs first, then their attachment paths.
   const { data: submissions } = await supabase
     .from('activity_submissions')
     .select('id')
@@ -632,7 +653,6 @@ export async function deleteActivity(activityId: string): Promise<void> {
       const paths = (attachments as Array<{ file_path: string }>).map(
         (a) => a.file_path,
       );
-      // Best-effort storage cleanup; swallow errors so the row delete still proceeds
       await supabase.storage.from('submission-attachments').remove(paths);
     }
   }
@@ -752,9 +772,19 @@ export async function ungradeSubmission(submissionId: string): Promise<void> {
 
 // --- Grade weights --------------------------------------------------------
 
-export async function getOrCreateGradeWeights(
+/**
+ * Read-only fetch of grade weights for a class.
+ * Returns null if no weights row exists (caller falls back to unweighted).
+ *
+ * Renamed from getOrCreateGradeWeights (Session 9 carry-forward). The
+ * previous version auto-inserted a 25/25/25/25 row on first read, which
+ * defeated the "absent row = unweighted fallback" design from Session 7.
+ * Weighted vs unweighted only behaved identically when per-term cardinality
+ * was equal; once it diverged, weighted scores became silently wrong.
+ */
+export async function getGradeWeights(
   classId: string,
-): Promise<ClassGradeWeights> {
+): Promise<ClassGradeWeights | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('class_grade_weights')
@@ -762,58 +792,54 @@ export async function getOrCreateGradeWeights(
     .eq('class_id', classId)
     .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) return null;
+  return mapGradeWeights(data as GradeWeightsRow);
+}
 
-  if (data) {
-    const r = data as {
-      class_id: string;
-      prelim_pct: string | number;
-      midterm_pct: string | number;
-      prefinal_pct: string | number;
-      final_pct: string | number;
-      created_at: string;
-      updated_at: string;
-    };
-    return {
-      classId: r.class_id,
-      prelimPct: Number(r.prelim_pct),
-      midtermPct: Number(r.midterm_pct),
-      prefinalPct: Number(r.prefinal_pct),
-      finalPct: Number(r.final_pct),
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    };
+/**
+ * Insert a new weights row for a class. Used by GradeWeightsModal when
+ * the class has no row yet. Validates sum=100 client-side; DB-level CHECK
+ * also enforces this.
+ *
+ * For updating an existing row, call updateGradeWeights instead — it
+ * uses upsert so it works for both create and update paths, but keeping
+ * the explicit create function makes the modal's intent clearer and
+ * surfaces a primary-key violation if the caller's weightsExist flag
+ * is wrong.
+ */
+export async function createGradeWeights(
+  classId: string,
+  weights: {
+    prelimPct: number;
+    midtermPct: number;
+    prefinalPct: number;
+    finalPct: number;
+  },
+): Promise<ClassGradeWeights> {
+  const sum =
+    weights.prelimPct +
+    weights.midtermPct +
+    weights.prefinalPct +
+    weights.finalPct;
+  if (Math.abs(sum - 100) > 0.01) {
+    throw new Error(`Weights must sum to 100. Got ${sum}.`);
   }
 
-  const { data: created, error: insErr } = await supabase
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from('class_grade_weights')
     .insert({
       class_id: classId,
-      prelim_pct: 25,
-      midterm_pct: 25,
-      prefinal_pct: 25,
-      final_pct: 25,
+      prelim_pct: weights.prelimPct,
+      midterm_pct: weights.midtermPct,
+      prefinal_pct: weights.prefinalPct,
+      final_pct: weights.finalPct,
     })
     .select('*')
     .single();
-  if (insErr) throw new Error(insErr.message);
-  const r = created as {
-    class_id: string;
-    prelim_pct: string | number;
-    midterm_pct: string | number;
-    prefinal_pct: string | number;
-    final_pct: string | number;
-    created_at: string;
-    updated_at: string;
-  };
-  return {
-    classId: r.class_id,
-    prelimPct: Number(r.prelim_pct),
-    midtermPct: Number(r.midterm_pct),
-    prefinalPct: Number(r.prefinal_pct),
-    finalPct: Number(r.final_pct),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
+  if (error) throw new Error(error.message);
+  revalidateClassPaths(classId);
+  return mapGradeWeights(data as GradeWeightsRow);
 }
 
 export async function updateGradeWeights(
