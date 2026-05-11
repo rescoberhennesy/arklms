@@ -9,6 +9,7 @@ import {
   ArrowRight,
   HelpCircle,
   AlarmClock,
+  AlertCircle,
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import type { ActivityWithStudentState } from '@/lib/types/activities';
@@ -72,6 +73,39 @@ export default function QuizPostSubmit({
 
   const canRenderReview = showCorrect && reviewView !== null;
 
+  // Count questions awaiting manual grade. A question is "manual-pending"
+  // when its kind is essay or short_answer and the response's manualPoints
+  // is still null. Notes:
+  //   - short_answer has auto-grade via acceptable-strings match, but the
+  //     teacher can override via setManualResponseGrade. We treat it as
+  //     "pending" only if the teacher hasn't set a manual value yet AND
+  //     the auto-grade was unable to mark it correct — i.e. autoCorrect
+  //     is false or null. If autoCorrect is true the auto-grade is fine
+  //     and we don't surface a pending banner for it.
+  //   - We rely on attemptView.responses rather than the review view so
+  //     this works even when showCorrectAnswers is false (the banner is
+  //     useful regardless).
+  const manualPendingCount = attemptView.attempt.submittedAt
+    ? attemptView.questions.reduce((acc, q) => {
+        if (q.questionKind !== 'essay' && q.questionKind !== 'short_answer') {
+          return acc;
+        }
+        const r = attemptView.responses.find((x) => x.questionId === q.id);
+        if (q.questionKind === 'essay') {
+          // Essays always need manual review until manualPoints is set.
+          if (!r || r.manualPoints === null) return acc + 1;
+          return acc;
+        }
+        // short_answer: only pending if not already correct via auto-grade
+        // AND no manual override yet.
+        if (r && r.manualPoints !== null) return acc;
+        if (r && r.autoCorrect === true) return acc;
+        return acc + 1;
+      }, 0)
+    : 0;
+
+  const hasManualPending = manualPendingCount > 0;
+
   return (
     <div className="space-y-4">
       {autoSubmitted && (
@@ -118,10 +152,46 @@ export default function QuizPostSubmit({
           </div>
         ) : (
           <p className="mt-4 text-sm text-green-800">
-            Your teacher will release your grade once they finish reviewing.
+            {hasManualPending
+              ? 'Your final score will appear once your teacher finishes grading.'
+              : 'Your teacher will release your grade once they finish reviewing.'}
           </p>
         )}
       </div>
+
+      {/* Manual-pending banner.
+          Shown when at least one essay (or short_answer the auto-grade
+          couldn't mark correct) is waiting on the teacher. Tells the
+          student their visible score may still change.
+          (Session 11 design lock: surfaced on the post-submit screen
+          only; gradebook row is a Phase 9 polish item.) */}
+      {hasManualPending && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold">
+                {manualPendingCount} question
+                {manualPendingCount === 1 ? '' : 's'} awaiting manual grade
+              </p>
+              <p className="mt-0.5 text-amber-800">
+                {score !== null ? (
+                  <>
+                    Your current score reflects only the auto-graded
+                    questions so far. Your final score may change once your
+                    teacher finishes reviewing.
+                  </>
+                ) : (
+                  <>
+                    Your teacher needs to review these before your score
+                    can be released.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCorrect ? (
         reviewLoading ? (

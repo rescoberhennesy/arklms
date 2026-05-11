@@ -1,14 +1,40 @@
 import Link from 'next/link';
 import { Users } from 'lucide-react';
 import { listMyClasses } from '@/lib/actions/classes';
+import {
+  getTeacherCalendarActivities,
+  getTeacherTodoItems,
+} from '@/lib/actions/dashboard';
+import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import type { TeacherClassListItem } from '@/types/class';
 import ClassCover from '@/components/dashboard/ClassCover';
+import CalendarWidget from '@/components/dashboard/CalendarWidget';
+import TeacherTodoWidget from '@/components/dashboard/TeacherTodoWidget';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TeacherDashboardPage() {
-  const result = await listMyClasses();
-  const allClasses = result.ok ? result.data : [];
+  const now = new Date();
+  const monthStart = isoMonthStart(now.getFullYear(), now.getMonth());
+  const monthEnd = isoMonthEnd(now.getFullYear(), now.getMonth());
+
+  // Parallel-fetch everything. listMyClasses returns a Result; widget
+  // actions throw on failure. Use allSettled so widget failures don't
+  // blow up the whole page.
+  const [classesResult, calendarResult, todoResult] = await Promise.allSettled([
+    listMyClasses(),
+    getTeacherCalendarActivities(monthStart, monthEnd),
+    getTeacherTodoItems(),
+  ]);
+
+  const allClasses =
+    classesResult.status === 'fulfilled' && classesResult.value.ok
+      ? classesResult.value.data
+      : [];
+  const calendarActivities =
+    calendarResult.status === 'fulfilled' ? calendarResult.value : [];
+  const todoItems = todoResult.status === 'fulfilled' ? todoResult.value : [];
+
   const recentClasses = allClasses.slice(0, 3);
 
   return (
@@ -18,6 +44,21 @@ export default async function TeacherDashboardPage() {
         <p className="mt-1 text-sm text-gray-600">
           Here&apos;s a quick overview of your classes.
         </p>
+      </div>
+
+      {/* Phase 8c widgets — full row, calendar 2/3 + todo 1/3 on lg */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <CalendarWidget
+            initialActivities={calendarActivities}
+            fetcher={getTeacherCalendarActivities}
+            role="teacher"
+            classesBasePath="/teacher/classes"
+          />
+        </div>
+        <div className="lg:col-span-1">
+          <TeacherTodoWidget items={todoItems} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -42,7 +83,6 @@ export default async function TeacherDashboardPage() {
             View all →
           </Link>
         </div>
-
         {recentClasses.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
             <p className="text-sm text-gray-600">

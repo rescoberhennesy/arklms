@@ -1,41 +1,61 @@
+// src/components/student/StudentDashboardView.tsx
+//
+// Phase 8c Slice D — widgets slotted in above the existing StatCard +
+// recent-classes content.
+//
+// Calendar takes the full row on mobile; on lg, calendar gets 2/3 and
+// the to-do widget gets 1/3.
+
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
-import { Users } from 'lucide-react';
+import CalendarWidget from '@/components/dashboard/CalendarWidget';
+import StudentTodoWidget from '@/components/dashboard/StudentTodoWidget';
+import { getStudentCalendarActivities } from '@/lib/actions/dashboard';
+import type {
+  CalendarActivity,
+  StudentTodoItem,
+} from '@/lib/types/dashboard';
 import type { StudentClassListItem } from '@/types/class';
 import ClassCover from '@/components/dashboard/ClassCover';
-import JoinClassModal from './JoinClassModal';
 
-type Props = {
+interface StudentDashboardViewProps {
   activeCount: number;
   pendingCount: number;
   recentClasses: StudentClassListItem[];
-};
+  calendarActivities: CalendarActivity[];
+  todoItems: StudentTodoItem[];
+}
 
 export default function StudentDashboardView({
   activeCount,
   pendingCount,
   recentClasses,
-}: Props) {
-  const [joinOpen, setJoinOpen] = useState(false);
-
+  calendarActivities,
+  todoItems,
+}: StudentDashboardViewProps) {
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Welcome back!</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Here&apos;s a quick overview of your classes.
-          </p>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Welcome back!</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          Here&apos;s your week at a glance.
+        </p>
+      </div>
+
+      {/* Phase 8c widgets — full row, calendar 2/3 + todo 1/3 on lg */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <CalendarWidget
+            initialActivities={calendarActivities}
+            fetcher={getStudentCalendarActivities}
+            role="student"
+            classesBasePath="/student/classes"
+          />
         </div>
-        <button
-          type="button"
-          onClick={() => setJoinOpen(true)}
-          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-        >
-          + Join class
-        </button>
+        <div className="lg:col-span-1">
+          <StudentTodoWidget items={todoItems} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -56,15 +76,14 @@ export default function StudentDashboardView({
         {recentClasses.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
             <p className="text-sm text-gray-600">
-              You haven&apos;t joined any classes yet.
+              You aren&apos;t enrolled in any classes yet.
             </p>
-            <button
-              type="button"
-              onClick={() => setJoinOpen(true)}
-              className="mt-3 text-sm font-medium text-red-600 hover:text-red-700"
+            <Link
+              href="/student/classes"
+              className="mt-3 inline-block text-sm font-medium text-red-600 hover:text-red-700"
             >
-              Join your first class →
-            </button>
+              Find classes to join →
+            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -74,8 +93,6 @@ export default function StudentDashboardView({
           </div>
         )}
       </section>
-
-      <JoinClassModal open={joinOpen} onClose={() => setJoinOpen(false)} />
     </div>
   );
 }
@@ -115,10 +132,9 @@ function RecentClassCard({ cls }: { cls: StudentClassListItem }) {
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
           {cls.semester}
         </p>
-        <div className="flex items-center gap-1 text-xs text-gray-600">
-          <Users className="h-3.5 w-3.5" />
-          <span className="truncate">{cls.teacher_name ?? 'Teacher'}</span>
-        </div>
+        {cls.teacher_name && (
+          <p className="truncate text-xs text-gray-600">{cls.teacher_name}</p>
+        )}
       </div>
     </Link>
   );

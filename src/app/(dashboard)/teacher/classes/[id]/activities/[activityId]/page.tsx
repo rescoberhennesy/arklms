@@ -1,3 +1,4 @@
+// src/app/(dashboard)/teacher/classes/[id]/activities/[activityId]/page.tsx
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
@@ -6,7 +7,10 @@ import {
   listActivityAttachments,
 } from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
-import { getTeacherQuizView } from '@/lib/actions/quizzes';
+import {
+  getTeacherQuizView,
+  listQuizAttemptsForQuiz,
+} from '@/lib/actions/quizzes';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import ActivityEditor from '@/components/teacher/ActivityEditor';
 import QuizEditor from '@/components/teacher/QuizEditor';
@@ -22,7 +26,6 @@ interface PageProps {
 
 export default async function ActivityDetailPage({ params }: PageProps) {
   const { id: classId, activityId } = await params;
-
   if (!UUID_RE.test(classId) || !UUID_RE.test(activityId)) notFound();
 
   const classRes = await getClassById(classId);
@@ -41,7 +44,18 @@ export default async function ActivityDetailPage({ params }: PageProps) {
   }
 
   const isQuiz = activity.activityKind === 'quiz';
-  const quizView = isQuiz ? await getTeacherQuizView(activityId) : null;
+
+  // Quiz branch: fetch view + attempts list in parallel (both are needed by
+  // QuizEditor — view drives the editor body, attempts drive the new
+  // QuizAttemptsPanel rendered between Questions and Danger zone).
+  const [quizView, quizAttempts] = isQuiz
+    ? await Promise.all([
+        getTeacherQuizView(activityId),
+        listQuizAttemptsForQuiz(activityId),
+      ])
+    : [null, []];
+
+  // Assignment branch: attachments only.
   const attachments = !isQuiz ? await listActivityAttachments(activityId) : [];
 
   return (
@@ -56,7 +70,12 @@ export default async function ActivityDetailPage({ params }: PageProps) {
       </Link>
 
       {isQuiz && quizView ? (
-        <QuizEditor activity={activity} classId={classId} initialQuizView={quizView} />
+        <QuizEditor
+          activity={activity}
+          classId={classId}
+          initialQuizView={quizView}
+          initialAttempts={quizAttempts}
+        />
       ) : (
         <ActivityEditor
           activity={activity}

@@ -132,7 +132,7 @@ export function ClassesView({
   const archived = classes.filter((c) => c.is_archived);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Classes</h1>

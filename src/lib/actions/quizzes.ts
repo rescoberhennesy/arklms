@@ -285,7 +285,8 @@ export async function createQuizActivity(input: {
       term: input.term,
       activity_kind: 'quiz',
       title: input.title.trim(),
-      description: input.description ?? '',
+      instructions: input.description ?? '',
+      prompt: '', // quizzes don't use the assignment 2-field model
       max_points: 0, // updated as questions are added via recomputeQuizTotalPoints
       start_at: input.startAt ?? new Date().toISOString(),
       due_at: input.dueAt,
