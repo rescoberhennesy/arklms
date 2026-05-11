@@ -26,7 +26,8 @@ interface ActivityRow {
   term: ModuleTerm;
   activity_kind: 'assignment' | 'quiz';
   title: string;
-  description: string;
+  instructions: string; // was: description
+  prompt: string;       // NEW
   max_points: string | number;
   start_at: string;
   due_at: string;
@@ -92,7 +93,8 @@ function mapActivity(r: ActivityRow): Activity {
     term: r.term,
     activityKind: r.activity_kind,
     title: r.title,
-    description: r.description,
+    instructions: r.instructions,
+    prompt: r.prompt,
     maxPoints: Number(r.max_points),
     startAt: r.start_at,
     dueAt: r.due_at,
@@ -486,7 +488,8 @@ export async function createActivity(input: {
   classId: string;
   term: ModuleTerm;
   title: string;
-  description?: string;
+  instructions?: string;
+  prompt?: string;
   maxPoints: number;
   startAt?: string;
   dueAt: string;
@@ -515,7 +518,8 @@ export async function createActivity(input: {
       class_id: input.classId,
       term: input.term,
       title: input.title.trim(),
-      description: input.description ?? '',
+      instructions: input.instructions ?? '',
+      prompt: input.prompt ?? '',
       max_points: input.maxPoints,
       start_at: input.startAt ?? new Date().toISOString(),
       due_at: input.dueAt,
@@ -537,7 +541,8 @@ export async function updateActivity(
   activityId: string,
   patch: {
     title?: string;
-    description?: string;
+    instructions?: string;
+    prompt?: string;
     maxPoints?: number;
     startAt?: string;
     dueAt?: string;
@@ -550,7 +555,8 @@ export async function updateActivity(
 
   const dbPatch: Record<string, unknown> = {};
   if (patch.title !== undefined) dbPatch.title = patch.title.trim();
-  if (patch.description !== undefined) dbPatch.description = patch.description;
+  if (patch.instructions !== undefined) dbPatch.instructions = patch.instructions;
+  if (patch.prompt !== undefined) dbPatch.prompt = patch.prompt;
   if (patch.maxPoints !== undefined) dbPatch.max_points = patch.maxPoints;
   if (patch.startAt !== undefined) dbPatch.start_at = patch.startAt;
   if (patch.dueAt !== undefined) dbPatch.due_at = patch.dueAt;
@@ -921,4 +927,142 @@ export async function submitActivity(
     isLate: row.is_late,
     replacedGrade: row.replaced_grade,
   };
+}
+
+// ==========================================================================
+// Activity attachments (teacher-uploaded reference files for assignments)
+// ==========================================================================
+
+interface ActivityAttachmentRow {
+  id: string;
+  activity_id: string;
+  file_path: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+function mapActivityAttachment(r: ActivityAttachmentRow) {
+  return {
+    id: r.id,
+    activityId: r.activity_id,
+    filePath: r.file_path,
+    fileName: r.file_name,
+    fileSize: r.file_size,
+    mimeType: r.mime_type,
+    uploadedBy: r.uploaded_by,
+    uploadedAt: r.uploaded_at,
+  };
+}
+
+export async function listActivityAttachments(
+  activityId: string,
+): Promise<import('@/lib/types/activities').ActivityAttachment[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('activity_attachments')
+    .select('*')
+    .eq('activity_id', activityId)
+    .order('uploaded_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => mapActivityAttachment(r as ActivityAttachmentRow));
+}
+
+export async function createActivityAttachment(input: {
+  activityId: string;
+  attachment: import('@/lib/types/activities').ActivityAttachmentInput;
+}): Promise<{ attachmentId: string }> {
+  const supabase = await createClient();
+
+  // Guard: assignment-only per Session 10 C8 design.
+  const { data: actData, error: actErr } = await supabase
+    .from('activities')
+    .select('class_id, activity_kind')
+    .eq('id', input.activityId)
+    .single();
+  if (actErr) throw new Error(actErr.message);
+  const act = actData as { class_id: string; activity_kind: 'assignment' | 'quiz' };
+  if (act.activity_kind !== 'assignment') {
+    throw new Error('Attachments are only supported on assignments.');
+  }
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr) throw new Error(userErr.message);
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('activity_attachments')
+    .insert({
+      activity_id: input.activityId,
+      file_path: input.attachment.path,
+      file_name: input.attachment.name,
+      file_size: input.attachment.size,
+      mime_type: input.attachment.mimeType,
+      uploaded_by: user.id,
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/teacher/classes/${act.class_id}`);
+  revalidatePath(`/teacher/classes/${act.class_id}/activities/${input.activityId}`);
+  revalidatePath(`/student/classes/${act.class_id}/activities/${input.activityId}`);
+
+  return { attachmentId: (data as { id: string }).id };
+}
+
+export async function deleteActivityAttachment(
+  attachmentId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: existing, error: getErr } = await supabase
+    .from('activity_attachments')
+    .select('activity_id, file_path, activities!inner(class_id)')
+    .eq('id', attachmentId)
+    .single();
+  if (getErr) throw new Error(getErr.message);
+
+  const row = existing as unknown as {
+    activity_id: string;
+    file_path: string;
+    activities: { class_id: string };
+  };
+
+  // Delete the storage object first (best effort — if this fails, abort the
+  // DB delete so we don't orphan a row pointing at a missing file).
+  const { error: storageErr } = await supabase.storage
+    .from('activity-attachments')
+    .remove([row.file_path]);
+  if (storageErr) throw new Error(`Failed to delete file: ${storageErr.message}`);
+
+  const { error: dbErr } = await supabase
+    .from('activity_attachments')
+    .delete()
+    .eq('id', attachmentId);
+  if (dbErr) throw new Error(dbErr.message);
+
+  revalidatePath(`/teacher/classes/${row.activities.class_id}`);
+  revalidatePath(
+    `/teacher/classes/${row.activities.class_id}/activities/${row.activity_id}`,
+  );
+  revalidatePath(
+    `/student/classes/${row.activities.class_id}/activities/${row.activity_id}`,
+  );
+}
+
+export async function getSignedActivityAttachmentUrl(
+  filePath: string,
+): Promise<string> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.storage
+    .from('activity-attachments')
+    .createSignedUrl(filePath, 60 * 60); // 1-hour signed URL
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
 }

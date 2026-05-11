@@ -60,7 +60,8 @@ export interface Activity {
   term: ModuleTerm;
   activityKind: ActivityKind;
   title: string;
-  description: string;
+ instructions: string; // intro / context (was: description). Renamed column.
+  prompt: string;       // the question or task students will answer.
   maxPoints: number;
   startAt: string; // ISO timestamp
   dueAt: string; // ISO timestamp
@@ -198,4 +199,29 @@ export function computeActivityStatus(
   }
 
   return 'open';
+}
+
+// ==========================================================================
+// Activity attachments — teacher-uploaded reference files (PDFs, worksheets)
+// ==========================================================================
+
+export interface ActivityAttachment {
+  id: string;
+  activityId: string;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  uploadedBy: string;
+  uploadedAt: string;
+}
+
+// Input to createActivityAttachment after the file has been uploaded to
+// storage. Same shape as SubmissionAttachmentInput but for the
+// teacher-prompt context.
+export interface ActivityAttachmentInput {
+  path: string;
+  name: string;
+  size: number;
+  mimeType: string;
 }

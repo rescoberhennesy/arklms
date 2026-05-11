@@ -8,6 +8,7 @@ import {
   Loader2,
   ArrowRight,
   HelpCircle,
+  AlarmClock,
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import type { ActivityWithStudentState } from '@/lib/types/activities';
@@ -33,6 +34,7 @@ interface QuizPostSubmitProps {
   attemptView: StudentAttemptView;
   reviewView: StudentReviewView | null;
   reviewLoading: boolean;
+  autoSubmitted: boolean;
 }
 
 export default function QuizPostSubmit({
@@ -41,11 +43,10 @@ export default function QuizPostSubmit({
   attemptView,
   reviewView,
   reviewLoading,
+  autoSubmitted,
 }: QuizPostSubmitProps) {
   const showCorrect = attemptView.config.showCorrectAnswers;
 
-  // If we have the review view, prefer its score (most authoritative).
-  // Otherwise use what's in the attempt row (may be null until graded).
   const score = reviewView
     ? reviewView.score
     : attemptView.attempt.manualScoreOverride ??
@@ -62,13 +63,35 @@ export default function QuizPostSubmit({
   const submittedAt = attemptView.attempt.submittedAt
     ? new Date(attemptView.attempt.submittedAt).toLocaleString()
     : null;
+  const submittedAtTime = attemptView.attempt.submittedAt
+    ? new Date(attemptView.attempt.submittedAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
 
-  // Determine if we can render the per-question review.
   const canRenderReview = showCorrect && reviewView !== null;
 
   return (
     <div className="space-y-4">
-      {/* Score banner */}
+      {autoSubmitted && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlarmClock className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold">
+                Time&apos;s up
+                {submittedAtTime ? ` — auto-submitted at ${submittedAtTime}` : ''}
+              </p>
+              <p className="mt-0.5 text-amber-800">
+                Whatever you had answered when the timer expired was saved
+                and submitted. Unanswered questions counted as 0.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-green-200 bg-green-50 p-6 shadow-sm">
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-8 w-8 flex-shrink-0 text-green-600" />
@@ -100,7 +123,6 @@ export default function QuizPostSubmit({
         )}
       </div>
 
-      {/* Review section */}
       {showCorrect ? (
         reviewLoading ? (
           <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600">
@@ -115,14 +137,7 @@ export default function QuizPostSubmit({
             <ul className="space-y-3">
               {reviewView.questions.map((q, i) => {
                 const r = reviewView.responses.find((x) => x.questionId === q.id);
-                return (
-                  <ReviewRow
-                    key={q.id}
-                    index={i}
-                    question={q}
-                    response={r}
-                  />
-                );
+                return <ReviewRow key={q.id} index={i} question={q} response={r} />;
               })}
             </ul>
           </div>
@@ -157,10 +172,6 @@ export default function QuizPostSubmit({
   );
 }
 
-// ============================================================================
-// Per-question review row — shows student's answer + correct answer + verdict
-// ============================================================================
-
 interface ReviewRowProps {
   index: number;
   question: StudentReviewView['questions'][number];
@@ -168,7 +179,6 @@ interface ReviewRowProps {
 }
 
 function ReviewRow({ index, question: q, response: r }: ReviewRowProps) {
-  // Verdict: prefer explicit autoCorrect; fall back to manualPoints>0; else null
   const verdict: 'correct' | 'incorrect' | 'manual' | 'unanswered' = (() => {
     if (!r) return 'unanswered';
     if (q.questionKind === 'essay') {
@@ -261,9 +271,7 @@ function ReviewAnswerDetail({
   );
 
   if (!r) {
-    return (
-      <div className="text-xs italic text-gray-500">No response recorded.</div>
-    );
+    return <div className="text-xs italic text-gray-500">No response recorded.</div>;
   }
 
   switch (q.questionKind) {
@@ -395,9 +403,7 @@ function ReviewAnswerDetail({
                         isRight ? 'text-green-700' : 'text-gray-700'
                       }`}
                     >
-                      {yours !== undefined
-                        ? cfg.right[yours]
-                        : '(no match)'}
+                      {yours !== undefined ? cfg.right[yours] : '(no match)'}
                     </td>
                     <td className="py-1 text-green-700">
                       {correct !== undefined ? cfg.right[correct] : '—'}

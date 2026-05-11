@@ -1,7 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
-import { getActivityForStudent } from '@/lib/actions/activities';
+import {
+  getActivityForStudent,
+  listActivityAttachments,
+} from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
 import { getStudentAttemptView } from '@/lib/actions/quizzes';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
@@ -51,6 +54,9 @@ export default async function StudentActivityPage({ params }: PageProps) {
     ? await getStudentAttemptView(activityId).catch(() => null)
     : null;
 
+  // For assignment activities, fetch attachments (worksheets, PDFs etc).
+  const attachments = !isQuiz ? await listActivityAttachments(activityId) : [];
+
   return (
     <div className="space-y-6">
       <SetPageTitle title={`${activity.title} — ${klass.name}`} />
@@ -73,6 +79,7 @@ export default async function StudentActivityPage({ params }: PageProps) {
           classId={classId}
           activity={activity}
           currentUserId={user.id}
+          attachments={attachments}
         />
       )}
     </div>

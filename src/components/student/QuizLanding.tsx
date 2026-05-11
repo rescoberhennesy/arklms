@@ -51,15 +51,15 @@ export default function QuizLanding({
           </span>
         </div>
 
-        {activity.description.trim() && (
-          <div className="mt-4 rounded-md border border-gray-100 bg-gray-50 p-3">
-            <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Instructions
-            </h2>
-            <MarkdownContent body={activity.description} />
-          </div>
-        )}
-      </div>
+        {activity.instructions.trim() && (
+  <div className="mt-4 rounded-md border border-gray-100 bg-gray-50 p-3">
+    <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+      Instructions
+    </h2>
+    <MarkdownContent body={activity.instructions}/>
+  </div>
+)
+}
 
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <div className="flex items-start gap-3">
@@ -102,6 +102,7 @@ export default function QuizLanding({
           Start quiz
         </button>
       </div>
+    </div>
     </div>
   );
 }

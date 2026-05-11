@@ -22,14 +22,17 @@ import {
 } from '@/lib/actions/activities';
 import {
   type ActivityWithStudentState,
+  type ActivityAttachment,
   type SubmissionAttachmentInput,
   SUBMISSION_TYPE_LABELS,
 } from '@/lib/types/activities';
+import StudentActivityAttachmentsList from '@/components/student/StudentActivityAttachmentsList';
 
 interface StudentActivityViewProps {
   classId: string;
   activity: ActivityWithStudentState;
   currentUserId: string;
+  attachments: ActivityAttachment[];
 }
 
 // Sanitize filename for storage path: keep alnum, dot, dash, underscore.
@@ -53,14 +56,12 @@ export default function StudentActivityView({
   classId,
   activity,
   currentUserId,
+  attachments,
 }: StudentActivityViewProps) {
   const router = useRouter();
   const submission = activity.submission;
   const grade = activity.grade;
 
-  // Editing state. If they already submitted and can't resubmit, this is
-  // permanently false (read-only view). Otherwise, default to false (show
-  // their submission) and flip to true via "Edit"/"Resubmit" buttons.
   const canEdit =
     !submission || // no prior submission yet
     !grade || // submitted but not graded yet
@@ -68,7 +69,6 @@ export default function StudentActivityView({
 
   const [editing, setEditing] = useState(!submission);
 
-  // Composer state (only used when editing)
   const [textBody, setTextBody] = useState(submission?.textBody ?? '');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -127,9 +127,7 @@ export default function StudentActivityView({
           upsert: false,
         });
       if (upErr) {
-        throw new Error(
-          `Failed to upload "${file.name}": ${upErr.message}`,
-        );
+        throw new Error(`Failed to upload "${file.name}": ${upErr.message}`);
       }
       uploaded.push({
         path,
@@ -207,8 +205,6 @@ export default function StudentActivityView({
     setEditing(false);
   }
 
-  // ---- Render ---------------------------------------------------------
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -240,14 +236,29 @@ export default function StudentActivityView({
         </div>
       )}
 
-      {/* Description */}
-      {activity.description.trim() && (
+      {/* Instructions (intro / context) */}
+      {activity.instructions.trim() && (
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
             Instructions
           </h2>
-          <MarkdownContent body={activity.description} />
+          <MarkdownContent body={activity.instructions} />
         </section>
+      )}
+
+      {/* Prompt (the question / task) */}
+      {activity.prompt.trim() && (
+        <section className="rounded-xl border-2 border-red-200 bg-red-50/30 p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-700">
+            Question / prompt
+          </h2>
+          <MarkdownContent body={activity.prompt} />
+        </section>
+      )}
+
+      {/* Attachments (teacher-uploaded reference files) */}
+      {attachments.length > 0 && (
+        <StudentActivityAttachmentsList attachments={attachments} />
       )}
 
       {/* Grade (if returned) */}

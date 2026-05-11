@@ -30,6 +30,7 @@ import {
   type ActivityWithAllSubmissions,
   type SubmissionWithGrade,
   type SubmissionType,
+  type ActivityAttachment,
   SUBMISSION_TYPES,
   SUBMISSION_TYPE_LABELS,
 } from '@/lib/types/activities';
@@ -38,10 +39,12 @@ import {
   MODULE_TERMS,
   MODULE_TERM_LABELS,
 } from '@/lib/types/modules';
+import ActivityAttachmentsPanel from '@/components/teacher/ActivityAttachmentsPanel';
 
 interface ActivityEditorProps {
   activity: ActivityWithAllSubmissions;
   classId: string;
+  initialAttachments: ActivityAttachment[];
 }
 
 const TERM_ACCENTS: Record<ModuleTerm, string> = {
@@ -50,8 +53,6 @@ const TERM_ACCENTS: Record<ModuleTerm, string> = {
   prefinal: 'border-amber-200 text-amber-800 bg-amber-50',
   final: 'border-rose-200 text-rose-800 bg-rose-50',
 };
-
-// ---- ISO ↔ datetime-local helpers ---------------------------------------
 
 function isoToLocal(iso: string): string {
   const d = new Date(iso);
@@ -63,14 +64,13 @@ function localToIso(local: string): string {
   return new Date(local).toISOString();
 }
 
-// ---- Signature for prop-sync --------------------------------------------
-
 function activitySignature(a: ActivityWithAllSubmissions): string {
   return [
     a.id,
     a.title,
     a.term,
-    a.description,
+    a.instructions,
+    a.prompt,
     String(a.maxPoints),
     a.startAt,
     a.dueAt,
@@ -91,48 +91,43 @@ function activitySignature(a: ActivityWithAllSubmissions): string {
   ].join('§');
 }
 
-// ==========================================================================
-
 export default function ActivityEditor({
   activity,
   classId,
+  initialAttachments,
 }: ActivityEditorProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
-  // Title (inline editor)
+  // Title
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(activity.title);
 
-  // Description (manual save, dirty-aware)
-  const [description, setDescription] = useState(activity.description);
-  const [savedDescription, setSavedDescription] = useState(activity.description);
-  const [descEditing, setDescEditing] = useState(false);
-  const isDescDirty = description !== savedDescription;
+  // Instructions (intro / context)
+  const [instructions, setInstructions] = useState(activity.instructions);
+  const [savedInstructions, setSavedInstructions] = useState(activity.instructions);
+  const [instructionsEditing, setInstructionsEditing] = useState(false);
+  const isInstructionsDirty = instructions !== savedInstructions;
 
-  // Settings panel fields (also manual save, dirty-aware)
+  // Prompt (the question / task)
+  const [prompt, setPrompt] = useState(activity.prompt);
+  const [savedPrompt, setSavedPrompt] = useState(activity.prompt);
+  const [promptEditing, setPromptEditing] = useState(false);
+  const isPromptDirty = prompt !== savedPrompt;
+
+  // Settings
   const [maxPoints, setMaxPoints] = useState(String(activity.maxPoints));
   const [savedMaxPoints, setSavedMaxPoints] = useState(String(activity.maxPoints));
   const [startLocal, setStartLocal] = useState(isoToLocal(activity.startAt));
-  const [savedStartLocal, setSavedStartLocal] = useState(
-    isoToLocal(activity.startAt),
-  );
+  const [savedStartLocal, setSavedStartLocal] = useState(isoToLocal(activity.startAt));
   const [dueLocal, setDueLocal] = useState(isoToLocal(activity.dueAt));
   const [savedDueLocal, setSavedDueLocal] = useState(isoToLocal(activity.dueAt));
-  const [submissionType, setSubmissionType] = useState<SubmissionType>(
-    activity.submissionType,
-  );
-  const [savedSubmissionType, setSavedSubmissionType] = useState<SubmissionType>(
-    activity.submissionType,
-  );
+  const [submissionType, setSubmissionType] = useState<SubmissionType>(activity.submissionType);
+  const [savedSubmissionType, setSavedSubmissionType] = useState<SubmissionType>(activity.submissionType);
   const [allowLate, setAllowLate] = useState(activity.allowLate);
   const [savedAllowLate, setSavedAllowLate] = useState(activity.allowLate);
-  const [allowResubmission, setAllowResubmission] = useState(
-    activity.allowResubmission,
-  );
-  const [savedAllowResubmission, setSavedAllowResubmission] = useState(
-    activity.allowResubmission,
-  );
+  const [allowResubmission, setAllowResubmission] = useState(activity.allowResubmission);
+  const [savedAllowResubmission, setSavedAllowResubmission] = useState(activity.allowResubmission);
 
   const isSettingsDirty =
     maxPoints !== savedMaxPoints ||
@@ -147,16 +142,20 @@ export default function ActivityEditor({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
 
-  // Prop-sync: same pattern as ModuleEditor.
+  // Prop-sync
   const sig = activitySignature(activity);
   const lastSyncedSig = useRef(sig);
   const titleEditingRef = useRef(titleEditing);
-  const descEditingRef = useRef(descEditing);
-  const isDescDirtyRef = useRef(isDescDirty);
+  const instructionsEditingRef = useRef(instructionsEditing);
+  const promptEditingRef = useRef(promptEditing);
+  const isInstructionsDirtyRef = useRef(isInstructionsDirty);
+  const isPromptDirtyRef = useRef(isPromptDirty);
   const isSettingsDirtyRef = useRef(isSettingsDirty);
   titleEditingRef.current = titleEditing;
-  descEditingRef.current = descEditing;
-  isDescDirtyRef.current = isDescDirty;
+  instructionsEditingRef.current = instructionsEditing;
+  promptEditingRef.current = promptEditing;
+  isInstructionsDirtyRef.current = isInstructionsDirty;
+  isPromptDirtyRef.current = isPromptDirty;
   isSettingsDirtyRef.current = isSettingsDirty;
 
   useEffect(() => {
@@ -165,12 +164,16 @@ export default function ActivityEditor({
 
     if (!titleEditingRef.current) setTitleDraft(activity.title);
 
-    setSavedDescription(activity.description);
-    if (!descEditingRef.current && !isDescDirtyRef.current) {
-      setDescription(activity.description);
+    setSavedInstructions(activity.instructions);
+    if (!instructionsEditingRef.current && !isInstructionsDirtyRef.current) {
+      setInstructions(activity.instructions);
     }
 
-    // Settings: only resync when not dirty.
+    setSavedPrompt(activity.prompt);
+    if (!promptEditingRef.current && !isPromptDirtyRef.current) {
+      setPrompt(activity.prompt);
+    }
+
     setSavedMaxPoints(String(activity.maxPoints));
     setSavedStartLocal(isoToLocal(activity.startAt));
     setSavedDueLocal(isoToLocal(activity.dueAt));
@@ -187,7 +190,7 @@ export default function ActivityEditor({
     }
   }, [sig, activity]);
 
-  // ---- Handlers --------------------------------------------------------
+  // ---- Handlers ----
 
   function handleSaveTitle() {
     const trimmed = titleDraft.trim();
@@ -221,25 +224,42 @@ export default function ActivityEditor({
     });
   }
 
-  function handleSaveDescription() {
+  function handleSaveInstructions() {
     setError(null);
     startTransition(async () => {
       try {
-        await updateActivity(activity.id, { description });
-        setSavedDescription(description);
-        setDescEditing(false);
+        await updateActivity(activity.id, { instructions });
+        setSavedInstructions(instructions);
+        setInstructionsEditing(false);
         router.refresh();
       } catch (e) {
-        setError(
-          e instanceof Error ? e.message : 'Failed to save description.',
-        );
+        setError(e instanceof Error ? e.message : 'Failed to save instructions.');
       }
     });
   }
 
-  function handleCancelDescription() {
-    setDescription(savedDescription);
-    setDescEditing(false);
+  function handleCancelInstructions() {
+    setInstructions(savedInstructions);
+    setInstructionsEditing(false);
+  }
+
+  function handleSavePrompt() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await updateActivity(activity.id, { prompt });
+        setSavedPrompt(prompt);
+        setPromptEditing(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to save prompt.');
+      }
+    });
+  }
+
+  function handleCancelPrompt() {
+    setPrompt(savedPrompt);
+    setPromptEditing(false);
   }
 
   function handleSaveSettings() {
@@ -295,7 +315,6 @@ export default function ActivityEditor({
 
   function handleTogglePublish() {
     if (activity.published) {
-      // Unpublishing means hiding from students who already saw it. Confirm.
       setConfirmUnpublish(true);
       return;
     }
@@ -334,17 +353,12 @@ export default function ActivityEditor({
     });
   }
 
-  // ---- Derived ---------------------------------------------------------
-
+  // ---- Derived ----
   const submissionCount = activity.submissions.length;
-  const gradedCount = activity.submissions.filter(
-    (s: SubmissionWithGrade) => s.grade,
-  ).length;
+  const gradedCount = activity.submissions.filter((s: SubmissionWithGrade) => s.grade).length;
   const unreturnedCount = activity.submissions.filter(
     (s: SubmissionWithGrade) => s.grade && !s.grade.returnedAt,
   ).length;
-
-  // ---- Render ---------------------------------------------------------
 
   return (
     <div className="space-y-6">
@@ -376,9 +390,7 @@ export default function ActivityEditor({
             />
           ) : (
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">
-                {activity.title}
-              </h1>
+              <h1 className="text-2xl font-bold text-gray-900">{activity.title}</h1>
               <button
                 type="button"
                 onClick={() => setTitleEditing(true)}
@@ -438,7 +450,7 @@ export default function ActivityEditor({
         </div>
       </div>
 
-      {/* Quick stats strip */}
+      {/* Quick stats */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
         <span className="inline-flex items-center gap-1">
           <Calendar className="h-3 w-3" />
@@ -459,22 +471,27 @@ export default function ActivityEditor({
         </span>
       </div>
 
-      {/* Description */}
+      {/* Instructions (intro / context) */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Description
-          </h2>
-          {descEditing ? (
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Instructions
+            </h2>
+            <p className="text-xs text-gray-500">
+              Background, context, or directions students read before starting.
+            </p>
+          </div>
+          {instructionsEditing ? (
             <div className="flex items-center gap-2 text-xs">
-              {isDescDirty ? (
+              {isInstructionsDirty ? (
                 <span className="text-amber-600">Unsaved changes</span>
               ) : (
                 <span className="text-gray-400">No changes</span>
               )}
               <button
                 type="button"
-                onClick={handleCancelDescription}
+                onClick={handleCancelInstructions}
                 disabled={isPending}
                 className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
@@ -482,54 +499,122 @@ export default function ActivityEditor({
               </button>
               <button
                 type="button"
-                onClick={handleSaveDescription}
-                disabled={isPending || !isDescDirty}
+                onClick={handleSaveInstructions}
+                disabled={isPending || !isInstructionsDirty}
                 className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                 Save
               </button>
             </div>
           ) : (
             <button
               type="button"
-              onClick={() => setDescEditing(true)}
+              onClick={() => setInstructionsEditing(true)}
               className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-              aria-label="Edit description"
-              title="Edit description"
+              aria-label="Edit instructions"
+              title="Edit instructions"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
 
-        {descEditing ? (
+        {instructionsEditing ? (
           <MarkdownEditor
-            value={description}
-            onChange={setDescription}
-            placeholder="Describe what this activity is about. Markdown supported."
+            value={instructions}
+            onChange={setInstructions}
+            placeholder="e.g. 'Read chapters 3–5, then complete the worksheet attached below.' Markdown supported."
             rows={6}
             disabled={isPending}
           />
-        ) : savedDescription.trim() ? (
-          <MarkdownContent body={savedDescription} />
+        ) : savedInstructions.trim() ? (
+          <MarkdownContent body={savedInstructions} />
         ) : (
           <p className="text-sm italic text-gray-400">
-            No description yet. Click the pencil icon to add one.
+            No instructions yet. Click the pencil icon to add some.
           </p>
         )}
       </section>
 
+      {/* Prompt (the question / task) */}
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Question / prompt
+            </h2>
+            <p className="text-xs text-gray-500">
+              The actual question or task students will answer or complete.
+            </p>
+          </div>
+          {promptEditing ? (
+            <div className="flex items-center gap-2 text-xs">
+              {isPromptDirty ? (
+                <span className="text-amber-600">Unsaved changes</span>
+              ) : (
+                <span className="text-gray-400">No changes</span>
+              )}
+              <button
+                type="button"
+                onClick={handleCancelPrompt}
+                disabled={isPending}
+                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePrompt}
+                disabled={isPending || !isPromptDirty}
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                Save
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPromptEditing(true)}
+              className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              aria-label="Edit prompt"
+              title="Edit prompt"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {promptEditing ? (
+          <MarkdownEditor
+            value={prompt}
+            onChange={setPrompt}
+            placeholder="e.g. 'Compare the authors' theses and explain which you find more persuasive.' Markdown supported."
+            rows={4}
+            disabled={isPending}
+          />
+        ) : savedPrompt.trim() ? (
+          <MarkdownContent body={savedPrompt} />
+        ) : (
+          <p className="text-sm italic text-gray-400">
+            No prompt yet. Click the pencil icon to add the question students will answer.
+          </p>
+        )}
+      </section>
+
+      {/* Attachments */}
+      <ActivityAttachmentsPanel
+        activityId={activity.id}
+        classId={classId}
+        initialAttachments={initialAttachments}
+        canEdit={true}
+      />
+
       {/* Settings */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Settings
-          </h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Settings</h2>
           {isSettingsDirty && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-amber-600">Unsaved changes</span>
@@ -547,11 +632,7 @@ export default function ActivityEditor({
                 disabled={isPending}
                 className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                 Save
               </button>
             </div>
@@ -560,9 +641,7 @@ export default function ActivityEditor({
 
         <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Max points
-            </label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Max points</label>
             <input
               type="number"
               min="0.01"
@@ -574,14 +653,10 @@ export default function ActivityEditor({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Submission type
-            </label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Submission type</label>
             <select
               value={submissionType}
-              onChange={(e) =>
-                setSubmissionType(e.target.value as SubmissionType)
-              }
+              onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
               disabled={isPending}
               className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
             >
@@ -593,9 +668,7 @@ export default function ActivityEditor({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Start date (visible to students)
-            </label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Start date (visible to students)</label>
             <input
               type="datetime-local"
               value={startLocal}
@@ -605,9 +678,7 @@ export default function ActivityEditor({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Due date
-            </label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Due date</label>
             <input
               type="datetime-local"
               value={dueLocal}
@@ -656,8 +727,7 @@ export default function ActivityEditor({
       <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">
         <h2 className="text-sm font-semibold text-red-900">Danger zone</h2>
         <p className="mt-1 text-xs text-red-700">
-          Deleting this activity is permanent and removes all submissions and
-          attached files.
+          Deleting this activity is permanent and removes all submissions and attached files.
         </p>
         <button
           type="button"
@@ -691,9 +761,9 @@ export default function ActivityEditor({
   );
 }
 
-// ==========================================================================
-// Submissions panel
-// ==========================================================================
+// ============================================================================
+// Submissions panel (unchanged from previous version)
+// ============================================================================
 
 interface SubmissionsPanelProps {
   activity: ActivityWithAllSubmissions;
@@ -718,12 +788,9 @@ function SubmissionsPanel({
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Submissions
-          </h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Submissions</h2>
           <p className="mt-0.5 text-xs text-gray-500">
-            {submissionCount} total · {gradedCount} graded · {unreturnedCount}{' '}
-            awaiting release
+            {submissionCount} total · {gradedCount} graded · {unreturnedCount} awaiting release
           </p>
         </div>
         {unreturnedCount > 0 && (
@@ -733,11 +800,7 @@ function SubmissionsPanel({
             disabled={isPending}
             className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CheckCheck className="h-3.5 w-3.5" />
-            )}
+            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
             Release all {unreturnedCount} grade{unreturnedCount === 1 ? '' : 's'}
           </button>
         )}
@@ -748,12 +811,7 @@ function SubmissionsPanel({
       ) : (
         <ul className="divide-y divide-gray-100">
           {activity.submissions.map((s: SubmissionWithGrade) => (
-            <SubmissionRow
-              key={s.id}
-              submission={s}
-              activity={activity}
-              classId={classId}
-            />
+            <SubmissionRow key={s.id} submission={s} activity={activity} classId={classId} />
           ))}
         </ul>
       )}
@@ -774,21 +832,12 @@ function SubmissionRow({ submission, activity, classId }: SubmissionRowProps) {
   let statusPill: { className: string; label: string };
   if (!grade) {
     statusPill = submission.isLate
-      ? {
-          className: 'bg-amber-100 text-amber-800',
-          label: 'Submitted (late)',
-        }
+      ? { className: 'bg-amber-100 text-amber-800', label: 'Submitted (late)' }
       : { className: 'bg-blue-100 text-blue-800', label: 'Submitted' };
   } else if (!grade.returnedAt) {
-    statusPill = {
-      className: 'bg-purple-100 text-purple-800',
-      label: 'Graded (not released)',
-    };
+    statusPill = { className: 'bg-purple-100 text-purple-800', label: 'Graded (not released)' };
   } else {
-    statusPill = {
-      className: 'bg-green-100 text-green-800',
-      label: 'Graded & released',
-    };
+    statusPill = { className: 'bg-green-100 text-green-800', label: 'Graded & released' };
   }
 
   return (
@@ -810,18 +859,14 @@ function SubmissionRow({ submission, activity, classId }: SubmissionRowProps) {
           )}
           {grade && (
             <span>
-              <span className="font-semibold text-gray-700">
-                {grade.score}
-              </span>
+              <span className="font-semibold text-gray-700">{grade.score}</span>
               <span className="text-gray-400"> / {activity.maxPoints}</span>
             </span>
           )}
         </div>
       </div>
 
-      <span
-        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusPill.className}`}
-      >
+      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusPill.className}`}>
         {statusPill.label}
       </span>
     </li>

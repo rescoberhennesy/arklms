@@ -77,7 +77,7 @@ function activitySignature(a: ActivityWithAllSubmissions): string {
     a.id,
     a.title,
     a.term,
-    a.description,
+    a.instructions,
     a.dueAt,
     a.published ? 1 : 0,
   ].join('§');
@@ -108,11 +108,11 @@ export default function QuizEditor({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(activity.title);
 
-  // Description
-  const [description, setDescription] = useState(activity.description);
-  const [savedDescription, setSavedDescription] = useState(activity.description);
+  // REPLACE WITH (rename to clarify it's instructions, not prompt):
+const [instructions, setInstructions] = useState(activity.instructions);
+const [savedInstructions, setSavedInstructions] = useState(activity.instructions);
   const [descEditing, setDescEditing] = useState(false);
-  const isDescDirty = description !== savedDescription;
+  const isDescDirty = instructions !== savedInstructions;
 
   // Quiz settings (manual-save dirty-aware)
   const [dueLocal, setDueLocal] = useState(isoToLocal(activity.dueAt));
@@ -183,9 +183,9 @@ export default function QuizEditor({
     if (actSig !== lastActSig.current) {
       lastActSig.current = actSig;
       if (!titleEditingRef.current) setTitleDraft(activity.title);
-      setSavedDescription(activity.description);
+      setSavedInstructions(activity.instructions);
       if (!descEditingRef.current && !isDescDirtyRef.current) {
-        setDescription(activity.description);
+        setInstructions(activity.instructions);
       }
       setSavedDueLocal(isoToLocal(activity.dueAt));
       if (!isSettingsDirtyRef.current) {
@@ -263,8 +263,8 @@ export default function QuizEditor({
     setError(null);
     startTransition(async () => {
       try {
-        await updateActivity(activity.id, { description });
-        setSavedDescription(description);
+       await updateActivity(activity.id, { instructions });
+        setSavedInstructions(instructions);
         setDescEditing(false);
         router.refresh();
       } catch (e) {
@@ -274,7 +274,7 @@ export default function QuizEditor({
   }
 
   function handleCancelDescription() {
-    setDescription(savedDescription);
+    setInstructions(savedInstructions);
     setDescEditing(false);
   }
 
@@ -586,14 +586,14 @@ export default function QuizEditor({
 
         {descEditing ? (
           <MarkdownEditor
-            value={description}
-            onChange={setDescription}
+            value={instructions}
+            onChange={setInstructions}
             placeholder="Instructions students see before starting the quiz. Markdown supported."
             rows={6}
             disabled={isPending}
           />
-        ) : savedDescription.trim() ? (
-          <MarkdownContent body={savedDescription} />
+        ) : savedInstructions.trim() ? (
+          <MarkdownContent body={savedInstructions} />
         ) : (
           <p className="text-sm italic text-gray-400">
             No instructions yet. Click the pencil icon to add some.

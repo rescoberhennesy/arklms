@@ -1,7 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
-import { getActivityForTeacher } from '@/lib/actions/activities';
+import {
+  getActivityForTeacher,
+  listActivityAttachments,
+} from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
 import { getTeacherQuizView } from '@/lib/actions/quizzes';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
@@ -33,15 +36,13 @@ export default async function ActivityDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  // Sanity: the URL's classId must match the activity's actual class_id.
   if (activity.classId !== classId) {
     redirect(`/teacher/classes/${activity.classId}/activities/${activityId}`);
   }
 
   const isQuiz = activity.activityKind === 'quiz';
-
-  // For quiz activities, fetch the quiz-specific view (questions + config + lock state).
   const quizView = isQuiz ? await getTeacherQuizView(activityId) : null;
+  const attachments = !isQuiz ? await listActivityAttachments(activityId) : [];
 
   return (
     <div className="space-y-6">
@@ -55,13 +56,13 @@ export default async function ActivityDetailPage({ params }: PageProps) {
       </Link>
 
       {isQuiz && quizView ? (
-        <QuizEditor
+        <QuizEditor activity={activity} classId={classId} initialQuizView={quizView} />
+      ) : (
+        <ActivityEditor
           activity={activity}
           classId={classId}
-          initialQuizView={quizView}
+          initialAttachments={attachments}
         />
-      ) : (
-        <ActivityEditor activity={activity} classId={classId} />
       )}
     </div>
   );
