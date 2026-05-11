@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, LogOut, User, Settings, Shield } from 'lucide-react'
+import { ChevronDown, LogOut, User, Settings } from 'lucide-react'
 import { getInitials } from '@/lib/utils/getInitials'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -27,6 +27,14 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setIsOpen(false)
+    }
+    if (isOpen) document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [isOpen])
+
   const handleSignOut = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -36,65 +44,79 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
 
   const initials = getInitials(profile.full_name)
   const displayName = profile.full_name || profile.email
-  const username = profile.username || profile.email.split('@')[0]
+  const email = profile.email
+  const role = profile.role
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "profile-trigger flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-2xl cursor-pointer",
-          isOpen && "is-open"
+          'profile-chip flex items-center gap-2.5 pl-1.5 pr-2.5 py-1.5 rounded-xl cursor-pointer',
+          isOpen && 'is-open'
         )}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
       >
-        <div className="avatar-gradient w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+        <div className="avatar-gradient w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-[13px] shrink-0">
           {initials}
         </div>
-        <div className="hidden md:block text-left">
-          <p className="text-gray-900 text-[13px] font-semibold leading-tight">{displayName}</p>
-          <p className="text-gray-400 text-[11px] leading-tight mt-0.5 font-medium">@{username}</p>
+
+        <div className="hidden md:flex flex-col text-left leading-tight min-w-0">
+          <p className="profile-chip-name text-[13px] font-semibold truncate max-w-[160px]">
+            {displayName}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+            <p className="profile-chip-email text-[11px] font-medium truncate max-w-[140px]">
+              {email}
+            </p>
+            <span className="role-pill" aria-label={`Role: ${role}`}>
+              {role}
+            </span>
+          </div>
         </div>
+
         <ChevronDown
-          size={15}
-          strokeWidth={2}
+          size={14}
+          strokeWidth={2.2}
           className={cn(
-            "text-gray-400 transition-transform duration-200 hidden md:block",
-            isOpen && "rotate-180"
+            'text-foreground-subtle transition-transform duration-200 hidden md:block shrink-0',
+            isOpen && 'rotate-180'
           )}
         />
       </button>
 
       {isOpen && (
-        <div className="topnav-dropdown dropdown-surface absolute right-0 mt-2.5 w-[280px] rounded-2xl py-0 overflow-hidden z-50">
+        <div
+          className="topnav-dropdown dropdown-surface absolute right-0 mt-2 w-[280px] rounded-2xl py-0 overflow-hidden z-50"
+          role="menu"
+        >
           {/* Header */}
           <div className="dropdown-header">
-            <p className="text-gray-900 font-semibold text-sm">{displayName}</p>
-            <p className="text-gray-400 text-xs truncate mt-0.5">{profile.email}</p>
+            <p className="text-foreground font-semibold text-sm truncate">{displayName}</p>
+            <p className="text-foreground-subtle text-xs truncate mt-0.5">{email}</p>
             <div className="mt-3">
-              <span className="role-badge">{profile.role}</span>
+              <span className="role-badge">{role}</span>
             </div>
           </div>
 
           {/* Menu Items */}
           <div className="dropdown-section">
-            <button className="dropdown-item">
-              <User size={17} strokeWidth={1.8} className="dropdown-item-icon" />
-              <span className="text-[13px] font-semibold">My Profile</span>
+            <button className="dropdown-item" role="menuitem">
+              <User size={16} strokeWidth={2} className="dropdown-item-icon" />
+              <span className="text-[13px] font-medium">My Profile</span>
             </button>
-            <button className="dropdown-item">
-              <Settings size={17} strokeWidth={1.8} className="dropdown-item-icon" />
-              <span className="text-[13px] font-semibold">Settings</span>
+            <button className="dropdown-item" role="menuitem">
+              <Settings size={16} strokeWidth={2} className="dropdown-item-icon" />
+              <span className="text-[13px] font-medium">Settings</span>
             </button>
           </div>
 
           {/* Logout */}
           <div className="dropdown-section-footer">
-            <button
-              onClick={handleSignOut}
-              className="logout-item"
-            >
-              <LogOut size={17} strokeWidth={1.8} className="logout-icon" />
-              <span className="text-[13px] font-bold">Sign out</span>
+            <button onClick={handleSignOut} className="logout-item" role="menuitem">
+              <LogOut size={16} strokeWidth={2} className="logout-icon" />
+              <span className="text-[13px] font-semibold">Sign out</span>
             </button>
           </div>
         </div>

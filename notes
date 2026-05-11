@@ -798,6 +798,9 @@ Project folder/file structure:
       *page.tsx
      ~classes
       ~[id]
+       ~activities
+        ~[activityId]
+         *page.tsx
        ~lessons
         ~[lessonId]
          *page.tsx
@@ -813,6 +816,12 @@ Project folder/file structure:
       *page.tsx
      ~classes
       ~[id]
+       ~activities
+        ~[activityId]
+         ~submissions
+          ~[submissionId]
+           *page.tsx
+         *page.tsx
        ~lessons
         ~[lessonId]
          *page.tsx
@@ -854,33 +863,66 @@ Project folder/file structure:
     *SortableItem.tsx
     *StreamView.tsx
     *TopNavbar.tsx
+    *TopNavbar.tsx
     *user-avatar.tsx
    ~landing
     *Footer.tsx
     *HeroSection.tsx
     *LandingNavbar.tsx
    ~student
+    ~quiz-questions
+     *EssayQuestion.tsx
+     *MatchingQuestion.tsx
+     *McMultiQuestion.tsx
+     *McSingleQuestion.tsx
+     *ShortAnswerQuestion.tsx
+     *TrueFalseQuestions.tsx
     *JoinClassModal.tsx
     *JoinConfirmCard.tsx
     *LeaveClassButton.tsx
+    *QuizAttempt.tsx
+    *QuizLanding.tsx
+    *QuizPostSubmit.tsx
+    *StudentActivitiesTab.tsx
+    *StudentActivityAttachmentList.tsx
+    *StudentActivityView.tsx
     *StudentClassesView.tsx
     *StudentDashboardView.tsx
+    *StudentGradebookView.tsx
     *StudentLessonView.tsx
     *StudentModulesView.tsx
+    *StudentQuizFlow.tsx
    ~teacher
+    ~question-editors
+     *EssayEditor.tsx
+     *MatchingEditor.tsx
+     *McMultiEditor.tsx
+     *McSingleEditor.tsx
+     *ShortAnswerEditor.tsx
+     *TrueFalseEditor.tsx
+    *ActivitiesTab.tsx
+    *ActivityAttachmentPanel.tsx
+    *ActivityEditor.tsx
+    *AddActivity.tsx
     *ClassCard.tsx
     *ClassesView.tsx
     *ClassFormModal.tsx
     *ConfirmDialog.tsx
     *CopyButton.tsx
     *CoverPhotoUploader.tsx
+    *GradebookTab.tsx
+    *GradeWeightsModal.tsx
     *InviteCodePanel.tsx
     *InviteCodeStrip.tsx
     *LessonEditor.tsx
     *ModuleEditor.tsx
     *ModulesTab.tsx
+    *QuestionEditor.tsx
+    *QuizAttemptsPanel.tsx
+    *QuizEditor.tsx
     *SettingsActions.tsx
     *StudentsTab.tsx
+    *SubmissionGrader.tsx
   ~config
    *navigation.ts
   ~context
@@ -888,17 +930,22 @@ Project folder/file structure:
    *SidebarContext.tsx
   ~lib
    ~actions
+    *activities.ts
     *announcements.ts
     *classes.ts
     *enrollments.ts
+    *gradebook.ts
     *joinPreview.ts
     *modules.ts
+    *quizzes.ts
    ~supabase
     *client.ts
     *middleware.ts
     *server.ts
    ~types
+    *activities.ts
     *modules.ts
+    *quizzes.ts
    ~utils
     *cn.ts
     *getInitials.ts
@@ -912,11 +959,10 @@ Project folder/file structure:
   ~branches
   ~.temp
   ~migrations
+  ~smoke-tests
   ~snippets
   *config.toml
  ....
-
-
 
 You are a senior frontend UI/UX engineer and modern web designer.
 
@@ -926,8 +972,8 @@ are already working correctly and MUST NOT be changed or broken.
 
 Your task is ONLY to improve the visual design, styling, layout, responsiveness, spacing, typography, and overall user experience.
 
-I will provide specific files/components that need UI improvements.
-Focus only on the files I provide.
+I will provide specific files/components that need UI improvements. I provided the current project structure of folders and files. Just tell me which file
+I should send and Focus only on the files I provide according to your needs.
 
 PROJECT STACK (DO NOT CHANGE)
 Framework: Next.js 16 (App Router + Turbopack)
@@ -950,20 +996,6 @@ Do NOT modify authentication logic.
 Do NOT modify Supabase integration.
 Do NOT move files unless absolutely necessary.
 Do NOT rewrite working components from scratch if styling can be improved directly.
-CURRENT PROJECT STRUCTURE
-src/
- ├── app/
- ├── components/
- │    ├── auth/
- │    ├── dashboard/
- │    ├── landing/
- │    ├── student/
- │    └── teacher/
- ├── config/
- ├── context/
- ├── lib/
- ├── types/
- └── proxy.ts
 
 This is a modular LMS architecture with:
 
@@ -1094,3 +1126,275 @@ FINAL GOAL
 
 Transform the provided parts of the LMS system from visually basic into a polished, modern, premium-looking web application while preserving ALL 
 existing functionality and architecture.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ROLE
+You are a senior frontend UI/UX engineer specializing in modern SaaS design systems. You think like a designer at Linear, Stripe, or Vercel — clean, intentional, premium.
+CONTEXT
+I have a functional LMS (Learning Management System) built by Claude as well. All logic works correctly — backend, auth, routing, database, state, and business logic must remain untouched. My only problem is that the UI looks basic, plain, and unpolished.
+Your job: transform the visual design only. Do not touch functionality.
+TECH STACK (LOCKED — DO NOT CHANGE)
+
+Framework: Next.js 16 (App Router + Turbopack)
+Language: TypeScript
+Styling: Tailwind CSS + custom CSS (SCSS/CSS modules allowed if needed)
+Backend: Supabase (Local CLI)
+Auth: Microsoft Entra ID via Supabase OAuth
+Package Manager: pnpm
+Structure: src/ directory, alias @/* -> ./src/*
+Path: /home/eiah/Capstone/arkadian_lms
+
+ABSOLUTE CONSTRAINTS
+Do NOT:
+
+Change frameworks, libraries, or architecture
+Modify auth, Supabase, API calls, routes, or state logic
+Rewrite components from scratch when restyling suffices
+Move or rename files unless absolutely necessary
+Remove or alter event handlers, props, or data flow
+
+Only modify: className strings, CSS, layout structure (JSX wrappers/containers), and presentational markup.
+
+DESIGN DIRECTION
+Aesthetic: Modern, premium, sleek, minimal — inspired by Linear, Stripe, Vercel, Notion, GitHub.
+Color palette (base, will be customized later):
+
+Primary: Red
+Neutral: Black / White
+Build it as CSS variables or Tailwind theme tokens so I can swap colors easily later.
+
+Visual techniques to use where appropriate:
+
+Soft shadows, subtle gradients, glassmorphism
+Smooth transitions (150–300ms), hover/focus states, micro-interactions
+Modern radii (rounded-lg to rounded-2xl), generous whitespace
+Strong typographic hierarchy (font weights, sizes, tracking)
+Skeleton loaders / loading states where relevant
+
+Avoid:
+
+Generic-looking default Tailwind buttons and forms
+Cluttered layouts or inconsistent spacing
+Over-decoration — keep it tasteful
+
+RESPONSIVENESS
+Must work cleanly on mobile, tablet, and desktop. Use a mobile-first approach with sensible breakpoints.
+ACCESSIBILITY
+
+Proper contrast ratios
+Visible focus rings
+Semantic HTML
+ARIA where meaningful
+
+WORKFLOW
+I will send you files one batch at a time. For each batch:
+
+I will send u screenshot of some parts of the system then.
+Briefly analyze what's visually weak in the current implementation (2–4 bullets).
+List the key UI/UX improvements you'll make.
+Return the full updated file(s) with improved styling — preserving every import, handler, prop, and logic line.
+Flag any reusable patterns (e.g., a Button component, Card wrapper) that should be extracted for consistency across the app.
+If new shared CSS/tokens are introduced, tell me where to put them (e.g., globals.css, a new theme.css).
+
+FIRST STEP
+Before I send files, tell me which file(s) you want to see first based on the project structure I've provided below. Prioritize files that 
+establish the design foundation (global styles, layout, sidebar, navbar, reusable components) so later pages inherit a consistent system.
+
+PROJECT STRUCTURE
+project folder/file structure:
+
+'~' (folders)
+'*' (files)
+
+(project folder name):arkadian_lms
+
+~arkadian_lms
+ ~next 
+ ~node_modules
+ ~public
+ ~src
+  ~app
+   ~(dashboard)
+    ~admin
+     ~dashboard
+      *page.tsx
+     ~sections
+      *page.tsx
+     ~students
+      *page.tsx
+     ~teachers
+      *page.tsx
+    ~join
+     ~[code]
+      *page.tsx
+    ~student
+     ~assignments
+      *page.tsx
+     ~classes
+      ~[id]
+       ~activities
+        ~[activityId]
+         *page.tsx
+       ~lessons
+        ~[lessonId]
+         *page.tsx
+       ~modules
+        ~[moduleId]
+         *page.tsx
+       *page.tsx
+      *page.tsx
+     ~dashboard
+      *page.tsx
+    ~teacher
+     ~calendar
+      *page.tsx
+     ~classes
+      ~[id]
+       ~activities
+        ~[activityId]
+         ~submissions
+          ~[submissionId]
+           *page.tsx
+         *page.tsx
+       ~lessons
+        ~[lessonId]
+         *page.tsx
+       ~modules
+        ~[moduleId]
+         *page.tsx
+       ~settings
+        *page.tsx
+       *page.tsx
+      *page.tsx
+     ~dashboard
+      *page.tsx
+     ~gradebook
+      *page.tsx
+    *layout.tsx
+   ~auth
+    ~callback
+     *route.ts
+    ~signout
+     *route.ts
+   ~unauthorized
+    *page.tsx
+   *global.css
+   *layout.tsx
+   *page.tsx
+  ~components
+   ~auth
+    *login-modal.tsx
+   ~dashboard
+    *ClassCover.tsx
+    *MarkdownContent.tsx
+    *MarkdownEditor.tsx
+    *nav-config.ts
+    *ProfileDropDown.tsx
+    *SetPageTitle.tsx
+    *Sidebar.css
+    *Sidebar.tsx
+    *SortableClasGrid.tsx
+    *SortableItem.tsx
+    *StreamView.tsx
+    *TopNavbar.tsx
+    *TopNavbar.tsx
+    *user-avatar.tsx
+   ~landing
+    *Footer.tsx
+    *HeroSection.tsx
+    *LandingNavbar.tsx
+   ~student
+    ~quiz-questions
+     *EssayQuestion.tsx
+     *MatchingQuestion.tsx
+     *McMultiQuestion.tsx
+     *McSingleQuestion.tsx
+     *ShortAnswerQuestion.tsx
+     *TrueFalseQuestions.tsx
+    *JoinClassModal.tsx
+    *JoinConfirmCard.tsx
+    *LeaveClassButton.tsx
+    *QuizAttempt.tsx
+    *QuizLanding.tsx
+    *QuizPostSubmit.tsx
+    *StudentActivitiesTab.tsx
+    *StudentActivityAttachmentList.tsx
+    *StudentActivityView.tsx
+    *StudentClassesView.tsx
+    *StudentDashboardView.tsx
+    *StudentGradebookView.tsx
+    *StudentLessonView.tsx
+    *StudentModulesView.tsx
+    *StudentQuizFlow.tsx
+   ~teacher
+    ~question-editors
+     *EssayEditor.tsx
+     *MatchingEditor.tsx
+     *McMultiEditor.tsx
+     *McSingleEditor.tsx
+     *ShortAnswerEditor.tsx
+     *TrueFalseEditor.tsx
+    *ActivitiesTab.tsx
+    *ActivityAttachmentPanel.tsx
+    *ActivityEditor.tsx
+    *AddActivity.tsx
+    *ClassCard.tsx
+    *ClassesView.tsx
+    *ClassFormModal.tsx
+    *ConfirmDialog.tsx
+    *CopyButton.tsx
+    *CoverPhotoUploader.tsx
+    *GradebookTab.tsx
+    *GradeWeightsModal.tsx
+    *InviteCodePanel.tsx
+    *InviteCodeStrip.tsx
+    *LessonEditor.tsx
+    *ModuleEditor.tsx
+    *ModulesTab.tsx
+    *QuestionEditor.tsx
+    *QuizAttemptsPanel.tsx
+    *QuizEditor.tsx
+    *SettingsActions.tsx
+    *StudentsTab.tsx
+    *SubmissionGrader.tsx
+  ~config
+   *navigation.ts
+  ~context
+   *PageTitleContext.tsx
+   *SidebarContext.tsx
+  ~lib
+   ~actions
+    *activities.ts
+    *announcements.ts
+    *classes.ts
+    *enrollments.ts
+    *gradebook.ts
+    *joinPreview.ts
+    *modules.ts
+    *quizzes.ts
+   ~supabase
+    *client.ts
+    *middleware.ts
+    *server.ts
+   ~types
+    *activities.ts
+    *modules.ts
+    *quizzes.ts
+   ~utils
+    *cn.ts
+    *getInitials.ts
+   *utils.ts
+  ~types
+   *class.ts
+   *database.ts
+   *user.ts
+  *proxy.ts
+ ~supabase
+  ~branches
+  ~.temp
+  ~migrations
+  ~smoke-tests
+  ~snippets
+  *config.toml
+ ....

@@ -23,6 +23,7 @@ import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import QuestionEditor from '@/components/teacher/QuestionEditor';
+import QuizAttemptsPanel from '@/components/teacher/QuizAttemptsPanel';
 import {
   updateActivity,
   setActivityTerm,
@@ -44,6 +45,7 @@ import {
 } from '@/lib/types/modules';
 import {
   type TeacherQuizView,
+  type QuizAttemptListItem,
   type QuestionKind,
   QUESTION_KINDS,
   QUESTION_KIND_LABELS,
@@ -53,6 +55,7 @@ interface QuizEditorProps {
   activity: ActivityWithAllSubmissions;
   classId: string;
   initialQuizView: TeacherQuizView;
+  initialAttempts: QuizAttemptListItem[];
 }
 
 const TERM_ACCENTS: Record<ModuleTerm, string> = {
@@ -96,6 +99,7 @@ export default function QuizEditor({
   activity,
   classId,
   initialQuizView,
+  initialAttempts,
 }: QuizEditorProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -108,9 +112,9 @@ export default function QuizEditor({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(activity.title);
 
-  // REPLACE WITH (rename to clarify it's instructions, not prompt):
-const [instructions, setInstructions] = useState(activity.instructions);
-const [savedInstructions, setSavedInstructions] = useState(activity.instructions);
+  // Instructions (manual-save, dirty-aware)
+  const [instructions, setInstructions] = useState(activity.instructions);
+  const [savedInstructions, setSavedInstructions] = useState(activity.instructions);
   const [descEditing, setDescEditing] = useState(false);
   const isDescDirty = instructions !== savedInstructions;
 
@@ -263,7 +267,7 @@ const [savedInstructions, setSavedInstructions] = useState(activity.instructions
     setError(null);
     startTransition(async () => {
       try {
-       await updateActivity(activity.id, { instructions });
+        await updateActivity(activity.id, { instructions });
         setSavedInstructions(instructions);
         setDescEditing(false);
         router.refresh();
@@ -801,6 +805,14 @@ const [savedInstructions, setSavedInstructions] = useState(activity.instructions
           </div>
         )}
       </section>
+
+      {/* Attempts (C7 Slice A) */}
+      <QuizAttemptsPanel
+        activityId={activity.id}
+        classId={classId}
+        quizTotalPoints={Number(quizView.config.quizTotalPoints ?? totalPoints)}
+        initialAttempts={initialAttempts}
+      />
 
       {/* Danger zone */}
       <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">

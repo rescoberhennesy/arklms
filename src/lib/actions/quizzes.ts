@@ -17,9 +17,7 @@ import {
   type StudentAttemptView,
   type SanitizedQuestionConfig,
   type AttemptForGradingView,
-  type McMultiConfig,
-  type McSingleConfig,
-  type MatchingConfig,
+  type QuizAttemptListItem,
   defaultConfigFor,
   validateQuestionConfig,
 } from '@/lib/types/quizzes';
@@ -707,12 +705,23 @@ export async function submitQuizAttempt(attemptId: string): Promise<{
 // TEACHER: grading views
 // ==========================================================================
 
+// Returns one row per attempt for this quiz, augmented with the fields the
+// attempts-panel UI needs for at-a-glance triage:
+//   - studentName / studentEmail from profiles
+//   - needsManualReview: at least one essay or short_answer response on
+//     this attempt has manual_points = null AND the attempt is submitted
+//   - hasGrade: an activity_grades row exists for this attempt's submission
+//   - gradeReleasedAt: when that grade was released, null if unreleased
+//   - displayScore: what the student would see right now (manual override
+//     if set, else auto_score, else null)
+//
+// Strategy: fetch attempts → batch-fetch profiles, all essay/short-answer
+// question ids for this quiz, all responses for these attempt ids, all
+// grades for these submission ids. Then derive per-attempt fields in
+// memory. Three round trips total (plus the initial attempts query).
 export async function listQuizAttemptsForQuiz(
   activityId: string,
-): Promise <
-    (QuizAttempt & { studentName: string | null; studentEmail: string | null }) []
-  >
- {
+): Promise<QuizAttemptListItem[]> {
   const supabase = await createClient();
 
   const { data: attemptRows, error: aErr } = await supabase
@@ -726,13 +735,30 @@ export async function listQuizAttemptsForQuiz(
   if (attempts.length === 0) return [];
 
   const studentIds = Array.from(new Set(attempts.map((a) => a.studentId)));
+  const attemptIds = attempts.map((a) => a.id);
+  const submissionIds = attempts
+    .map((a) => a.submissionId)
+    .filter((s): s is string => s !== null);
+
+  // Manual-review-eligible question kinds for this quiz.
+  const { data: manualQuestionRows, error: mqErr } = await supabase
+    .from('quiz_questions')
+    .select('id')
+    .eq('activity_id', activityId)
+    .in('question_kind', ['essay', 'short_answer']);
+  if (mqErr) throw new Error(mqErr.message);
+  const manualQuestionIds = new Set(
+    (manualQuestionRows ?? []).map((r) => (r as { id: string }).id),
+  );
+
+  // Profiles for student name/email.
   const { data: profileRows, error: pErr } = await supabase
     .from('profiles')
     .select('id, full_name, email')
     .in('id', studentIds);
   if (pErr) throw new Error(pErr.message);
 
-  const profileById = new Map <
+  const profileById = new Map<
     string,
     { full_name: string | null; email: string | null }
   >();
@@ -744,12 +770,81 @@ export async function listQuizAttemptsForQuiz(
     profileById.set(p.id, { full_name: p.full_name, email: p.email });
   }
 
+  // Responses for all attempts (only the columns we need for derivation).
+  // If there are no manual-graded question kinds in the quiz at all,
+  // skip this fetch — needsManualReview will be false for every attempt.
+  type DerivedFlags = { needsManualReview: boolean };
+  const derivedByAttempt = new Map<string, DerivedFlags>();
+  for (const a of attempts) {
+    // Pre-submit attempts are not in "needs review" — they're in progress.
+    derivedByAttempt.set(a.id, { needsManualReview: false });
+  }
+
+  if (manualQuestionIds.size > 0 && attemptIds.length > 0) {
+    const { data: respRows, error: rErr } = await supabase
+      .from('quiz_responses')
+      .select('attempt_id, question_id, manual_points')
+      .in('attempt_id', attemptIds);
+    if (rErr) throw new Error(rErr.message);
+
+    type RespLite = {
+      attempt_id: string;
+      question_id: string;
+      manual_points: string | number | null;
+    };
+    for (const r of (respRows ?? []) as RespLite[]) {
+      if (!manualQuestionIds.has(r.question_id)) continue;
+      if (r.manual_points !== null) continue;
+      const flags = derivedByAttempt.get(r.attempt_id);
+      if (flags) flags.needsManualReview = true;
+    }
+    // Suppress needsManualReview for in-progress attempts — only submitted
+    // attempts are in the grading queue.
+    for (const a of attempts) {
+      if (!a.submittedAt) {
+        const flags = derivedByAttempt.get(a.id);
+        if (flags) flags.needsManualReview = false;
+      }
+    }
+  }
+
+  // Grades for the submission ids.
+  type GradeRow = {
+    submission_id: string;
+    returned_at: string | null;
+  };
+  const gradeBySubmission = new Map<string, GradeRow>();
+  if (submissionIds.length > 0) {
+    const { data: gradeRows, error: gErr } = await supabase
+      .from('activity_grades')
+      .select('submission_id, returned_at')
+      .in('submission_id', submissionIds);
+    if (gErr) throw new Error(gErr.message);
+    for (const g of (gradeRows ?? []) as GradeRow[]) {
+      gradeBySubmission.set(g.submission_id, g);
+    }
+  }
+
   return attempts.map((a) => {
     const profile = profileById.get(a.studentId);
+    const flags = derivedByAttempt.get(a.id);
+    const grade = a.submissionId
+      ? gradeBySubmission.get(a.submissionId) ?? null
+      : null;
+    const displayScore =
+      a.manualScoreOverride !== null
+        ? a.manualScoreOverride
+        : a.autoScore !== null
+          ? a.autoScore
+          : null;
     return {
       ...a,
       studentName: profile?.full_name ?? null,
       studentEmail: profile?.email ?? null,
+      needsManualReview: flags?.needsManualReview ?? false,
+      hasGrade: grade !== null,
+      gradeReleasedAt: grade?.returned_at ?? null,
+      displayScore,
     };
   });
 }
@@ -768,31 +863,40 @@ export async function getAttemptForGrading(
 
   const attempt = mapAttempt(attemptData as AttemptRow);
 
+  // Pull the activity-level fields the grader UI needs.
   const { data: actData, error: actErr } = await supabase
     .from('activities')
-    .select('class_id')
+    .select(
+      'class_id, title, due_at, auto_release_grade, quiz_total_points',
+    )
     .eq('id', attempt.activityId)
     .single();
   if (actErr) throw new Error(actErr.message);
-  const classId = (actData as { class_id: string }).class_id;
+  const actRow = actData as {
+    class_id: string;
+    title: string;
+    due_at: string;
+    auto_release_grade: boolean;
+    quiz_total_points: string | number | null;
+  };
 
-  const [{ data: questionRows, error: qErr }, { data: responseRows, error: rErr }, { data: profileRow, error: pErr }] =
-    await Promise.all([
-      supabase
-        .from('quiz_questions')
-        .select('*')
-        .eq('activity_id', attempt.activityId)
-        .order('display_order', { ascending: true }),
-      supabase
-        .from('quiz_responses')
-        .select('*')
-        .eq('attempt_id', attemptId),
-      supabase
-        .from('profiles')
-        .select('full_name, email')
-        .eq('id', attempt.studentId)
-        .single(),
-    ]);
+  const [
+    { data: questionRows, error: qErr },
+    { data: responseRows, error: rErr },
+    { data: profileRow, error: pErr },
+  ] = await Promise.all([
+    supabase
+      .from('quiz_questions')
+      .select('*')
+      .eq('activity_id', attempt.activityId)
+      .order('display_order', { ascending: true }),
+    supabase.from('quiz_responses').select('*').eq('attempt_id', attemptId),
+    supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', attempt.studentId)
+      .single(),
+  ]);
   if (qErr) throw new Error(qErr.message);
   if (rErr) throw new Error(rErr.message);
   if (pErr) throw new Error(pErr.message);
@@ -808,15 +912,41 @@ export async function getAttemptForGrading(
     email: string | null;
   };
 
+  // Grade row (for gradeReleasedAt).
+  let gradeReleasedAt: string | null = null;
+  if (attempt.submissionId) {
+    const { data: gradeRow, error: gErr } = await supabase
+      .from('activity_grades')
+      .select('returned_at')
+      .eq('submission_id', attempt.submissionId)
+      .maybeSingle();
+    if (gErr) throw new Error(gErr.message);
+    gradeReleasedAt = (gradeRow as { returned_at: string | null } | null)
+      ?.returned_at ?? null;
+  }
+
+  const currentScore =
+    attempt.manualScoreOverride !== null
+      ? attempt.manualScoreOverride
+      : attempt.autoScore !== null
+        ? attempt.autoScore
+        : 0;
+
   return {
     attempt,
     activityId: attempt.activityId,
-    classId,
+    classId: actRow.class_id,
+    activityTitle: actRow.title,
+    activityDueAt: actRow.due_at,
     studentId: attempt.studentId,
     studentName: profile?.full_name ?? null,
     studentEmail: profile?.email ?? null,
     questions,
     responses,
+    quizTotalPoints: Number(actRow.quiz_total_points ?? 0),
+    autoReleaseGrade: actRow.auto_release_grade,
+    currentScore,
+    gradeReleasedAt,
   };
 }
 

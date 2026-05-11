@@ -1,93 +1,133 @@
 /* ============================================
-   TopNavbar & ProfileDropdown — Custom Styles
+   TopNavbar & ProfileDropdown — Premium Styles
+   Uses design tokens from global.css
    ============================================ */
 
 /* --- Navbar Glass Surface --- */
 .topnav-glass {
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: color-mix(in oklab, var(--color-neutral-0) 78%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
-/* --- Menu Toggle Button --- */
-.menu-btn {
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  color: #94a3b8;
-}
-.menu-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #111827;
-}
-.menu-btn:active {
-  transform: scale(0.9);
+/* --- Page Title --- */
+.topnav-title {
+  color: var(--color-foreground);
+  letter-spacing: var(--tracking-tight);
 }
 
-/* --- Notification Bell --- */
+/* --- Icon Button Base (Menu + Bell) --- */
+.menu-btn,
 .bell-btn {
-  position: relative;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  color: #94a3b8;
+  color: var(--color-foreground-subtle);
+  transition:
+    background var(--duration-fast) var(--ease-in-out-soft),
+    color var(--duration-fast) var(--ease-in-out-soft),
+    transform var(--duration-fast) var(--ease-in-out-soft);
 }
+.menu-btn:hover,
 .bell-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #111827;
+  background: var(--color-neutral-100);
+  color: var(--color-foreground);
 }
+.menu-btn:active,
+.bell-btn:active {
+  transform: scale(0.92);
+}
+
+/* Bell icon micro-interaction */
 .bell-btn:hover .bell-icon {
-  transform: rotate(15deg) scale(1.05);
+  transform: rotate(12deg);
 }
 .bell-icon {
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--duration-slow) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Notification badge pulse */
+/* Notification badge */
 @keyframes badge-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.2); opacity: 0.85; }
+  50%      { transform: scale(1.15); opacity: 0.85; }
 }
 .notification-badge {
-  animation: badge-pulse 2.5s ease-in-out infinite;
+  animation: badge-pulse 2.4s ease-in-out infinite;
 }
 
-/* --- Divider --- */
+/* --- Vertical Divider --- */
 .topnav-divider {
   width: 1px;
-  height: 28px;
+  height: 22px;
   background: linear-gradient(
     to bottom,
     transparent,
-    rgba(0, 0, 0, 0.08) 30%,
-    rgba(0, 0, 0, 0.08) 70%,
+    var(--color-border) 25%,
+    var(--color-border) 75%,
     transparent
   );
+  flex-shrink: 0;
 }
 
-/* --- Profile Trigger --- */
-.profile-trigger {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+/* --- Profile Chip --- */
+.profile-chip {
+  transition:
+    background var(--duration-base) var(--ease-in-out-soft),
+    border-color var(--duration-base) var(--ease-in-out-soft),
+    transform var(--duration-fast) var(--ease-in-out-soft);
   border: 1px solid transparent;
+  background: var(--color-neutral-100);
 }
-.profile-trigger:hover {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.06);
+.profile-chip:hover {
+  background: var(--color-neutral-150);
+  border-color: var(--color-border-subtle);
 }
-.profile-trigger:active {
-  transform: scale(0.97);
+.profile-chip:active {
+  transform: scale(0.98);
 }
-.profile-trigger.is-open {
-  background: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.08);
+.profile-chip.is-open {
+  background: var(--color-neutral-150);
+  border-color: var(--color-border);
+}
+
+/* Profile chip text */
+.profile-chip-name {
+  color: var(--color-foreground);
+}
+.profile-chip-email {
+  color: var(--color-foreground-subtle);
 }
 
 /* --- Avatar --- */
 .avatar-gradient {
-  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.3);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-700) 100%);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 2px 8px rgb(220 38 38 / 0.25);
+  transition:
+    box-shadow var(--duration-base) var(--ease-in-out-soft),
+    transform var(--duration-base) var(--ease-in-out-soft);
 }
-.profile-trigger:hover .avatar-gradient {
-  box-shadow: 0 3px 14px rgba(220, 38, 38, 0.4);
-  transform: scale(1.03);
+.profile-chip:hover .avatar-gradient {
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 0.08),
+    0 4px 14px rgb(220 38 38 / 0.35);
+  transform: scale(1.04);
+}
+
+/* --- Inline Role Pill (in topbar chip) --- */
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
+  border: 1px solid color-mix(in oklab, var(--color-primary-600) 16%, transparent);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  line-height: 1.5;
+  flex-shrink: 0;
 }
 
 /* --- Dropdown Animation --- */
@@ -103,40 +143,37 @@
 }
 
 .topnav-dropdown {
-  animation: dropdown-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: dropdown-slide-in 0.2s var(--ease-out-quart) forwards;
   transform-origin: top right;
 }
 
 /* --- Dropdown Surface --- */
 .dropdown-surface {
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.04),
-    0 10px 20px -3px rgba(0, 0, 0, 0.06),
-    0 24px 40px -8px rgba(0, 0, 0, 0.05);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xl);
 }
 
 /* --- Dropdown Header --- */
 .dropdown-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  background: rgba(0, 0, 0, 0.01);
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-neutral-50);
 }
 
-/* --- Role Badge --- */
+/* --- Role Badge (in dropdown header) --- */
 .role-badge {
   display: inline-flex;
   align-items: center;
-  background: rgba(220, 38, 38, 0.07);
-  color: #dc2626;
-  border: 1px solid rgba(220, 38, 38, 0.12);
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
+  border: 1px solid color-mix(in oklab, var(--color-primary-600) 18%, transparent);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 10px;
-  border-radius: 9999px;
+  letter-spacing: var(--tracking-wider);
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
 }
 
 /* --- Dropdown Menu Items --- */
@@ -145,25 +182,25 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 10px 14px;
-  color: #64748b;
-  border-radius: 10px;
-  transition: all 0.15s ease;
+  padding: 9px 12px;
+  color: var(--color-foreground-muted);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-in-out-soft);
   text-align: left;
   cursor: pointer;
 }
 .dropdown-item:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: #111827;
+  background: var(--color-neutral-100);
+  color: var(--color-foreground);
 }
 .dropdown-item:active {
   transform: scale(0.98);
 }
 .dropdown-item:hover .dropdown-item-icon {
-  transform: scale(1.12);
+  transform: scale(1.1);
 }
 .dropdown-item-icon {
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--duration-base) cubic-bezier(0.34, 1.56, 0.64, 1);
   flex-shrink: 0;
 }
 
@@ -173,24 +210,24 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 11px 14px;
-  color: #dc2626;
-  border-radius: 10px;
-  transition: all 0.15s ease;
+  padding: 10px 12px;
+  color: var(--color-primary-600);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-in-out-soft);
   text-align: left;
   cursor: pointer;
 }
 .logout-item:hover {
-  background: rgba(220, 38, 38, 0.06);
+  background: var(--color-primary-50);
 }
 .logout-item:active {
   transform: scale(0.98);
 }
 .logout-item:hover .logout-icon {
-  transform: translateX(-3px);
+  transform: translateX(-2px);
 }
 .logout-icon {
-  transition: transform 0.2s ease;
+  transition: transform var(--duration-base) var(--ease-in-out-soft);
   flex-shrink: 0;
 }
 
@@ -200,14 +237,14 @@
 }
 .dropdown-section-footer {
   padding: 6px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-  background: rgba(0, 0, 0, 0.01);
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-neutral-50);
 }
 
 /* --- Responsive --- */
 @media (max-width: 640px) {
   .topnav-glass {
     padding-left: 16px;
-    padding-right: 16px;
+    padding-right: 12px;
   }
 }

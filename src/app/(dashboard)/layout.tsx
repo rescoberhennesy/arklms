@@ -13,6 +13,7 @@ export default async function DashboardLayout({
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
   if (!user) redirect('/')
 
   const { data: profile } = await supabase
@@ -26,11 +27,13 @@ export default async function DashboardLayout({
   return (
     <SidebarProvider>
       <PageTitleProvider>
-        <div className="flex min-h-screen bg-[#f5f5f5]">
+        <div data-app-shell className="flex min-h-screen bg-background">
           <Sidebar role={profile.role} />
           <div className="flex-1 flex flex-col min-w-0">
             <TopNavbar profile={profile} />
-            <main className="flex-1 p-6 lg:p-8 overflow-auto">{children}</main>
+            <main className="flex-1 overflow-auto px-4 sm:px-6 py-6 lg:py-8">
+              {children}
+            </main>
           </div>
         </div>
       </PageTitleProvider>

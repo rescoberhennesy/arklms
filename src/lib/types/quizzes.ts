@@ -263,16 +263,51 @@ export interface StudentAttemptView {
 }
 
 // What the teacher sees when grading a single attempt (manual-grade UI).
-// Includes full (unsanitized) questions + responses + student profile.
+// Includes full (unsanitized) questions + responses + student profile +
+// the activity-level fields the grader UI needs:
+//   - quizTotalPoints: for the score display denominator
+//   - autoReleaseGrade: drives the "already released" warning copy
+//   - currentScore: the score that would be shown to the student right now
+//                   (manual_score_override if set, else auto_score, else 0)
+//   - activityTitle, activityDueAt: for the page header
+//   - gradeReleasedAt: the released_at from activity_grades, or null
 export interface AttemptForGradingView {
   attempt: QuizAttempt;
   activityId: string;
   classId: string;
+  activityTitle: string;
+  activityDueAt: string;
   studentId: string;
   studentName: string | null;
   studentEmail: string | null;
   questions: QuizQuestion[];
   responses: QuizResponse[];
+  quizTotalPoints: number;
+  autoReleaseGrade: boolean;
+  currentScore: number;
+  gradeReleasedAt: string | null;
+}
+
+// Row shape returned by listQuizAttemptsForQuiz, augmented with the
+// derived fields the attempts panel needs for at-a-glance triage.
+//
+//   - needsManualReview: true iff there exists at least one essay /
+//     short_answer response with manual_points IS NULL AND the attempt
+//     is submitted. (Pre-submit attempts are "in progress", not "needs
+//     review".)
+//   - hasGrade: an activity_grades row exists for this attempt's submission
+//   - gradeReleasedAt: when the grade was released to the student, null
+//     if not yet released
+//   - displayScore: the score visible to the student right now (manual
+//     override if set, else auto, else null when no attempt-derived
+//     grade exists yet)
+export interface QuizAttemptListItem extends QuizAttempt {
+  studentName: string | null;
+  studentEmail: string | null;
+  needsManualReview: boolean;
+  hasGrade: boolean;
+  gradeReleasedAt: string | null;
+  displayScore: number | null;
 }
 
 // Status enum for the quiz-attempt-flow state machine.
