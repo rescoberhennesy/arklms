@@ -1,7 +1,8 @@
 // src/components/teacher/ClassesView.tsx
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Plus, Check } from 'lucide-react';
 import { ClassCard } from './ClassCard';
 import { ClassFormModal } from './ClassFormModal';
@@ -14,7 +15,6 @@ import {
   reorderMyClasses,
 } from '@/lib/actions/classes';
 import type { ClassFormInput, TeacherClassListItem } from '@/types/class';
-import { useRouter } from 'next/navigation';
 import SortableClassGrid from '@/components/dashboard/SortableClassGrid';
 import SortableItem from '@/components/dashboard/SortableItem';
 
@@ -35,26 +35,40 @@ export function ClassesView({
   sectionSuggestions,
 }: ClassesViewProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [classes, setClasses] = useState(initialClasses);
   const [formState, setFormState] = useState<FormState>({ kind: 'closed' });
   const [deleteTarget, setDeleteTarget] = useState<TeacherClassListItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  async function handleReorder(orderedIds: string[]) {
-    // Snapshot pre-drag order so we can roll back on server failure.
-    const snapshot = classes;
+  // Auto-open the create modal when navigated here with ?create=1 (e.g.
+  // from the dashboard banner "Create Class" CTA). We consume the param
+  // exactly once: open the modal, then strip the param so a refresh
+  // doesn't re-trigger and a manual close doesn't reopen.
+  const hasOpenedFromParam = useRef(false);
+  useEffect(() => {
+    if (hasOpenedFromParam.current) return;
+    if (searchParams.get('create') === '1') {
+      hasOpenedFromParam.current = true;
+      setFormState({ kind: 'create' });
+      // Strip ?create=1 from the URL without scrolling/re-rendering.
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('create');
+      const next = params.toString();
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    }
+  }, [searchParams, pathname, router]);
 
-    // Apply optimistically so `active` reflects the new order on the next
-    // render. Without this the inline grid would snap back because the
-    // parent's `classes` state still has the old order.
+  async function handleReorder(orderedIds: string[]) {
+    const snapshot = classes;
     setClasses((prev) => {
       const byId = new Map(prev.map((c) => [c.id, c]));
       const reordered = orderedIds
         .map((id) => byId.get(id))
         .filter((c): c is TeacherClassListItem => Boolean(c));
-      // Append any items not in orderedIds (e.g. archived classes that
-      // weren't part of the dragged set) so we don't drop them.
       const known = new Set(orderedIds);
       const rest = prev.filter((c) => !known.has(c.id));
       return [...reordered, ...rest];

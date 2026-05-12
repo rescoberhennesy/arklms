@@ -4,8 +4,6 @@ import {
   GraduationCap,
   BookOpen,
   Calendar,
-  ClipboardList,
-  FileText,
   type LucideIcon,
 } from 'lucide-react'
 import type { UserRole } from '@/types/user'
@@ -49,6 +47,7 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       title: 'Management',
       items: [
         { label: 'Classes', href: '/teacher/classes', icon: BookOpen },
+        { label: 'Calendar', href: '/teacher/calendar', icon: Calendar },
       ],
     },
   ],
@@ -63,6 +62,7 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       title: 'Learning',
       items: [
         { label: 'My Classes', href: '/student/classes', icon: BookOpen },
+        { label: 'Calendar', href: '/student/calendar', icon: Calendar },
       ],
     },
   ],

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   DndContext,
@@ -73,8 +73,6 @@ function groupByTerm(
   return groups;
 }
 
-// Stable signature used to detect when the server prop diverges from local
-// state (i.e. revalidation brought new data we should sync to).
 function modulesSignature(modules: ModuleWithLessons[]): string {
   return modules
     .map(
@@ -85,12 +83,13 @@ function modulesSignature(modules: ModuleWithLessons[]): string {
 }
 
 export default function ModulesTab({ classId, initialModules }: ModulesTabProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [modules, setModules] = useState<ModuleWithLessons[]>(initialModules);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync local state when server props change (after revalidation/refresh).
-  // Skip sync if the signatures already match, which means our optimistic
-  // local state is already consistent with the server.
   const lastPropSig = useRef(modulesSignature(initialModules));
   useEffect(() => {
     const propSig = modulesSignature(initialModules);
@@ -100,6 +99,22 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
     }
   }, [initialModules]);
 
+  // Dashboard quick-action deep-link support: ?tab=modules&create=1 opens
+  // the AddModuleBar in its expanded form on mount, then strips the param.
+  const [createOpenFromParam, setCreateOpenFromParam] = useState(false);
+  const hasConsumedCreateParam = useRef(false);
+  useEffect(() => {
+    if (hasConsumedCreateParam.current) return;
+    if (searchParams.get('create') === '1') {
+      hasConsumedCreateParam.current = true;
+      setCreateOpenFromParam(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('create');
+      const next = params.toString();
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    }
+  }, [searchParams, pathname, router]);
+
   const grouped = groupByTerm(modules);
 
   return (
@@ -107,6 +122,7 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
       <AddModuleBar
         classId={classId}
         onError={setError}
+        defaultOpen={createOpenFromParam}
         onOptimisticAdd={(newModule) =>
           setModules((prev) => [...prev, newModule])
         }
@@ -150,11 +166,17 @@ interface AddModuleBarProps {
   classId: string;
   onError: (msg: string | null) => void;
   onOptimisticAdd: (module: ModuleWithLessons) => void;
+  defaultOpen?: boolean;
 }
 
-function AddModuleBar({ classId, onError, onOptimisticAdd }: AddModuleBarProps) {
+function AddModuleBar({
+  classId,
+  onError,
+  onOptimisticAdd,
+  defaultOpen = false,
+}: AddModuleBarProps) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [term, setTerm] = useState<ModuleTerm>('prelim');
@@ -183,11 +205,6 @@ function AddModuleBar({ classId, onError, onOptimisticAdd }: AddModuleBarProps) 
           chosenTerm,
           trimmedDesc,
         );
-        // Optimistic insert: place the new module at the END of its term
-        // bucket. Server-side, createModule sets display_order to max+1,
-        // so this is the correct position. We use a high temporary
-        // display_order to ensure it sorts last; the next prop sync will
-        // replace it with the canonical row.
         const optimistic: ModuleWithLessons = {
           id: moduleId,
           class_id: classId,
@@ -421,8 +438,6 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  // Lessons render directly from props now (parent owns canonical state).
-  // Drag updates flow up via onLessonsReordered, which mutates parent state.
   const lessons = module.lessons;
 
   const sensors = useSensors(
@@ -471,14 +486,14 @@ function ModuleCard({ module, classId, onLessonsReordered, onError }: ModuleCard
     if (oldIndex < 0 || newIndex < 0) return;
 
     const next = arrayMove(lessons, oldIndex, newIndex);
-    onLessonsReordered(next); // optimistic up to parent
+    onLessonsReordered(next);
 
     startTransition(async () => {
       try {
         await reorderLessons(module.id, next.map((l) => l.id));
         router.refresh();
       } catch {
-        onLessonsReordered(lessons); // rollback
+        onLessonsReordered(lessons);
       }
     });
   }

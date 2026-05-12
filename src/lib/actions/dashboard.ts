@@ -1,9 +1,13 @@
-// src/lib/actions/dashboard.ts
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import {
+  countMyActivePersonalTasks,
+  listMyPersonalTasksInWindow,
+} from '@/lib/actions/personalTasks';
 import type {
   CalendarActivity,
+  CalendarPersonalTask,
   StudentTodoItem,
   TeacherTodoItem,
 } from '@/lib/types/dashboard';
@@ -33,7 +37,6 @@ interface SubmissionRow {
   submitted_at: string;
 }
 
-// Resolve the current user's id; throws if not authenticated.
 async function getUserId(): Promise<string> {
   const supabase = await createClient();
   const {
@@ -46,15 +49,9 @@ async function getUserId(): Promise<string> {
 }
 
 // ==========================================================================
-// CALENDAR — STUDENT
+// CALENDAR — STUDENT (activities only — existing callers)
 // ==========================================================================
 
-// Returns published, started activities due within [monthStart, monthEnd)
-// for the student's enrolled classes. RLS already enforces enrollment +
-// published + start_at <= now, so we trust that gate and don't re-encode.
-//
-// monthStart/monthEnd are ISO strings; caller computes them from the
-// month-being-viewed in the widget's local time.
 export async function getStudentCalendarActivities(
   monthStart: string,
   monthEnd: string,
@@ -76,13 +73,9 @@ export async function getStudentCalendarActivities(
 }
 
 // ==========================================================================
-// CALENDAR — TEACHER
+// CALENDAR — TEACHER (activities only — existing callers)
 // ==========================================================================
 
-// Returns ALL activities due within [monthStart, monthEnd) for the
-// teacher's owned classes, INCLUDING drafts. RLS enforces teacher
-// ownership; drafts surface here because activities_teacher_select is
-// unconditional on published.
 export async function getTeacherCalendarActivities(
   monthStart: string,
   monthEnd: string,
@@ -103,7 +96,39 @@ export async function getTeacherCalendarActivities(
   return await attachClassMeta(activities);
 }
 
-// Shared: join class id → { name, color } and produce the CalendarActivity[].
+// ==========================================================================
+// CALENDAR — COMBINED (activities + personal tasks)
+// ==========================================================================
+
+// Combined shape returned by the new fetchers. Calendar widgets render
+// activity dots in class color and task dots in neutral slate.
+export interface CalendarFetchResult {
+  activities: CalendarActivity[];
+  personalTasks: CalendarPersonalTask[];
+}
+
+export async function getStudentCalendarItems(
+  monthStart: string,
+  monthEnd: string,
+): Promise<CalendarFetchResult> {
+  const [activities, personalTasks] = await Promise.all([
+    getStudentCalendarActivities(monthStart, monthEnd),
+    listMyPersonalTasksInWindow(monthStart, monthEnd),
+  ]);
+  return { activities, personalTasks };
+}
+
+export async function getTeacherCalendarItems(
+  monthStart: string,
+  monthEnd: string,
+): Promise<CalendarFetchResult> {
+  const [activities, personalTasks] = await Promise.all([
+    getTeacherCalendarActivities(monthStart, monthEnd),
+    listMyPersonalTasksInWindow(monthStart, monthEnd),
+  ]);
+  return { activities, personalTasks };
+}
+
 async function attachClassMeta(
   activities: ActivityCalRow[],
 ): Promise<CalendarActivity[]> {
@@ -140,14 +165,6 @@ async function attachClassMeta(
 // TO-DO — STUDENT
 // ==========================================================================
 
-// Returns up to `limit` items the student should act on:
-//   - assignments unsubmitted AND (due in next 7 days OR overdue)
-//   - quizzes with no submitted attempt AND (due in next 7 days OR overdue)
-//
-// Sorted: overdue first (most-overdue at top), then upcoming due-soonest.
-// Includes a `quizState` so the widget can distinguish "not started" from
-// "in progress". RLS enforces enrollment + published; we re-encode the
-// start_at gate (only show things the student can actually act on now).
 export async function getStudentTodoItems(
   limit: number = 10,
 ): Promise<StudentTodoItem[]> {
@@ -157,9 +174,6 @@ export async function getStudentTodoItems(
   const now = new Date();
   const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
 
-  // 1. Activities visible to the student that are due before horizon.
-  //    We include past-due too (no lower bound on due_at) so overdue
-  //    unsubmitted rows surface.
   const { data: actRows, error: aErr } = await supabase
     .from('activities')
     .select('id, class_id, title, activity_kind, due_at, allow_late, published, start_at')
@@ -184,9 +198,6 @@ export async function getStudentTodoItems(
 
   const activityIds = activities.map((a) => a.id);
 
-  // 2. Existing submissions for this student on these activities.
-  //    Presence of a row → assignment is "done"; we drop it from the list.
-  //    (Even if the submission is ungraded, it's not student to-do anymore.)
   const { data: subRows, error: sErr } = await supabase
     .from('activity_submissions')
     .select('activity_id')
@@ -197,8 +208,6 @@ export async function getStudentTodoItems(
     (subRows ?? []).map((r) => (r as { activity_id: string }).activity_id),
   );
 
-  // 3. Existing quiz attempts for this student on these activities.
-  //    submitted_at NULL → 'in_progress', else 'submitted' (drop it).
   const quizActivityIds = activities
     .filter((a) => a.activity_kind === 'quiz')
     .map((a) => a.id);
@@ -219,7 +228,6 @@ export async function getStudentTodoItems(
     }
   }
 
-  // 4. Class names + colors for the surviving rows.
   const classIds = Array.from(new Set(activities.map((a) => a.class_id)));
   const { data: classRows, error: cErr } = await supabase
     .from('classes')
@@ -231,11 +239,10 @@ export async function getStudentTodoItems(
     classNameById.set(c.id, c.name);
   }
 
-  // 5. Filter + map.
   const items: StudentTodoItem[] = [];
   for (const a of activities) {
     if (a.activity_kind === 'assignment') {
-      if (submittedActivityIds.has(a.id)) continue; // done
+      if (submittedActivityIds.has(a.id)) continue;
       const isOverdue = new Date(a.due_at).getTime() < now.getTime();
       items.push({
         activityId: a.id,
@@ -250,7 +257,6 @@ export async function getStudentTodoItems(
       });
     } else {
       const att = attemptByActivity.get(a.id);
-      // Submitted attempt → done, drop.
       if (att && att.submitted_at) continue;
       const isOverdue = new Date(a.due_at).getTime() < now.getTime();
       items.push({
@@ -267,8 +273,6 @@ export async function getStudentTodoItems(
     }
   }
 
-  // 6. Sort: overdue first (oldest-due first within overdue), then
-  //    upcoming (soonest-due first within upcoming).
   items.sort((x, y) => {
     if (x.isOverdue && !y.isOverdue) return -1;
     if (!x.isOverdue && y.isOverdue) return 1;
@@ -282,26 +286,13 @@ export async function getStudentTodoItems(
 // TO-DO — TEACHER
 // ==========================================================================
 
-// Returns up to `limit` rows the teacher should grade:
-//   - submission_ungraded: every activity_submission where the activity
-//     is an assignment AND (no activity_grades row OR returned_at IS NULL)
-//   - quiz_manual_pending: every submitted quiz_attempt where any
-//     essay/short_answer response has manual_points IS NULL
-//
-// Sorted: most-recent (sortKey desc) so newest work surfaces first.
 export async function getTeacherTodoItems(
-  limit: number = 10,
+  limit: number = 15,
 ): Promise<TeacherTodoItem[]> {
   const supabase = await createClient();
 
   const items: TeacherTodoItem[] = [];
 
-  // ------- 1. Ungraded assignment submissions ---------------------------
-  // Fetch submissions ordered by submitted_at desc; RLS gives us only the
-  // teacher's classes' submissions automatically.
-  // We cap at a generous multiplier of limit because we need to filter
-  // out (a) quiz-attempt submissions (they shouldn't show in this bucket)
-  // and (b) submissions that already have a released grade.
   const fetchCap = Math.max(limit * 4, 40);
 
   const { data: subRows, error: sErr } = await supabase
@@ -316,8 +307,6 @@ export async function getTeacherTodoItems(
     const subActIds = Array.from(new Set(submissions.map((s) => s.activity_id)));
     const subIds = submissions.map((s) => s.id);
 
-    // Activity meta: filter to assignments only (quiz submissions live in
-    // the same table but are handled by the quiz_manual_pending bucket).
     const { data: actRows, error: aErr } = await supabase
       .from('activities')
       .select('id, class_id, title, activity_kind')
@@ -332,9 +321,6 @@ export async function getTeacherTodoItems(
     const actById = new Map<string, ActMeta>();
     for (const a of (actRows ?? []) as ActMeta[]) actById.set(a.id, a);
 
-    // Grade rows: figure out which submissions are graded-released
-    // (returned_at not null). Draft grades (returned_at null) still count
-    // as "to do" — teacher hasn't released yet.
     const { data: gradeRows, error: gErr } = await supabase
       .from('activity_grades')
       .select('submission_id, returned_at')
@@ -346,7 +332,6 @@ export async function getTeacherTodoItems(
       gradeBySubmission.set(g.submission_id, g);
     }
 
-    // Student names — one batch.
     const studentIds = Array.from(new Set(submissions.map((s) => s.student_id)));
     const { data: profileRows, error: pErr } = await supabase
       .from('profiles')
@@ -363,11 +348,8 @@ export async function getTeacherTodoItems(
       profileById.set(p.id, p);
     }
 
-    // Class names — one batch.
     const classIds = Array.from(
-      new Set(
-        Array.from(actById.values()).map((a) => a.class_id),
-      ),
+      new Set(Array.from(actById.values()).map((a) => a.class_id)),
     );
     const { data: classRows, error: cErr } = await supabase
       .from('classes')
@@ -382,10 +364,10 @@ export async function getTeacherTodoItems(
     for (const s of submissions) {
       const act = actById.get(s.activity_id);
       if (!act) continue;
-      if (act.activity_kind !== 'assignment') continue; // quizzes handled elsewhere
+      if (act.activity_kind !== 'assignment') continue;
 
       const grade = gradeBySubmission.get(s.id) ?? null;
-      if (grade && grade.returned_at) continue; // released, not to-do
+      if (grade && grade.returned_at) continue;
       const isDraftGrade = grade !== null && grade.returned_at === null;
 
       const profile = profileById.get(s.student_id);
@@ -405,8 +387,6 @@ export async function getTeacherTodoItems(
     }
   }
 
-  // ------- 2. Quiz attempts awaiting manual review ----------------------
-  // RLS gives us the teacher's classes' attempts.
   const { data: attRows, error: qErr } = await supabase
     .from('quiz_attempts')
     .select('id, activity_id, student_id, submitted_at')
@@ -426,9 +406,6 @@ export async function getTeacherTodoItems(
     const attemptIds = attempts.map((a) => a.id);
     const attActIds = Array.from(new Set(attempts.map((a) => a.activity_id)));
 
-    // Find which attempts have at least one essay/short_answer response
-    // with manual_points = null. We pull manual-kind question ids first
-    // (one batch), then responses for these attempt ids (one batch).
     const { data: mQuestionRows, error: mqErr } = await supabase
       .from('quiz_questions')
       .select('id')
@@ -521,10 +498,153 @@ export async function getTeacherTodoItems(
     }
   }
 
-  // ------- 3. Merge + sort + cap -----------------------------------------
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
+
+  const { data: deadlineRows, error: dErr } = await supabase
+    .from('activities')
+    .select('id, class_id, title, due_at')
+    .eq('published', true)
+    .gte('due_at', now.toISOString())
+    .lt('due_at', horizon.toISOString())
+    .order('due_at', { ascending: true })
+    .limit(fetchCap);
+  if (dErr) throw new Error(dErr.message);
+  type DeadlineRow = {
+    id: string;
+    class_id: string;
+    title: string;
+    due_at: string;
+  };
+  const deadlines = (deadlineRows ?? []) as DeadlineRow[];
+
+  if (deadlines.length > 0) {
+    const classIds = Array.from(new Set(deadlines.map((d) => d.class_id)));
+    const { data: classRows, error: cErr } = await supabase
+      .from('classes')
+      .select('id, name')
+      .in('id', classIds);
+    if (cErr) throw new Error(cErr.message);
+    const classNameById = new Map<string, string>();
+    for (const c of (classRows ?? []) as Array<{ id: string; name: string }>) {
+      classNameById.set(c.id, c.name);
+    }
+
+    for (const d of deadlines) {
+      items.push({
+        kind: 'class_deadline',
+        activityId: d.id,
+        classId: d.class_id,
+        className: classNameById.get(d.class_id) ?? 'Unknown class',
+        activityTitle: d.title,
+        submissionId: null,
+        attemptId: null,
+        studentName: null,
+        studentEmail: null,
+        sortKey: d.due_at,
+        isDraftGrade: false,
+      });
+    }
+  }
+
+  const KIND_ORDER: Record<TeacherTodoItem['kind'], number> = {
+    submission_ungraded: 0,
+    quiz_manual_pending: 1,
+    class_deadline: 2,
+  };
+
   items.sort((x, y) => {
-    // Descending by sortKey (most-recent first).
+    const kindCmp = KIND_ORDER[x.kind] - KIND_ORDER[y.kind];
+    if (kindCmp !== 0) return kindCmp;
+    if (x.kind === 'class_deadline') {
+      return new Date(x.sortKey).getTime() - new Date(y.sortKey).getTime();
+    }
     return new Date(y.sortKey).getTime() - new Date(x.sortKey).getTime();
   });
+
   return items.slice(0, limit);
+}
+
+// ==========================================================================
+// STAT-CARD COUNTS
+// ==========================================================================
+
+export interface TeacherStatCounts {
+  totalClasses: number;
+  deadlines: number;
+  pendingTasks: number;
+}
+
+export interface StudentStatCounts {
+  enrolledClasses: number;
+  deadlines: number;
+  pendingTasks: number;
+}
+
+async function countDeadlinesNext7Days(): Promise<number> {
+  const supabase = await createClient();
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
+
+  const { count, error } = await supabase
+    .from('activities')
+    .select('id', { count: 'exact', head: true })
+    .eq('published', true)
+    .gte('due_at', now.toISOString())
+    .lt('due_at', horizon.toISOString());
+
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+export async function getTeacherStatCounts(): Promise<TeacherStatCounts> {
+  const supabase = await createClient();
+  const userId = await getUserId();
+
+  const { count: classCount, error: cErr } = await supabase
+    .from('classes')
+    .select('id', { count: 'exact', head: true })
+    .eq('teacher_id', userId)
+    .eq('is_archived', false);
+  if (cErr) throw new Error(cErr.message);
+
+  const [todoItems, personalCount, deadlines] = await Promise.all([
+    getTeacherTodoItems(),
+    countMyActivePersonalTasks(),
+    countDeadlinesNext7Days(),
+  ]);
+
+  return {
+    totalClasses: classCount ?? 0,
+    deadlines,
+    pendingTasks: todoItems.length + personalCount,
+  };
+}
+
+export async function getStudentStatCounts(): Promise<StudentStatCounts> {
+  const supabase = await createClient();
+  const userId = await getUserId();
+
+  const { data: enrollRows, error: eErr } = await supabase
+    .from('class_enrollments')
+    .select('class_id, classes:class_id ( is_archived )')
+    .eq('student_id', userId);
+  if (eErr) throw new Error(eErr.message);
+
+  const enrolled = (enrollRows ?? []).filter((r: any) => {
+    const cls = r.classes;
+    return cls && !cls.is_archived;
+  }).length;
+
+  const [todoItems, personalCount, deadlines] = await Promise.all([
+    getStudentTodoItems(),
+    countMyActivePersonalTasks(),
+    countDeadlinesNext7Days(),
+  ]);
+
+  return {
+    enrolledClasses: enrolled,
+    deadlines,
+    pendingTasks: todoItems.length + personalCount,
+  };
 }

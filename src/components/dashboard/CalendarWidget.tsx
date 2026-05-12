@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Loader2,
   CalendarDays,
+  CheckSquare,
 } from 'lucide-react';
 import {
   getMonthGrid,
@@ -18,44 +19,47 @@ import {
   isoMonthEnd,
   getWeekdayHeaders,
 } from '@/lib/utils/calendar';
-import type { CalendarActivity } from '@/lib/types/dashboard';
+import type {
+  CalendarActivity,
+  CalendarPersonalTask,
+} from '@/lib/types/dashboard';
+import type { CalendarFetchResult } from '@/lib/actions/dashboard';
 
 interface CalendarWidgetProps {
-  /** Initial month's activities, fetched server-side by the parent page. */
-  initialActivities: CalendarActivity[];
-  /** Server action to refetch when the month changes. Same shape for student/teacher. */
-  fetcher: (monthStart: string, monthEnd: string) => Promise<CalendarActivity[]>;
+  /** Initial month's activities + personal tasks, fetched server-side. */
+  initialData: CalendarFetchResult;
+  /** Server action to refetch when the month changes. */
+  fetcher: (monthStart: string, monthEnd: string) => Promise<CalendarFetchResult>;
   /** Role drives draft styling (teacher) vs. simple dot (student). */
   role: 'student' | 'teacher';
   /** /student/classes/... or /teacher/classes/... base for activity links. */
   classesBasePath: '/student/classes' | '/teacher/classes';
 }
 
+// Neutral slate gray for personal-task dots. Distinct from any class color.
+const TASK_DOT_COLOR = '#94a3b8'; // slate-400
+
 export default function CalendarWidget({
-  initialActivities,
+  initialData,
   fetcher,
   role,
   classesBasePath,
 }: CalendarWidgetProps) {
-  // Anchor on today's month. Year/month0 (0-indexed JS month) drive everything.
   const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [month0, setMonth0] = useState(today.getMonth());
 
-  const [activities, setActivities] = useState<CalendarActivity[]>(initialActivities);
+  const [data, setData] = useState<CalendarFetchResult>(initialData);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, startRefreshing] = useTransition();
 
-  // The initialActivities are for the CURRENT (today's) month — refetch
-  // any time year/month0 changes off the anchor.
   const isAnchorMonth =
     year === today.getFullYear() && month0 === today.getMonth();
 
   useEffect(() => {
     if (isAnchorMonth) {
-      // Adopt the freshly-passed initial set when we navigate back to "today".
-      setActivities(initialActivities);
+      setData(initialData);
       return;
     }
     setError(null);
@@ -65,7 +69,7 @@ export default function CalendarWidget({
           isoMonthStart(year, month0),
           isoMonthEnd(year, month0),
         );
-        setActivities(next);
+        setData(next);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load calendar.');
       }
@@ -73,28 +77,41 @@ export default function CalendarWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month0]);
 
-  // When `initialActivities` changes (e.g. parent revalidates after a save)
-  // AND we're on the anchor month, adopt the new list.
   useEffect(() => {
-    if (isAnchorMonth) setActivities(initialActivities);
+    if (isAnchorMonth) setData(initialData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialActivities]);
+  }, [initialData]);
 
-  // Group activities by local date key for fast lookup on each grid cell.
+  // Group both activities and tasks by local date key for fast lookup.
   const byDateKey = useMemo(() => {
-    const map = new Map<string, CalendarActivity[]>();
-    for (const a of activities) {
-      const key = toLocalDateKey(new Date(a.dueAt));
-      const existing = map.get(key);
-      if (existing) existing.push(a);
-      else map.set(key, [a]);
+    const map = new Map <
+      string,
+      { activities: CalendarActivity[]; tasks: CalendarPersonalTask[] }
+    >();
+    const ensure = (key: string) => {
+      let bucket = map.get(key);
+      if (!bucket) {
+        bucket = { activities: [], tasks: [] };
+        map.set(key, bucket);
+      }
+      return bucket;
+    };
+    for (const a of data.activities) {
+      ensure(toLocalDateKey(new Date(a.dueAt))).activities.push(a);
     }
-    // Sort each day's bucket by due-time ascending.
-    for (const arr of map.values()) {
-      arr.sort((x, y) => new Date(x.dueAt).getTime() - new Date(y.dueAt).getTime());
+    for (const t of data.personalTasks) {
+      ensure(toLocalDateKey(new Date(t.dueAt))).tasks.push(t);
+    }
+    for (const b of map.values()) {
+      b.activities.sort(
+        (x, y) => new Date(x.dueAt).getTime() - new Date(y.dueAt).getTime(),
+      );
+      b.tasks.sort(
+        (x, y) => new Date(x.dueAt).getTime() - new Date(y.dueAt).getTime(),
+      );
     }
     return map;
-  }, [activities]);
+  }, [data]);
 
   const grid = useMemo(() => getMonthGrid(year, month0), [year, month0]);
   const weekdays = useMemo(() => getWeekdayHeaders(0), []);
@@ -119,13 +136,12 @@ export default function CalendarWidget({
     setSelectedDateKey(toLocalDateKey(today));
   }, [today]);
 
-  const selectedDayItems = selectedDateKey
-    ? byDateKey.get(selectedDateKey) ?? []
-    : [];
+  const selectedBucket = selectedDateKey
+    ? byDateKey.get(selectedDateKey) ?? { activities: [], tasks: [] }
+    : { activities: [], tasks: [] };
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      {/* Header */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
           <CalendarIcon className="h-4 w-4" />
@@ -173,19 +189,20 @@ export default function CalendarWidget({
         </div>
       )}
 
-      {/* Weekday headers */}
       <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-gray-400">
         {weekdays.map((w) => (
           <div key={w}>{w}</div>
         ))}
       </div>
 
-      {/* Day grid */}
       <div className="grid grid-cols-7 gap-1">
         {grid.map((day) => {
-          const items = byDateKey.get(day.dateKey) ?? [];
+          const bucket = byDateKey.get(day.dateKey);
+          const items = bucket?.activities ?? [];
+          const tasks = bucket?.tasks ?? [];
           const isSelected = selectedDateKey === day.dateKey;
-          const hasItems = items.length > 0;
+          const hasAnything = items.length > 0 || tasks.length > 0;
+          const totalDots = Math.min(items.length, 3) + Math.min(tasks.length, 2);
           return (
             <button
               key={day.dateKey}
@@ -197,29 +214,31 @@ export default function CalendarWidget({
                 day.isToday ? 'ring-1 ring-red-500' : '',
                 isSelected
                   ? 'bg-red-50 ring-2 ring-red-500'
-                  : hasItems
+                  : hasAnything
                     ? 'bg-gray-50 hover:bg-gray-100'
                     : 'hover:bg-gray-50',
               ].join(' ')}
-              aria-label={`${day.dateKey}${hasItems ? `, ${items.length} activity${items.length === 1 ? '' : 's'}` : ''}`}
+              aria-label={`${day.dateKey}${hasAnything ? `, ${items.length + tasks.length} item(s)` : ''}`}
               aria-pressed={isSelected}
             >
               <span className="absolute left-1 top-1 font-medium">
                 {day.date.getDate()}
               </span>
-              {hasItems && (
+              {hasAnything && (
                 <span className="absolute inset-x-0 bottom-1 flex justify-center gap-0.5">
-                  {/* Up to 3 dots — one per activity, capped. */}
                   {items.slice(0, 3).map((a, i) => (
                     <DayDot
-                      key={i}
+                      key={`a${i}`}
                       colorHex={a.classColor}
                       isDraft={role === 'teacher' && !a.published}
                     />
                   ))}
-                  {items.length > 3 && (
+                  {tasks.slice(0, 2).map((_, i) => (
+                    <DayDot key={`t${i}`} colorHex={TASK_DOT_COLOR} isDraft={false} />
+                  ))}
+                  {items.length + tasks.length > totalDots && (
                     <span className="text-[9px] font-bold text-gray-500">
-                      +{items.length - 3}
+                      +{items.length + tasks.length - totalDots}
                     </span>
                   )}
                 </span>
@@ -229,7 +248,6 @@ export default function CalendarWidget({
         })}
       </div>
 
-      {/* Selected day expansion */}
       {selectedDateKey && (
         <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -241,11 +259,12 @@ export default function CalendarWidget({
               day: 'numeric',
             })}
           </div>
-          {selectedDayItems.length === 0 ? (
-            <p className="text-xs italic text-gray-500">No activities due this day.</p>
+          {selectedBucket.activities.length === 0 &&
+          selectedBucket.tasks.length === 0 ? (
+            <p className="text-xs italic text-gray-500">Nothing this day.</p>
           ) : (
             <ul className="space-y-1.5">
-              {selectedDayItems.map((a) => {
+              {selectedBucket.activities.map((a) => {
                 const due = new Date(a.dueAt);
                 const timeLabel = due.toLocaleTimeString([], {
                   hour: '2-digit',
@@ -279,6 +298,32 @@ export default function CalendarWidget({
                   </li>
                 );
               })}
+              {selectedBucket.tasks.map((t) => {
+                const due = new Date(t.dueAt);
+                const timeLabel = due.toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                return (
+                  <li
+                    key={t.taskId}
+                    className="flex items-center gap-2 rounded-md bg-white px-2.5 py-1.5 text-xs"
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: TASK_DOT_COLOR }}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium text-gray-900">{t.title}</span>
+                    </span>
+                    <span className="shrink-0 text-gray-500">
+                      Personal task · {timeLabel}
+                    </span>
+                    <CheckSquare className="h-3 w-3 shrink-0 text-slate-400" />
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -287,7 +332,6 @@ export default function CalendarWidget({
   );
 }
 
-/** Single dot under a day. Filled = published, ring-only = draft. */
 function DayDot({ colorHex, isDraft }: { colorHex: string; isDraft: boolean }) {
   if (isDraft) {
     return (

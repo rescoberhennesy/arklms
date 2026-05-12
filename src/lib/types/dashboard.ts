@@ -1,7 +1,8 @@
 // src/lib/types/dashboard.ts
 //
-// Pure types for the dashboard widgets (Phase 8c). Calendar items and
-// to-do rows. No async functions, no server-only code.
+// Pure types for the dashboard widgets. Calendar items, to-do rows,
+// personal tasks, and cross-class announcement rows.
+// No async functions, no server-only code.
 
 import type { ActivityKind } from '@/lib/types/activities';
 
@@ -9,10 +10,6 @@ import type { ActivityKind } from '@/lib/types/activities';
 // CALENDAR
 // ==========================================================================
 
-// One activity surfacing as a dot on the calendar. The widget groups by
-// dueDate (yyyy-mm-dd in user's local time, computed client-side from
-// dueAt) for the dot rendering, then renders the full item list when a
-// day is expanded.
 export interface CalendarActivity {
   activityId: string;
   classId: string;
@@ -20,39 +17,32 @@ export interface CalendarActivity {
   classColor: string;
   title: string;
   activityKind: ActivityKind;
-  dueAt: string; // ISO
-  // Teacher-only: surfaces drafts with a visual distinction.
-  // For students this is always true (only published rows are returned).
+  dueAt: string;
   published: boolean;
+}
+
+// Personal tasks also surface on the calendar (when they have a due_at).
+// Rendered with a neutral slate-gray dot — distinct from class-color
+// activity dots. No classId/className since they're not class-scoped.
+export interface CalendarPersonalTask {
+  taskId: string;
+  title: string;
+  dueAt: string; // ISO — only items with non-null due_at surface here
 }
 
 // ==========================================================================
 // TO-DO ROWS — STUDENT
 // ==========================================================================
 
-// One row in the student "Due soon" widget. Covers:
-//   - assignments not yet submitted that are due in the next 7 days OR overdue
-//   - quizzes the student has not started/submitted that are due in the
-//     next 7 days OR overdue
-//
-// "Overdue" means the activity's due_at is in the past AND the student
-// hasn't submitted (assignment) or hasn't submitted a quiz attempt.
-// Allow_late=true assignments that are past due AND unsubmitted still
-// show as overdue (the row tells the student to act now).
 export interface StudentTodoItem {
   activityId: string;
   classId: string;
   className: string;
   title: string;
   activityKind: ActivityKind;
-  dueAt: string; // ISO
-  isOverdue: boolean; // due_at < now AND nothing submitted
-  // For quizzes: 'not_started' (no attempt row), 'in_progress' (attempt
-  // exists, not submitted). For assignments: always 'not_started' because
-  // any submission would have removed the row.
+  dueAt: string;
+  isOverdue: boolean;
   quizState: 'not_started' | 'in_progress' | null;
-  // True iff allow_late is true AND due_at < now. Surfaces as "late
-  // submission OK" hint on the row.
   lateAllowed: boolean;
 }
 
@@ -60,15 +50,10 @@ export interface StudentTodoItem {
 // TO-DO ROWS — TEACHER
 // ==========================================================================
 
-// One row in the teacher "To grade" widget. Two row types:
-//   - 'submission_ungraded': an assignment submission with no grade yet,
-//     OR a grade saved as draft (returned_at IS NULL).
-//   - 'quiz_manual_pending': a submitted quiz attempt with at least one
-//     essay/short_answer response where manual_points IS NULL.
-//
-// Both types link to a grader UI: the submission grader for the first,
-// the quiz-attempt grader for the second.
-export type TeacherTodoKind = 'submission_ungraded' | 'quiz_manual_pending';
+export type TeacherTodoKind =
+  | 'submission_ungraded'
+  | 'quiz_manual_pending'
+  | 'class_deadline';
 
 export interface TeacherTodoItem {
   kind: TeacherTodoKind;
@@ -76,18 +61,45 @@ export interface TeacherTodoItem {
   classId: string;
   className: string;
   activityTitle: string;
-  // For 'submission_ungraded': the submission id and student info
   submissionId: string | null;
-  // For 'quiz_manual_pending': the attempt id and student info
   attemptId: string | null;
   studentName: string | null;
   studentEmail: string | null;
-  // The relevant timestamp:
-  //   submission_ungraded → submitted_at
-  //   quiz_manual_pending → attempt.submitted_at
-  // Used for sort order ("most recent first").
-  sortKey: string; // ISO
-  // For submission_ungraded: true iff a draft grade exists but is unreleased.
-  // For quiz_manual_pending: always false.
+  sortKey: string;
   isDraftGrade: boolean;
+}
+
+// ==========================================================================
+// PERSONAL TASKS (shared between teachers and students)
+// ==========================================================================
+
+// One row in the personal-tasks subsection of the to-do widget.
+// Soft-deleted rows (completed_at NOT NULL) are filtered upstream by
+// the action; this type only carries active tasks.
+//
+// `dueAt` is nullable — undated tasks still appear in the widget but
+// don't surface on the calendar. `isOverdue` is computed server-side
+// for dated tasks; null for undated.
+export interface PersonalTaskItem {
+  id: string;
+  title: string;
+  notes: string | null;
+  dueAt: string | null; // ISO or null
+  isOverdue: boolean | null; // null when undated
+  createdAt: string;
+}
+
+// ==========================================================================
+// ANNOUNCEMENTS — CROSS-CLASS DASHBOARD WIDGET
+// ==========================================================================
+
+export interface RecentAnnouncementItem {
+  id: string;
+  classId: string;
+  className: string;
+  classColor: string;
+  body: string;
+  pinned: boolean;
+  createdAt: string;
+  authorName: string | null;
 }

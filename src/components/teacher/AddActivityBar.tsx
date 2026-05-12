@@ -1,3 +1,4 @@
+// src/components/teacher/AddActivityBar.tsx
 'use client';
 
 import { useState, useTransition } from 'react';
@@ -24,6 +25,9 @@ interface AddActivityBarProps {
   classId: string;
   onOptimisticAdd: (activity: ActivityWithAllSubmissions) => void;
   onError: (msg: string | null) => void;
+  // When true, the bar mounts in its expanded form. Used by the parent
+  // tab to honor a dashboard ?create=1 deep-link.
+  defaultOpen?: boolean;
 }
 
 function defaultDueLocal(): string {
@@ -42,9 +46,10 @@ export default function AddActivityBar({
   classId,
   onOptimisticAdd,
   onError,
+  defaultOpen = false,
 }: AddActivityBarProps) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [isPending, startTransition] = useTransition();
 
   const [kind, setKind] = useState<ActivityKind>('assignment');
@@ -94,9 +99,6 @@ export default function AddActivityBar({
       return;
     }
 
-    // Assignment-only validation: max_points is user-set.
-    // Quizzes compute max_points from the sum of question points (managed
-    // by recomputeQuizTotalPoints in Layer B). The input is hidden.
     let points = 0;
     if (!isQuiz) {
       points = Number(maxPoints);
@@ -120,7 +122,7 @@ export default function AddActivityBar({
             dueAt: dueAtIso,
           });
           activityId = res.activityId;
-          optimisticPoints = 0; // sum of question points; starts at 0
+          optimisticPoints = 0;
           optimisticSubmissionType = 'none';
         } else {
           const res = await createActivity({
@@ -161,8 +163,6 @@ export default function AddActivityBar({
 
         reset();
         setOpen(false);
-        // Navigate teacher straight into the editor of the new activity so
-        // they can start adding questions / writing description.
         router.push(`/teacher/classes/${classId}/activities/${activityId}`);
       } catch (e) {
         onError(e instanceof Error ? e.message : 'Failed to create activity.');

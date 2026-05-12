@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import type { RecentAnnouncementItem } from '@/lib/types/dashboard';
 
 export type AnnouncementAuthor = {
   id: string;
@@ -218,4 +219,44 @@ export async function deleteComment(commentId: string): Promise<void> {
     revalidatePath(`/teacher/classes/${classId}`);
     revalidatePath(`/student/classes/${classId}`);
   }
+}
+
+// ==========================================================================
+// CROSS-CLASS DASHBOARD WIDGET
+// ==========================================================================
+
+// Returns the newest N announcements across ALL classes the current user
+// has access to. RLS filters out classes they're not a member/teacher
+// of automatically, so we don't pass classId or enforce ownership here.
+// Pinned items still sort first; secondary sort is created_at desc.
+export async function listRecentAnnouncementsAcrossClasses(
+  limit: number = 5,
+): Promise<RecentAnnouncementItem[]> {
+  const { supabase } = await requireAuth();
+
+  const { data, error } = await supabase
+    .from('class_announcements')
+    .select(`
+      id, class_id, body, pinned, created_at,
+      author:author_id ( full_name ),
+      class:class_id ( name, color )
+    `)
+    .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to load recent announcements: ${error.message}`);
+  }
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    classId: row.class_id,
+    className: row.class?.name ?? 'Unknown class',
+    classColor: row.class?.color ?? '#dc2626',
+    body: row.body,
+    pinned: row.pinned,
+    createdAt: row.created_at,
+    authorName: row.author?.full_name ?? null,
+  }));
 }

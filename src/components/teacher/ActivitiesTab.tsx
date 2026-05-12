@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   DndContext,
@@ -109,6 +109,10 @@ export default function ActivitiesTab({
   classId,
   activities: initialActivities,
 }: ActivitiesTabProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [activities, setActivities] =
     useState<ActivityWithAllSubmissions[]>(initialActivities);
 
@@ -121,6 +125,25 @@ export default function ActivitiesTab({
   }, [sig, initialActivities]);
 
   const [error, setError] = useState<string | null>(null);
+
+  // Dashboard quick-action deep-link support: when arriving with
+  // ?tab=activities&create=1 (the picker route at /teacher/quick/activity
+  // produces this), open the AddActivityBar in its expanded form. We
+  // snapshot the param once at mount and immediately strip it from the URL
+  // so a refresh / close / reopen flow doesn't re-trigger.
+  const [createOpenFromParam, setCreateOpenFromParam] = useState(false);
+  const hasConsumedCreateParam = useRef(false);
+  useEffect(() => {
+    if (hasConsumedCreateParam.current) return;
+    if (searchParams.get('create') === '1') {
+      hasConsumedCreateParam.current = true;
+      setCreateOpenFromParam(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('create');
+      const next = params.toString();
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    }
+  }, [searchParams, pathname, router]);
 
   function handleOptimisticAdd(newActivity: ActivityWithAllSubmissions) {
     setActivities((prev) => [...prev, newActivity]);
@@ -152,6 +175,7 @@ export default function ActivitiesTab({
         classId={classId}
         onOptimisticAdd={handleOptimisticAdd}
         onError={setError}
+        defaultOpen={createOpenFromParam}
       />
 
       {MODULE_TERMS.map((term) => {
