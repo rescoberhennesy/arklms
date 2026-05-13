@@ -1198,8 +1198,10 @@ Flag any reusable patterns (e.g., a Button component, Card wrapper) that should 
 If new shared CSS/tokens are introduced, tell me where to put them (e.g., globals.css, a new theme.css).
 
 FIRST STEP
-Before I send files, tell me which file(s) you want to see first based on the project structure I've provided below. Prioritize files that 
+Before I send files, I'll send screenshots then tell me which file(s) you want to see first based on the project structure I've provided below. Prioritize files that 
 establish the design foundation (global styles, layout, sidebar, navbar, reusable components) so later pages inherit a consistent system.
+
+Just say "start" when you're ready. I'll send the first screenshot.
 
 PROJECT STRUCTURE
 project folder/file structure:
@@ -1231,6 +1233,8 @@ project folder/file structure:
     ~student
      ~assignments
       *page.tsx
+     ~calendar
+      *page.tsx
      ~classes
       ~[id]
        ~activities
@@ -1253,6 +1257,9 @@ project folder/file structure:
       ~[id]
        ~activities
         ~[activityId]
+         ~attempts
+          ~[attemptId]
+           *page.tsx
          ~submissions
           ~[submissionId]
            *page.tsx
@@ -1271,11 +1278,21 @@ project folder/file structure:
       *page.tsx
      ~gradebook
       *page.tsx
+     ~Quick
+      ~activity
+       *page.tsx
+      ~announce
+       *page.tsx
+      ~module
+       *page.tsx
     *layout.tsx
    ~auth
     ~callback
      *route.ts
     ~signout
+     *route.ts
+   ~calendar
+    ~[token]
      *route.ts
    ~unauthorized
     *page.tsx
@@ -1286,17 +1303,29 @@ project folder/file structure:
    ~auth
     *login-modal.tsx
    ~dashboard
+    *AnnouncementsWidget.tsx
+    *CalendarSubscribeButton.tsx
+    *CalendarWidget.tsx
     *ClassCover.tsx
+    *DashboardBanner.tsx
+    *FullCalendarView.tsx
     *MarkdownContent.tsx
     *MarkdownEditor.tsx
     *nav-config.ts
+    *PersonalTasksPanel.tsx
     *ProfileDropDown.tsx
+    *QuickActionsRow.tsx
+    *RichClassCard.tsx
     *SetPageTitle.tsx
     *Sidebar.css
     *Sidebar.tsx
     *SortableClasGrid.tsx
     *SortableItem.tsx
+    *StatCardsRow.tsx
     *StreamView.tsx
+    *StudentTodoWidget.tsx
+    *TeacherTodoWidget.tsx
+    *TodoRow.tsx
     *TopNavbar.tsx
     *TopNavbar.tsx
     *user-avatar.tsx
@@ -1353,9 +1382,12 @@ project folder/file structure:
     *ModuleEditor.tsx
     *ModulesTab.tsx
     *QuestionEditor.tsx
+    *QuickClassPicker.tsx
+    *QuizAttemptGrader.tsx
     *QuizAttemptsPanel.tsx
     *QuizEditor.tsx
     *SettingsActions.tsx
+    *StudentAnswerView.tsx
     *StudentsTab.tsx
     *SubmissionGrader.tsx
   ~config
@@ -1367,21 +1399,28 @@ project folder/file structure:
    ~actions
     *activities.ts
     *announcements.ts
+    *calendarToken.ts
     *classes.ts
+    *dashboard.ts
     *enrollments.ts
     *gradebook.ts
     *joinPreview.ts
     *modules.ts
+    *personalTasks.ts
     *quizzes.ts
+   ~hooks
+    *useServerSyncedState.ts
    ~supabase
     *client.ts
     *middleware.ts
     *server.ts
    ~types
     *activities.ts
+    *dashboard.ts
     *modules.ts
     *quizzes.ts
    ~utils
+    *calendar.ts
     *cn.ts
     *getInitials.ts
    *utils.ts
@@ -1397,4 +1436,134 @@ project folder/file structure:
   ~smoke-tests
   ~snippets
   *config.toml
- ....
+ .... (the rest files)
+
+
+
+
+What I understand you want
+Sidebar — new nav item
+
+Add a "Calendar" item to the sidebar (under Classes).
+"Calendar" is a new page at /teacher/calendar and /student/calendar. It shows a full-page large calendar with all activity due-dates the user has access to. 
+Clicking a day or activity opens the same kind of detail you see in today's small calendar widget, just bigger.
+"Calendar" exists for both teachers and students.
+
+Dashboard — full restructure (teachers)
+Layout, top to bottom:
+
+Hero banner — greeting ("Good morning, {name}"), tagline, two CTAs: "Create Class" (opens the class-creation flow). Top-right of banner shows today's date.
+Stat cards row — Total Classes, Deadlines, Pending Tasks. Three cards.
+Two-column area:
+
+Left (≈2/3): "Your Classes" overview — the class cards, similar to today's recent classes but visually richer like screenshot 1/2 
+(progress bars, active/draft badges, member count). 
+"View All →" link top-right.
+Right (≈1/3): Calendar widget (smaller version of the schedule page), then a To-Do widget, then an Announcements widget (connected from
+the announcements from each class). Three stacked panels.
+
+
+Quick Actions row (below the two-column area, full width) — Create Class, Create Activity, Create Module,
+Each tile is a real shortcut to the corresponding creation flow, not a mock.
+
+Dashboard — full restructure (students)
+Same shape, with these differences:
+
+No "Create Class" CTA in the banner 
+No Quick Actions section at all.
+Stats reflect student state — adapt the four cards (e.g. Enrolled Classes, Deadlines, Pending Tasks).
+Right column keeps Calendar + To-Do + Announcements.
+Left column shows enrolled classes.
+
+To-Do widget — new semantics
+This is the biggest change to existing logic. Today, todo is purely auto-derived from activities (ungraded submissions for teachers,
+ due-soon-unsubmitted for students). You now want:
+
+Auto-derived items (from activities) continue to appear.
+Plus users can add their own personal tasks — title + due date required.
+Personal tasks appear on the calendar too (which means they need a date and a class-color-or-equivalent dot).
+When a task is marked done, it disappears from the todo list. ("Once the tasks are done, those tasks from the to do list should be gone.")
+
+Announcements widget
+A new widget showing the latest announcements across all the user's classes. Each entry links to its class's announcements view.
+Things I need to clarify before writing anything
+Some of these change the shape of the work significantly. Best to lock them now.
+Q1 — Personal tasks: how do auto-derived todos interact with "mark done"?
+Auto items (ungraded submissions, due-soon assignments) are derived from real database state, not stored as a todo row. If a teacher checks off "Grade Module 1 submissions for ELS101" on the todo list, what happens? Options:
+
+a) Auto items can't be checked off — only personal tasks can. Auto items disappear naturally when the underlying state changes (grade gets released, student submits, etc).
+b) Auto items can be "dismissed" — stored as a dismissed_at row keyed to the underlying object, hidden from the list, but reappear if state changes (new submission on the same activity).
+c) Personal tasks only — auto items move out of the todo widget entirely and live somewhere else.
+
+My pick: (a). It's the only one that doesn't lie. Auto items reflect ground truth; letting a teacher "complete" an ungraded submission without actually grading it would let real work fall off the dashboard.
+Q2 — Personal tasks: scope?
+Are personal tasks private to the user, or can a teacher attach a personal task to a class so all enrolled students see it? Screenshot 2 looks personal-only ("Grade Module 1...", "Prepare lecture slides...") which is teacher-only-visible work.
+My pick: personal, private to the user. If teachers want to assign things to students that's what activities are for. A "post a task to all my students" feature is a different feature.
+Q3 — Personal tasks on the calendar: visual treatment?
+Auto items get their class color as the dot. Personal tasks aren't tied to a class. Options:
+
+A generic gray/neutral dot
+Let the user pick a color when creating
+Use a distinct icon shape instead of a dot
+
+My pick: a neutral slate-gray dot, with a small icon (checkbox) overlaid or in the expansion list. Keeps the calendar legible without forcing a 
+color picker into the create flow.
+Q4 — Quick Actions tiles: which ones map to real flows?
+Screenshot 2 shows nine tiles: Create Class, Add Student, Announce, Assignment, Upload, Record, Grades, Event. Some of these don't have an obvious 
+existing flow: (then don't include some, just these below if possible:
+
+Create Class → existing flow, easy
+Create Activity → exists per-class; from dashboard it needs a class picker first, or routes to a "pick class" intermediate page
+Create Module → exists per-class, same problem
+Announce → same problem (announcements are per-class)
+
+My pick: Three real shortcuts for now — Create Class, Create Activity (with class picker), Create Module (with class picker). 
+Drop the rest until they have real destinations. Don't ship buttons that don't go anywhere.
+
+Q5 — Announcements widget: which class's announcements?
+Latest announcements across all the user's classes, intermixed? Or one widget per class? Or a class filter?
+My pick: intermixed, newest first, with the class name as a sub-label on each row. Mirrors the to-do widget pattern. Cap 5 or so.
+Q6 — Stat cards: "Deadlines" and "Pending Tasks" — what do these count?
+Screenshot 1 shows "7 Deadlines" and "4 Pending Tasks" for a teacher. These need definitions:
+
+Deadlines: activities with due_at in the future across your classes? Within the next 7 days? Including drafts? (just published)
+Pending Tasks: the count of items in the To-Do widget? (Auto + personal?, yes? what's the difference tho? I guess for teachers, this should include the tasks to be
+graded or idk, u suggest)
+
+My pick:
+
+Deadlines = published activities with due_at in the next 7 days, across all your classes
+Pending Tasks = current to-do widget count (auto + personal, not-yet-done)
+
+Q7 — Scope of this session
+This is now substantially more work than the original Session 12 plan. We were doing per-class Excel export + activity completion tracking. 
+Now we're also doing:
+
+New Schedule page (both roles)
+Personal tasks data model (new table, CRUD actions, UI)
+Announcements widget (data model probably exists; new widget)
+Banner with real CTAs (Create Class flow integration)
+Quick Actions section with real flows (Create Activity / Create Module from dashboard need class-picker indirection)
+Stat cards row (new logic)
+"Your Classes" left column (probably reusable from existing class-list views)
+
+Realistic estimate: this is 2–3 sessions of work by itself if we do it carefully. Trying to fit it into Session 12 alongside Excel export + completion tracking means cutting corners on all three.
+Two reasonable paths:
+
+(A) Pause Excel export + completion tracking. Spend Session 12 on dashboard redesign foundations: Schedule page, banner, stat cards, Quick Actions (real flows only). Push to-do v2 (personal tasks) and announcements widget to Session 13.
+(B) Spend Session 12 on dashboard redesign end to end, push Excel export + completion tracking to Session 13.
+
+My pick: (A). Personal tasks need a database migration + CRUD + calendar integration + done-state tracking — that's where the surprises live. Better to do the visible shell + the Schedule page now, ship something testable, and tackle the tasks-data-model in its own session.
+Before I do anything
+Two asks:Also worth flagging: the screenshots in images 1 and 2 are clearly mockups/inspirations (different sidebar branding, "ARK LMS" gold logo vs. your real "ARK Learning Management System" red logo, dark theme vs. your light theme). I'm assuming you want the structure and component layout from those mockups, not the dark theme or the gold branding. If you actually want a dark-mode redesign too that's a much bigger conversation — let me know.
+
+
+When does the notifications trigger:
+(a) Teacher posts announcement → enrolled students get notified as well as if someone comments, teachers get notified
+(b) Student submits assignment/quiz → teacher gets notified
+(c) Teacher releases grade or if the submmitted activities had been checked (calls returnGrade or returnAllGrades) → student gets notified
+(d) Student requests to join class → teacher gets notified
+(e) Teacher approves/rejects join request → student gets notified
+(f) Personal-task-due-today → user gets notified
+(g) Teacher uploads new materials (modules/lessons/activities)
+

@@ -13,9 +13,13 @@ import {
   createComment,
   deleteComment,
 } from '@/lib/actions/announcements';
+import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
 import MarkdownContent from './MarkdownContent';
 import MarkdownEditor from './MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
+import { Sparkles } from 'lucide-react';
+import AIDraftPanel from '@/components/teacher/ai/AIDraftPanel';
+
 
 interface StreamViewProps {
   classId: string;
@@ -97,49 +101,81 @@ function Composer({ classId }: { classId: string }) {
   const [body, setBody] = useState('');
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [aiMode, setAiMode] = useState(false);
+  const [pendingGenerationId, setPendingGenerationId] = useState<string | null>(null);
 
-  function handlePost() {
+  function handleAiAccept(combinedBody: string, generationId: string | null) {
+    setBody(combinedBody);
+    setPendingGenerationId(generationId);
+    setAiMode(false);
+  }
+
+  function handleSubmit() {
+    if (!body.trim() || isPending) return;
     setError(null);
-    const trimmed = body.trim();
-    if (!trimmed) {
-      setError('Write something before posting.');
-      return;
-    }
+    const generationId = pendingGenerationId;
     startTransition(async () => {
       try {
-        await createAnnouncement(classId, trimmed);
+        await createAnnouncement(classId, body);
+        if (generationId) {
+          // Best-effort: tag the generation as published with the final body.
+          await markAiGenerationPublished(generationId, {
+            title: '',
+            body,
+          });
+        }
         setBody('');
+        setPendingGenerationId(null);
         router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to post.');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to post.');
       }
     });
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <h3 className="mb-2 text-sm font-semibold text-gray-900">
-        New announcement
-      </h3>
-      <MarkdownEditor
-        value={body}
-        onChange={setBody}
-        placeholder="Share something with your class. Markdown supported."
-        helper="Tip: Use **bold**, *italic*, lists, and links."
-        disabled={isPending}
-      />
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          onClick={handlePost}
-          disabled={isPending || !body.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {isPending ? 'Posting…' : 'Post'}
-        </button>
-      </div>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+      {aiMode ? (
+        <AIDraftPanel
+          classId={classId}
+          onAccept={handleAiAccept}
+          onCancel={() => setAiMode(false)}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">New announcement</span>
+            <button
+              type="button"
+              onClick={() => setAiMode(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              AI Draft
+            </button>
+          </div>
+
+          <MarkdownEditor
+            value={body}
+            onChange={setBody}
+            placeholder="Share an announcement with your class..."
+            disabled={isPending}
+          />
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!body.trim() || isPending}
+              className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {isPending ? 'Posting...' : 'Post'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

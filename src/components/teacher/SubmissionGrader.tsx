@@ -18,6 +18,12 @@ import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import {
+  AISuggestFeedbackProvider,
+  AISuggestFeedbackButton,
+  AISuggestFeedbackCard,
+} from '@/components/teacher/ai/AISuggestFeedback';
+import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
+import {
   gradeSubmission,
   returnGrade,
   ungradeSubmission,
@@ -62,6 +68,9 @@ export default function SubmissionGrader({
   );
   const [feedback, setFeedback] = useState<string>(
     submission.grade?.feedback ?? '',
+  );
+  const [pendingGenerationId, setPendingGenerationId] = useState<string | null>(
+    null,
   );
   const [error, setError] = useState<string | null>(null);
   const [showUngradeConfirm, setShowUngradeConfirm] = useState(false);
@@ -112,6 +121,13 @@ export default function SubmissionGrader({
     setError(null);
   }
 
+  function handleAiAccept(suggestedFeedback: string, generationId: string | null) {
+    editingRef.current = true;
+    setFeedback(suggestedFeedback);
+    setPendingGenerationId(generationId);
+    setError(null);
+  }
+
   function handleSaveDraft() {
     const score = parseScore();
     if (score === null) {
@@ -121,10 +137,15 @@ export default function SubmissionGrader({
       return;
     }
     setError(null);
+    const generationId = pendingGenerationId;
     startTransition(async () => {
       try {
         await gradeSubmission(submission.id, score, feedback);
+        if (generationId) {
+          await markAiGenerationPublished(generationId, { feedback });
+        }
         editingRef.current = false;
+        setPendingGenerationId(null);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to save grade');
@@ -141,11 +162,16 @@ export default function SubmissionGrader({
       return;
     }
     setError(null);
+    const generationId = pendingGenerationId;
     startTransition(async () => {
       try {
         await gradeSubmission(submission.id, score, feedback);
         await returnGrade(submission.id);
+        if (generationId) {
+          await markAiGenerationPublished(generationId, { feedback });
+        }
         editingRef.current = false;
+        setPendingGenerationId(null);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to release grade');
@@ -161,6 +187,7 @@ export default function SubmissionGrader({
         editingRef.current = false;
         setScoreInput('');
         setFeedback('');
+        setPendingGenerationId(null);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to ungrade');
@@ -200,6 +227,8 @@ export default function SubmissionGrader({
       label: 'Graded & released',
     };
   }
+
+  const currentScore = parseScore();
 
   // ---- Render -----------------------------------------------------------
 
@@ -348,19 +377,37 @@ export default function SubmissionGrader({
             </div>
           </label>
 
-          {/* Feedback */}
-          <div className="mb-4">
-            <span className="mb-1 block text-xs font-medium text-gray-700">
-              Feedback (optional, markdown)
-            </span>
-            <MarkdownEditor
-              value={feedback}
-              onChange={handleFeedbackChange}
-              placeholder="Leave feedback for the student..."
-              rows={6}
-              disabled={pending}
-            />
-          </div>
+          {/* Feedback — Provider wraps label+button (compact row) AND the
+              full-width card+editor, so all three pieces share state. */}
+          <AISuggestFeedbackProvider
+            endpoint="/api/ai/feedback/submission"
+            body={{
+              submissionId: submission.id,
+              score: currentScore ?? 0,
+            }}
+            disabled={currentScore === null || pending}
+            disabledReason="Enter a valid score first"
+            onAccept={handleAiAccept}
+          >
+            <div className="mb-4">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="block text-xs font-medium text-gray-700">
+                  Feedback (optional, markdown)
+                </span>
+                <AISuggestFeedbackButton />
+              </div>
+              <AISuggestFeedbackCard />
+              <div className="mt-2">
+                <MarkdownEditor
+                  value={feedback}
+                  onChange={handleFeedbackChange}
+                  placeholder="Leave feedback for the student..."
+                  rows={6}
+                  disabled={pending}
+                />
+              </div>
+            </div>
+          </AISuggestFeedbackProvider>
 
           {/* Error */}
           {error && (
