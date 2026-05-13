@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
@@ -44,6 +45,7 @@ import {
   MODULE_TERMS,
   MODULE_TERM_LABELS,
 } from '@/lib/types/modules';
+import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
 
 interface ModulesTabProps {
   classId: string;
@@ -87,17 +89,13 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [modules, setModules] = useState<ModuleWithLessons[]>(initialModules);
+  // Server-synced local state — same hook used in ActivitiesTab,
+  // ActivityAttachmentsPanel, QuizAttemptsPanel.
+  const [modules, setModules] = useServerSyncedState(
+    initialModules,
+    modulesSignature,
+  );
   const [error, setError] = useState<string | null>(null);
-
-  const lastPropSig = useRef(modulesSignature(initialModules));
-  useEffect(() => {
-    const propSig = modulesSignature(initialModules);
-    if (propSig !== lastPropSig.current) {
-      lastPropSig.current = propSig;
-      setModules(initialModules);
-    }
-  }, [initialModules]);
 
   // Dashboard quick-action deep-link support: ?tab=modules&create=1 opens
   // the AddModuleBar in its expanded form on mount, then strips the param.

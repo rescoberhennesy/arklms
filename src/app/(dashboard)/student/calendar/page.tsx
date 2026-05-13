@@ -1,6 +1,7 @@
 import { getStudentCalendarItems } from '@/lib/actions/dashboard';
 import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import FullCalendarView from '@/components/dashboard/FullCalendarView';
+import CalendarSubscribeButton from '@/components/dashboard/CalendarSubscribeButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,12 +24,17 @@ export default async function StudentCalendarPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          All upcoming activity due dates from your classes and your personal tasks.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            All upcoming activity due dates from your classes and your
+            personal tasks.
+          </p>
+        </div>
+        <CalendarSubscribeButton />
       </div>
+
       <FullCalendarView
         initialData={initialData}
         fetcher={getStudentCalendarItems}

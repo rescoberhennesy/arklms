@@ -1,5 +1,7 @@
 'use client';
 
+import { useMemo } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   type ActivityWithStudentState,
@@ -30,7 +32,7 @@ const TERM_HEADER_ACCENTS: Record<ModuleTerm, string> = {
   final: 'bg-rose-50 text-rose-800 border-rose-200',
 };
 
-const STATUS_PILL: Record <
+const STATUS_PILL: Record<
   ActivityStatus,
   { className: string; label: string }
 > = {
@@ -56,13 +58,96 @@ const STATUS_PILL: Record <
   },
 };
 
+// Session 13 completion-tracking filter buckets.
+// "To do" = anything not yet submitted that the student can still act on,
+// plus 'missing' is excluded (it has its own bucket). 'not_started' is
+// student-side dead code (students can't see unpublished activities), but
+// included for type-completeness.
+type CompletionFilter = 'all' | 'todo' | 'submitted' | 'missed' | 'graded';
+
+const FILTER_LABEL: Record<CompletionFilter, string> = {
+  all: 'All',
+  todo: 'To do',
+  submitted: 'Submitted',
+  missed: 'Missed',
+  graded: 'Graded',
+};
+
+const FILTER_STATUSES: Record<CompletionFilter, ReadonlySet<ActivityStatus>> = {
+  all: new Set<ActivityStatus>([
+    'not_started',
+    'open',
+    'late_window',
+    'missing',
+    'submitted',
+    'late_submitted',
+    'graded_unreturned',
+    'graded_returned',
+  ]),
+  todo: new Set<ActivityStatus>(['not_started', 'open', 'late_window']),
+  submitted: new Set<ActivityStatus>(['submitted', 'late_submitted']),
+  missed: new Set<ActivityStatus>(['missing']),
+  graded: new Set<ActivityStatus>(['graded_unreturned', 'graded_returned']),
+};
+
 export default function StudentActivitiesTab({
   classId,
   activities,
 }: StudentActivitiesTabProps) {
-  // Group by term
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // URL-driven filter (Session 13).
+  const filterParam = searchParams.get('filter');
+  const filter: CompletionFilter =
+    filterParam === 'todo' ||
+    filterParam === 'submitted' ||
+    filterParam === 'missed' ||
+    filterParam === 'graded'
+      ? filterParam
+      : 'all';
+
+  function setFilter(next: CompletionFilter) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'all') {
+      params.delete('filter');
+    } else {
+      params.set('filter', next);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  // Per-bucket counts for the filter pill badges — based on the full
+  // unfiltered list so users can see how many are in each bucket before
+  // clicking. "All" is the total.
+  const filterCounts = useMemo(() => {
+    const counts: Record<CompletionFilter, number> = {
+      all: activities.length,
+      todo: 0,
+      submitted: 0,
+      missed: 0,
+      graded: 0,
+    };
+    for (const a of activities) {
+      if (FILTER_STATUSES.todo.has(a.status)) counts.todo++;
+      if (FILTER_STATUSES.submitted.has(a.status)) counts.submitted++;
+      if (FILTER_STATUSES.missed.has(a.status)) counts.missed++;
+      if (FILTER_STATUSES.graded.has(a.status)) counts.graded++;
+    }
+    return counts;
+  }, [activities]);
+
+  // Apply filter, then group by term. Terms with zero matches after
+  // filtering are hidden (no empty term cards bleeding through).
+  const filtered = useMemo(
+    () => activities.filter((a) => FILTER_STATUSES[filter].has(a.status)),
+    [activities, filter],
+  );
+
   const byTerm = new Map<ModuleTerm, ActivityWithStudentState[]>();
-  for (const a of activities) {
+  for (const a of filtered) {
     const list = byTerm.get(a.term) ?? [];
     list.push(a);
     byTerm.set(a.term, list);
@@ -75,7 +160,8 @@ export default function StudentActivitiesTab({
     (t) => (byTerm.get(t)?.length ?? 0) > 0,
   );
 
-  if (visibleTerms.length === 0) {
+  // True empty-state (no activities at all in this class).
+  if (activities.length === 0) {
     return (
       <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
         <h2 className="text-lg font-semibold text-gray-900">
@@ -90,14 +176,52 @@ export default function StudentActivitiesTab({
 
   return (
     <div className="space-y-6">
-      {visibleTerms.map((term) => (
-        <TermTable
-          key={term}
-          term={term}
-          classId={classId}
-          activities={byTerm.get(term) ?? []}
-        />
-      ))}
+      {/* Filter pills */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(Object.keys(FILTER_LABEL) as CompletionFilter[]).map((key) => {
+          const active = filter === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
+                active
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {FILTER_LABEL[key]}
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-semibold ${
+                  active
+                    ? 'bg-white/25 text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {filterCounts[key]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {visibleTerms.length === 0 ? (
+        <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+          <p className="text-sm text-gray-600">
+            No activities match the &quot;{FILTER_LABEL[filter]}&quot; filter.
+          </p>
+        </div>
+      ) : (
+        visibleTerms.map((term) => (
+          <TermTable
+            key={term}
+            term={term}
+            classId={classId}
+            activities={byTerm.get(term) ?? []}
+          />
+        ))
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useTransition, useEffect } from 'react';
@@ -8,7 +9,10 @@ import {
   getStudentReviewView,
   type StudentReviewView,
 } from '@/lib/actions/quizzes';
-import type { ActivityWithStudentState } from '@/lib/types/activities';
+import type {
+  ActivityWithStudentState,
+  ActivityAttachment,
+} from '@/lib/types/activities';
 import type { StudentAttemptView } from '@/lib/types/quizzes';
 import QuizLanding from '@/components/student/QuizLanding';
 import QuizAttempt from '@/components/student/QuizAttempt';
@@ -18,12 +22,14 @@ interface StudentQuizFlowProps {
   classId: string;
   activity: ActivityWithStudentState;
   initialAttemptView: StudentAttemptView | null;
+  initialAttachments: ActivityAttachment[];
 }
 
 export default function StudentQuizFlow({
   classId,
   activity,
   initialAttemptView,
+  initialAttachments,
 }: StudentQuizFlowProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +104,9 @@ export default function StudentQuizFlow({
 
       {screen === 'attempt' && attemptView && (
         <QuizAttempt
+          classId={classId}
           attemptView={attemptView}
+          attachments={initialAttachments}
           onSubmitted={handleSubmitted}
           onError={setError}
         />

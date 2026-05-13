@@ -1,3 +1,4 @@
+
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
@@ -49,13 +50,41 @@ export default async function StudentActivityPage({ params }: PageProps) {
 
   const isQuiz = activity.activityKind === 'quiz';
 
-  // For quiz activities, prefetch attempt view (may be null if not started).
-  const initialAttemptView = isQuiz
-    ? await getStudentAttemptView(activityId).catch(() => null)
-    : null;
+  // Session 13: attachments now fetched for BOTH activity kinds. The
+  // assignment-only restriction was dropped when quiz attachments shipped,
+  // and students need to see attached reference files (formula sheets, etc.)
+  // while taking quizzes.
+  if (isQuiz) {
+    // Fetch attempt view + attachments in parallel. Attempt view may be
+    // null (student hasn't started yet); attachments may be empty.
+    const [initialAttemptView, attachments] = await Promise.all([
+      getStudentAttemptView(activityId).catch(() => null),
+      listActivityAttachments(activityId),
+    ]);
 
-  // For assignment activities, fetch attachments (worksheets, PDFs etc).
-  const attachments = !isQuiz ? await listActivityAttachments(activityId) : [];
+    return (
+      <div className="space-y-6">
+        <SetPageTitle title={`${activity.title} — ${klass.name}`} />
+        <Link
+          href={`/student/classes/${classId}?tab=activities`}
+          className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+        >
+          <ChevronLeft size={16} />
+          Back to activities
+        </Link>
+
+        <StudentQuizFlow
+          classId={classId}
+          activity={activity}
+          initialAttemptView={initialAttemptView}
+          initialAttachments={attachments}
+        />
+      </div>
+    );
+  }
+
+  // Assignment branch
+  const attachments = await listActivityAttachments(activityId);
 
   return (
     <div className="space-y-6">
@@ -68,20 +97,12 @@ export default async function StudentActivityPage({ params }: PageProps) {
         Back to activities
       </Link>
 
-      {isQuiz ? (
-        <StudentQuizFlow
-          classId={classId}
-          activity={activity}
-          initialAttemptView={initialAttemptView}
-        />
-      ) : (
-        <StudentActivityView
-          classId={classId}
-          activity={activity}
-          currentUserId={user.id}
-          attachments={attachments}
-        />
-      )}
+      <StudentActivityView
+        classId={classId}
+        activity={activity}
+        currentUserId={user.id}
+        attachments={attachments}
+      />
     </div>
   );
 }

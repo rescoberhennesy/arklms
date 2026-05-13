@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useTransition, useEffect, useRef } from 'react';
+import { useState, useTransition, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -24,6 +25,10 @@ import {
   Calendar,
   Award,
   Tag,
+  ChevronDown,
+  ChevronRight,
+  Users,
+  AlertCircle,
 } from 'lucide-react';
 import {
   reorderActivities,
@@ -40,10 +45,21 @@ import {
 } from '@/lib/types/modules';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import AddActivityBar from '@/components/teacher/AddActivityBar';
+import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
+
+// Mirror of the listClassRoster return-row shape. Defined inline (rather than
+// imported) because enrollments.ts doesn't export a named type for it; this
+// keeps the contract explicit at the boundary.
+export interface ActivitiesTabRosterEntry {
+  student_id: string;
+  full_name: string | null;
+  email: string | null;
+}
 
 interface ActivitiesTabProps {
   classId: string;
   activities: ActivityWithAllSubmissions[];
+  roster: ActivitiesTabRosterEntry[];
 }
 
 type ActivityCardStatus =
@@ -96,6 +112,15 @@ const TERM_TEXT_ACCENTS: Record<ModuleTerm, string> = {
   final: 'text-rose-800',
 };
 
+// Completion-tracking filter buckets (Session 13).
+type CompletionFilter = 'all' | 'has_ungraded' | 'fully_graded';
+
+const FILTER_LABEL: Record<CompletionFilter, string> = {
+  all: 'All',
+  has_ungraded: 'Has ungraded',
+  fully_graded: 'Fully graded',
+};
+
 function activitiesSignature(activities: ActivityWithAllSubmissions[]): string {
   return activities
     .map(
@@ -105,26 +130,81 @@ function activitiesSignature(activities: ActivityWithAllSubmissions[]): string {
     .join('|');
 }
 
+// "Fully graded" means: every existing submission has a grade. Activities
+// with zero submissions are vacuously fully graded; we exclude them from
+// this bucket because the filter intent is "I'm done grading this" not
+// "no one has submitted yet."
+function activityIsFullyGraded(a: ActivityWithAllSubmissions): boolean {
+  if (a.submissions.length === 0) return false;
+  return a.submissions.every((s: SubmissionWithGrade) => s.grade !== null);
+}
+
+function activityHasUngraded(a: ActivityWithAllSubmissions): boolean {
+  return a.submissions.some((s: SubmissionWithGrade) => s.grade === null);
+}
+
 export default function ActivitiesTab({
   classId,
   activities: initialActivities,
+  roster,
 }: ActivitiesTabProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [activities, setActivities] =
-    useState<ActivityWithAllSubmissions[]>(initialActivities);
-
-  const sig = activitiesSignature(initialActivities);
-  const lastSyncedSig = useRef(sig);
-  useEffect(() => {
-    if (sig === lastSyncedSig.current) return;
-    lastSyncedSig.current = sig;
-    setActivities(initialActivities);
-  }, [sig, initialActivities]);
+  // Server-synced local state: optimistic mutations preserved between
+  // server pushes; full resync when the parent re-fetches and the
+  // signature changes.
+  const [activities, setActivities] = useServerSyncedState(
+    initialActivities,
+    activitiesSignature,
+  );
 
   const [error, setError] = useState<string | null>(null);
+
+  // URL-driven completion filter (Session 13). Survives refresh.
+  const filterParam = searchParams.get('completion');
+  const filter: CompletionFilter =
+    filterParam === 'has_ungraded' || filterParam === 'fully_graded'
+      ? filterParam
+      : 'all';
+
+  function setFilter(next: CompletionFilter) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'all') {
+      params.delete('completion');
+    } else {
+      params.set('completion', next);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  // Counts for filter pill badges — based on the published activities only.
+  // Drafts never count toward grading-state buckets (no one's submitting yet).
+  const filterCounts = useMemo(() => {
+    let hasUngraded = 0;
+    let fullyGraded = 0;
+    for (const a of activities) {
+      if (!a.published) continue;
+      if (activityHasUngraded(a)) hasUngraded++;
+      else if (activityIsFullyGraded(a)) fullyGraded++;
+    }
+    return {
+      all: activities.length,
+      has_ungraded: hasUngraded,
+      fully_graded: fullyGraded,
+    };
+  }, [activities]);
+
+  // Apply filter. Drafts are kept under "All" and hidden under the grading
+  // buckets (since there's nothing to grade yet).
+  function passesFilter(a: ActivityWithAllSubmissions): boolean {
+    if (filter === 'all') return true;
+    if (!a.published) return false;
+    if (filter === 'has_ungraded') return activityHasUngraded(a);
+    return activityIsFullyGraded(a);
+  }
 
   // Dashboard quick-action deep-link support: when arriving with
   // ?tab=activities&create=1 (the picker route at /teacher/quick/activity
@@ -163,6 +243,15 @@ export default function ActivitiesTab({
     });
   }
 
+  const rosterSize = roster.length;
+  const submitterIdsByActivity = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const a of activities) {
+      m.set(a.id, new Set(a.submissions.map((s) => s.studentId)));
+    }
+    return m;
+  }, [activities]);
+
   return (
     <div className="space-y-6">
       {error && (
@@ -178,9 +267,39 @@ export default function ActivitiesTab({
         defaultOpen={createOpenFromParam}
       />
 
+      {/* Completion filter pills */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(Object.keys(FILTER_LABEL) as CompletionFilter[]).map((key) => {
+          const active = filter === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
+                active
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {FILTER_LABEL[key]}
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-semibold ${
+                  active
+                    ? 'bg-white/25 text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {filterCounts[key]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {MODULE_TERMS.map((term) => {
         const inTerm = activities
-          .filter((a) => a.term === term)
+          .filter((a) => a.term === term && passesFilter(a))
           .sort((x, y) => x.displayOrder - y.displayOrder);
         return (
           <TermSection
@@ -188,6 +307,10 @@ export default function ActivitiesTab({
             term={term}
             classId={classId}
             activities={inTerm}
+            roster={roster}
+            rosterSize={rosterSize}
+            submitterIdsByActivity={submitterIdsByActivity}
+            filterActive={filter !== 'all'}
             onReordered={(next) => handleTermReordered(term, next)}
             onActivityRemoved={handleActivityRemoved}
             onError={setError}
@@ -202,6 +325,10 @@ interface TermSectionProps {
   term: ModuleTerm;
   classId: string;
   activities: ActivityWithAllSubmissions[];
+  roster: ActivitiesTabRosterEntry[];
+  rosterSize: number;
+  submitterIdsByActivity: Map<string, Set<string>>;
+  filterActive: boolean;
   onReordered: (next: ActivityWithAllSubmissions[]) => void;
   onActivityRemoved: (activityId: string) => void;
   onError: (msg: string | null) => void;
@@ -211,6 +338,10 @@ function TermSection({
   term,
   classId,
   activities,
+  roster,
+  rosterSize,
+  submitterIdsByActivity,
+  filterActive,
   onReordered,
   onActivityRemoved,
   onError,
@@ -248,6 +379,12 @@ function TermSection({
     });
   }
 
+  // Empty-state messaging differs depending on whether the filter is hiding
+  // things or the term genuinely has nothing in it.
+  const emptyMsg = filterActive
+    ? 'No activities in this term match the current filter.'
+    : 'No activities in this term yet.';
+
   return (
     <section
       className={`rounded-xl border ${TERM_ACCENTS[term]} p-4 shadow-sm`}
@@ -266,9 +403,7 @@ function TermSection({
       </div>
 
       {activities.length === 0 ? (
-        <p className="text-sm italic text-gray-400">
-          No activities in this term yet.
-        </p>
+        <p className="text-sm italic text-gray-400">{emptyMsg}</p>
       ) : (
         <DndContext
           sensors={sensors}
@@ -285,6 +420,11 @@ function TermSection({
                   key={a.id}
                   activity={a}
                   classId={classId}
+                  roster={roster}
+                  rosterSize={rosterSize}
+                  submitterIds={
+                    submitterIdsByActivity.get(a.id) ?? new Set<string>()
+                  }
                   onActivityRemoved={onActivityRemoved}
                   onError={onError}
                 />
@@ -300,6 +440,9 @@ function TermSection({
 interface ActivityCardProps {
   activity: ActivityWithAllSubmissions;
   classId: string;
+  roster: ActivitiesTabRosterEntry[];
+  rosterSize: number;
+  submitterIds: Set<string>;
   onActivityRemoved: (activityId: string) => void;
   onError: (msg: string | null) => void;
 }
@@ -307,11 +450,15 @@ interface ActivityCardProps {
 function ActivityCard({
   activity,
   classId,
+  roster,
+  rosterSize,
+  submitterIds,
   onActivityRemoved,
   onError,
 }: ActivityCardProps) {
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const {
     attributes,
     listeners,
@@ -334,6 +481,20 @@ function ActivityCard({
     (s: SubmissionWithGrade) => s.grade,
   ).length;
 
+  // Roster-aware "X of N" completeness — only meaningful for published,
+  // started activities. For drafts and not-yet-started, fall back to the
+  // older raw-counts display.
+  const startAtMs = new Date(activity.startAt).getTime();
+  const showRosterCompleteness =
+    activity.published && Date.now() >= startAtMs && rosterSize > 0;
+
+  const submittedFromRoster = roster.filter((r) =>
+    submitterIds.has(r.student_id),
+  ).length;
+  const missingStudents = showRosterCompleteness
+    ? roster.filter((r) => !submitterIds.has(r.student_id))
+    : [];
+
   async function handleDelete() {
     try {
       await deleteActivity(activity.id);
@@ -348,59 +509,133 @@ function ActivityCard({
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm hover:bg-gray-50/60"
+      className="rounded-md border border-gray-200 bg-white shadow-sm hover:bg-gray-50/60"
     >
-      <button
-        ref={setActivatorNodeRef}
-        {...attributes}
-        {...listeners}
-        type="button"
-        className="cursor-grab rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-gray-500 active:cursor-grabbing"
-        aria-label="Drag to reorder"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      <div className="min-w-0 flex-1">
-        <Link
-          href={`/teacher/classes/${classId}/activities/${activity.id}`}
-          className="block truncate text-sm font-medium text-gray-900 hover:text-red-600"
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          type="button"
+          className="cursor-grab rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-gray-500 active:cursor-grabbing"
+          aria-label="Drag to reorder"
         >
-          {activity.title}
-        </Link>
-        <div className="mt-0.5 flex items-center gap-3 text-xs text-gray-500">
-          <span className="inline-flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            Due {new Date(activity.dueAt).toLocaleString()}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Award className="h-3 w-3" />
-            {activity.maxPoints} pts
-          </span>
-          {submissionCount > 0 && (
-            <span>
-              {submissionCount} submission
-              {submissionCount === 1 ? '' : 's'}, {gradedCount} graded
+          <GripVertical className="h-4 w-4" />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/teacher/classes/${classId}/activities/${activity.id}`}
+            className="block truncate text-sm font-medium text-gray-900 hover:text-red-600"
+          >
+            {activity.title}
+          </Link>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+            <span className="inline-flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              Due {new Date(activity.dueAt).toLocaleString()}
             </span>
-          )}
+            <span className="inline-flex items-center gap-1">
+              <Award className="h-3 w-3" />
+              {activity.maxPoints} pts
+            </span>
+            {showRosterCompleteness ? (
+              <span
+                className={`inline-flex items-center gap-1 font-medium ${
+                  submittedFromRoster === rosterSize
+                    ? 'text-green-700'
+                    : 'text-gray-700'
+                }`}
+              >
+                <Users className="h-3 w-3" />
+                {submittedFromRoster} of {rosterSize} submitted
+                {gradedCount > 0 && (
+                  <span className="font-normal text-gray-500">
+                    {' '}
+                    · {gradedCount} graded
+                  </span>
+                )}
+              </span>
+            ) : (
+              submissionCount > 0 && (
+                <span>
+                  {submissionCount} submission
+                  {submissionCount === 1 ? '' : 's'}, {gradedCount} graded
+                </span>
+              )
+            )}
+          </div>
         </div>
+
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL_CLASS[cardStatus]}`}
+        >
+          {STATUS_PILL_LABEL[cardStatus]}
+        </span>
+
+        {showRosterCompleteness && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            aria-label={
+              expanded ? 'Hide missing students' : 'Show missing students'
+            }
+            aria-expanded={expanded}
+            title={
+              expanded ? 'Hide missing students' : 'Show missing students'
+            }
+          >
+            {expanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+          aria-label="Delete activity"
+          title="Delete activity"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
       </div>
 
-      <span
-        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL_CLASS[cardStatus]}`}
-      >
-        {STATUS_PILL_LABEL[cardStatus]}
-      </span>
-
-      <button
-        type="button"
-        onClick={() => setConfirmDelete(true)}
-        className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-        aria-label="Delete activity"
-        title="Delete activity"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+      {/* Inline missing-students expand */}
+      {expanded && showRosterCompleteness && (
+        <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2.5">
+          {missingStudents.length === 0 ? (
+            <p className="text-xs text-green-700">
+              ✓ Everyone submitted. Nice.
+            </p>
+          ) : (
+            <>
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-red-700">
+                <AlertCircle className="h-3.5 w-3.5" />
+                {missingStudents.length} student
+                {missingStudents.length === 1 ? '' : 's'} have not submitted
+              </div>
+              <ul className="space-y-0.5">
+                {missingStudents.map((s) => (
+                  <li
+                    key={s.student_id}
+                    className="flex items-center justify-between gap-3 text-xs text-gray-700"
+                  >
+                    <span className="font-medium text-gray-900">
+                      {s.full_name ?? 'Unknown'}
+                    </span>
+                    <span className="text-gray-500">{s.email ?? '—'}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       <ConfirmDialog
         open={confirmDelete}

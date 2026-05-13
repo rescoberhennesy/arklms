@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef, useTransition, useCallback } from 'react';
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
+import ActivityAttachmentsPanel from '@/components/teacher/ActivityAttachmentsPanel';
 import {
   upsertQuizResponse,
   submitQuizAttempt,
@@ -31,6 +33,7 @@ import {
   type MatchingAnswer,
   defaultAnswerFor,
 } from '@/lib/types/quizzes';
+import type { ActivityAttachment } from '@/lib/types/activities';
 import McSingleQuestion from '@/components/student/quiz-questions/McSingleQuestion';
 import McMultiQuestion from '@/components/student/quiz-questions/McMultiQuestion';
 import TrueFalseQuestion from '@/components/student/quiz-questions/TrueFalseQuestion';
@@ -39,7 +42,9 @@ import EssayQuestion from '@/components/student/quiz-questions/EssayQuestion';
 import MatchingQuestion from '@/components/student/quiz-questions/MatchingQuestion';
 
 interface QuizAttemptProps {
+  classId: string;
   attemptView: StudentAttemptView;
+  attachments: ActivityAttachment[];
   onSubmitted: (info: { autoSubmitted: boolean }) => Promise<void> | void;
   onError: (msg: string | null) => void;
 }
@@ -88,7 +93,9 @@ function formatRemaining(ms: number): string {
 }
 
 export default function QuizAttempt({
+  classId,
   attemptView,
+  attachments,
   onSubmitted,
   onError,
 }: QuizAttemptProps) {
@@ -386,6 +393,18 @@ export default function QuizAttempt({
             {formatRemaining(remainingMs)}
           </span>
         </div>
+      )}
+
+      {/* Reference materials (formula sheets, readings, etc.) — Session 13.
+          Only renders if there are attachments. canEdit=false means students
+          see download buttons only, no upload or delete UI. */}
+      {attachments.length > 0 && (
+        <ActivityAttachmentsPanel
+          activityId={attempt.activityId}
+          classId={classId}
+          initialAttachments={attachments}
+          canEdit={false}
+        />
       )}
 
       <div className="grid gap-4 md:grid-cols-[200px_1fr]">

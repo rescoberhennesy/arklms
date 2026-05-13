@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useTransition, useEffect, useRef } from 'react';
+import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Upload, FileText, Trash2, Download, Paperclip } from 'lucide-react';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
@@ -11,6 +12,7 @@ import {
 } from '@/lib/actions/activities';
 import type { ActivityAttachment } from '@/lib/types/activities';
 import { createClient } from '@/lib/supabase/client';
+import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
 
 interface ActivityAttachmentsPanelProps {
   activityId: string;
@@ -31,7 +33,6 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
 }
 
-// Stable signature for prop-sync — same pattern as ModulesTab/ActivityEditor
 function attachmentsSignature(list: ActivityAttachment[]): string {
   return list.map((a) => `${a.id}:${a.uploadedAt}`).join('|');
 }
@@ -43,21 +44,14 @@ export default function ActivityAttachmentsPanel({
   canEdit,
 }: ActivityAttachmentsPanelProps) {
   const router = useRouter();
-  const [attachments, setAttachments] = useState<ActivityAttachment[]>(initialAttachments);
+  const [attachments, setAttachments] = useServerSyncedState(
+    initialAttachments,
+    attachmentsSignature,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isUploading, startUploadTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState<ActivityAttachment | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Prop-sync: when server re-fetches and hands us a fresh initialAttachments,
-  // adopt it. Skip if the signature hasn't changed (avoids infinite loops).
-  const sig = attachmentsSignature(initialAttachments);
-  const lastSyncedSig = useRef(sig);
-  useEffect(() => {
-    if (sig === lastSyncedSig.current) return;
-    lastSyncedSig.current = sig;
-    setAttachments(initialAttachments);
-  }, [sig, initialAttachments]);
 
   async function handleFiles(files: FileList | null) {
     setError(null);
@@ -104,7 +98,7 @@ export default function ActivityAttachmentsPanel({
 
           // Optimistic: add to local state immediately. The next
           // router.refresh() will resync with the server's authoritative
-          // list via the prop-sync useEffect above.
+          // list via useServerSyncedState.
           newOptimistic.push({
             id: attachmentId,
             activityId,

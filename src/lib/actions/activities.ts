@@ -976,17 +976,13 @@ export async function createActivityAttachment(input: {
 }): Promise<{ attachmentId: string }> {
   const supabase = await createClient();
 
-  // Guard: assignment-only per Session 10 C8 design.
-  const { data: actData, error: actErr } = await supabase
+ const { data: actData, error: actErr } = await supabase
     .from('activities')
-    .select('class_id, activity_kind')
+    .select('class_id')
     .eq('id', input.activityId)
     .single();
   if (actErr) throw new Error(actErr.message);
-  const act = actData as { class_id: string; activity_kind: 'assignment' | 'quiz' };
-  if (act.activity_kind !== 'assignment') {
-    throw new Error('Attachments are only supported on assignments.');
-  }
+  const act = actData as { class_id: string };
 
   const {
     data: { user },

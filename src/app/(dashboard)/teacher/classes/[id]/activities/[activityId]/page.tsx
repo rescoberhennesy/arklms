@@ -45,18 +45,40 @@ export default async function ActivityDetailPage({ params }: PageProps) {
 
   const isQuiz = activity.activityKind === 'quiz';
 
-  // Quiz branch: fetch view + attempts list in parallel (both are needed by
-  // QuizEditor — view drives the editor body, attempts drive the new
-  // QuizAttemptsPanel rendered between Questions and Danger zone).
-  const [quizView, quizAttempts] = isQuiz
-    ? await Promise.all([
-        getTeacherQuizView(activityId),
-        listQuizAttemptsForQuiz(activityId),
-      ])
-    : [null, []];
+  // Session 13: attachments are now fetched for both kinds (the
+  // assignment-only restriction was dropped). Quiz teachers can attach
+  // formula sheets, reference docs, etc.
+  if (isQuiz) {
+    const [quizView, quizAttempts, attachments] = await Promise.all([
+      getTeacherQuizView(activityId),
+      listQuizAttemptsForQuiz(activityId),
+      listActivityAttachments(activityId),
+    ]);
 
-  // Assignment branch: attachments only.
-  const attachments = !isQuiz ? await listActivityAttachments(activityId) : [];
+    return (
+      <div className="space-y-6">
+        <SetPageTitle title={`${activity.title} — ${klass.name}`} />
+        <Link
+          href={`/teacher/classes/${classId}?tab=activities`}
+          className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+        >
+          <ChevronLeft size={16} />
+          Back to activities
+        </Link>
+
+        <QuizEditor
+          activity={activity}
+          classId={classId}
+          initialQuizView={quizView}
+          initialAttempts={quizAttempts}
+          initialAttachments={attachments}
+        />
+      </div>
+    );
+  }
+
+  // Assignment branch
+  const attachments = await listActivityAttachments(activityId);
 
   return (
     <div className="space-y-6">
@@ -69,20 +91,11 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         Back to activities
       </Link>
 
-      {isQuiz && quizView ? (
-        <QuizEditor
-          activity={activity}
-          classId={classId}
-          initialQuizView={quizView}
-          initialAttempts={quizAttempts}
-        />
-      ) : (
-        <ActivityEditor
-          activity={activity}
-          classId={classId}
-          initialAttachments={attachments}
-        />
-      )}
+      <ActivityEditor
+        activity={activity}
+        classId={classId}
+        initialAttachments={attachments}
+      />
     </div>
   );
 }

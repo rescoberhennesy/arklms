@@ -1,5 +1,5 @@
-// src/app/(dashboard)/teacher/classes/[id]/page.tsx
 
+// src/app/(dashboard)/teacher/classes/[id]/page.tsx
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, Settings } from 'lucide-react';
@@ -78,10 +78,17 @@ export default async function ClassDetailPage({
     modules = await listModulesWithLessons(klass.id);
   }
 
-  // Pre-fetch activities-tab data on the server when that tab is active
+  // Pre-fetch activities-tab data on the server when that tab is active.
+  // Session 13: roster is also fetched here so the completion-tracking
+  // "X of N submitted" rollup and inline missing-students expand on each
+  // activity card can compute against the full enrolled list.
   let activities: Awaited<ReturnType<typeof listActivitiesForTeacher>> = [];
+  let activitiesRoster: Awaited<ReturnType<typeof listClassRoster>> = [];
   if (tab === 'activities') {
-    activities = await listActivitiesForTeacher(klass.id);
+    [activities, activitiesRoster] = await Promise.all([
+      listActivitiesForTeacher(klass.id),
+      listClassRoster(klass.id),
+    ]);
   }
 
   // Pre-fetch gradebook-tab data on the server when that tab is active
@@ -177,7 +184,11 @@ export default async function ClassDetailPage({
           <ModulesTab classId={klass.id} initialModules={modules} />
         )}
         {tab === 'activities' && (
-          <ActivitiesTab classId={klass.id} activities={activities} />
+          <ActivitiesTab
+            classId={klass.id}
+            activities={activities}
+            roster={activitiesRoster}
+          />
         )}
         {tab === 'students' && (
           <StudentsTab

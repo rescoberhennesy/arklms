@@ -50,12 +50,15 @@ import {
   QUESTION_KINDS,
   QUESTION_KIND_LABELS,
 } from '@/lib/types/quizzes';
+import type { ActivityAttachment } from '@/lib/types/activities';
+import ActivityAttachmentsPanel from '@/components/teacher/ActivityAttachmentsPanel';
 
 interface QuizEditorProps {
   activity: ActivityWithAllSubmissions;
   classId: string;
   initialQuizView: TeacherQuizView;
   initialAttempts: QuizAttemptListItem[];
+  initialAttachments: ActivityAttachment[];
 }
 
 const TERM_ACCENTS: Record<ModuleTerm, string> = {
@@ -100,6 +103,7 @@ export default function QuizEditor({
   classId,
   initialQuizView,
   initialAttempts,
+  initialAttachments,
 }: QuizEditorProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -812,6 +816,13 @@ export default function QuizEditor({
         classId={classId}
         quizTotalPoints={Number(quizView.config.quizTotalPoints ?? totalPoints)}
         initialAttempts={initialAttempts}
+      />
+
+      <ActivityAttachmentsPanel
+        activityId={activity.id}
+        classId={classId}
+        initialAttachments={initialAttachments}
+        canEdit={true}
       />
 
       {/* Danger zone */}

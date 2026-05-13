@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect, useMemo, useTransition, useCallback } from 'react';
+import { useState, useMemo, useTransition, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Loader2,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import { listQuizAttemptsForQuiz } from '@/lib/actions/quizzes';
 import type { QuizAttemptListItem } from '@/lib/types/quizzes';
+import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
 
 interface QuizAttemptsPanelProps {
   activityId: string;
@@ -24,7 +26,8 @@ interface QuizAttemptsPanelProps {
 
 function attemptsSignature(rows: QuizAttemptListItem[]): string {
   // Cheap signature: id + submitted_at + needsManualReview + grade state.
-  // Drives signature-based prop-sync when the parent re-fetches.
+  // Drives signature-based prop-sync via useServerSyncedState when the
+  // parent re-fetches.
   return rows
     .map(
       (r) =>
@@ -78,20 +81,13 @@ export default function QuizAttemptsPanel({
   quizTotalPoints,
   initialAttempts,
 }: QuizAttemptsPanelProps) {
-  const [attempts, setAttempts] = useState<QuizAttemptListItem[]>(initialAttempts);
+  const [attempts, setAttempts] = useServerSyncedState(
+    initialAttempts,
+    attemptsSignature,
+  );
   const [filter, setFilter] = useState<Filter>('all');
   const [error, setError] = useState<string | null>(null);
   const [refreshing, startRefreshing] = useTransition();
-
-  // Signature-based prop-sync — match the pattern used in ModulesTab /
-  // ActivityAttachmentsPanel. When the server re-fetches and re-passes
-  // initialAttempts, adopt the new list.
-  const incomingSig = attemptsSignature(initialAttempts);
-  useEffect(() => {
-    setAttempts(initialAttempts);
-    // We intentionally depend on the signature, not the array identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incomingSig]);
 
   const handleRefresh = useCallback(() => {
     setError(null);
@@ -103,7 +99,7 @@ export default function QuizAttemptsPanel({
         setError(e instanceof Error ? e.message : 'Failed to refresh attempts.');
       }
     });
-  }, [activityId]);
+  }, [activityId, setAttempts]);
 
   const filtered = useMemo(() => {
     switch (filter) {
