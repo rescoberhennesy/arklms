@@ -193,6 +193,21 @@ export default function QuizPostSubmit({
         </div>
       )}
 
+      {/* Overall feedback from the teacher (attempt-level).
+          Shown as soon as the teacher has saved any text — matches the
+          per-question feedback pattern already used in ReviewRow below.
+          Empty string means no feedback written yet; render nothing. */}
+      {attemptView.attempt.feedback.trim() !== '' && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Teacher feedback
+          </p>
+          <div className="text-sm text-blue-950">
+            <MarkdownContent body={attemptView.attempt.feedback} />
+          </div>
+        </div>
+      )}
+
       {showCorrect ? (
         reviewLoading ? (
           <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600">

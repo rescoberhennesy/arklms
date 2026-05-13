@@ -187,6 +187,7 @@ export interface QuizAttempt {
   autoScore: number | null;
   manualScoreOverride: number | null;
   submissionId: string | null;
+  feedback: string;
   createdAt: string;
   updatedAt: string;
 }

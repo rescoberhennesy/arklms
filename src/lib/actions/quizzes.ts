@@ -47,6 +47,7 @@ interface AttemptRow {
   auto_score: string | number | null;
   manual_score_override: string | number | null;
   submission_id: string | null;
+  feedback: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,9 +101,9 @@ function mapAttempt(r: AttemptRow): QuizAttempt {
     startedAt: r.started_at,
     submittedAt: r.submitted_at,
     autoScore: r.auto_score === null ? null : Number(r.auto_score),
-    manualScoreOverride:
-      r.manual_score_override === null ? null : Number(r.manual_score_override),
+    manualScoreOverride: r.manual_score_override === null ? null : Number(r.manual_score_override),
     submissionId: r.submission_id,
+    feedback: r.feedback ?? '',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -117,7 +118,7 @@ function mapResponse(r: ResponseRow): QuizResponse {
     autoCorrect: r.auto_correct,
     autoPoints: r.auto_points === null ? null : Number(r.auto_points),
     manualPoints: r.manual_points === null ? null : Number(r.manual_points),
-    feedback: r.feedback,
+    feedback: r.feedback ?? '',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -992,6 +993,24 @@ export async function recomputeQuizScore(
   }
 
   return { score: Number(data) || 0 };
+}
+
+// Attempt-level feedback (the overall note that appears alongside the score
+// after release). Per-question feedback lives on quiz_responses.feedback.
+// We keep this as a tiny standalone action so the grader can call it in
+// parallel with setManualResponseGrade writes without churning the per-row
+// update path. No revalidation here — the grader's recomputeQuizScore call
+// handles it for the whole attempt.
+export async function setAttemptFeedback(
+  attemptId: string,
+  feedback: string,
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('quiz_attempts')
+    .update({ feedback })
+    .eq('id', attemptId);
+  if (error) throw new Error(error.message);
 }
 
 // ==========================================================================

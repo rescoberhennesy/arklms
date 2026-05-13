@@ -12,13 +12,21 @@ import {
   RotateCcw,
   Clock,
   ArrowLeft,
+  MessageSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import StudentAnswerView from '@/components/teacher/StudentAnswerView';
 import {
+  AISuggestFeedbackProvider,
+  AISuggestFeedbackButton,
+  AISuggestFeedbackCard,
+} from '@/components/teacher/ai/AISuggestFeedback';
+import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
+import {
   setManualResponseGrade,
+  setAttemptFeedback,
   recomputeQuizScore,
 } from '@/lib/actions/quizzes';
 import {
@@ -89,6 +97,7 @@ function viewSignature(v: AttemptForGradingView): string {
     v.attempt.id,
     v.attempt.autoScore ?? '-',
     v.attempt.manualScoreOverride ?? '-',
+    v.attempt.feedback,
     v.currentScore,
     v.gradeReleasedAt ?? '-',
     ...v.responses.map(
@@ -128,6 +137,16 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
     buildInitialDrafts,
   );
 
+  // Attempt-level overall feedback. Lives alongside `drafts` but is
+  // independent — it writes to quiz_attempts.feedback via setAttemptFeedback,
+  // not to any quiz_responses row.
+  const [attemptFeedback, setAttemptFeedbackState] = useState<string>(
+    view.attempt.feedback,
+  );
+  const [pendingGenerationId, setPendingGenerationId] = useState<string | null>(
+    null,
+  );
+
   // Prop-sync. After a successful save the parent server component re-fetches
   // the view; we adopt the new state unless the teacher is mid-edit.
   const editingRef = useRef(false);
@@ -138,6 +157,7 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
       lastSigRef.current = sig;
       if (!editingRef.current) {
         setDrafts(buildInitialDrafts());
+        setAttemptFeedbackState(view.attempt.feedback);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,7 +202,11 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [drafts, view],
   );
-  const hasDirty = dirtyQuestionIds.length > 0;
+
+  const isAttemptFeedbackDirty = attemptFeedback !== view.attempt.feedback;
+  const hasDirty = dirtyQuestionIds.length > 0 || isAttemptFeedbackDirty;
+  const totalDirtyCount =
+    dirtyQuestionIds.length + (isAttemptFeedbackDirty ? 1 : 0);
 
   // ---- Validation ------------------------------------------------------
 
@@ -222,6 +246,22 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
       ...prev,
       [qid]: { ...prev[qid], ...patch },
     }));
+  }
+
+  function handleAttemptFeedbackChange(v: string) {
+    editingRef.current = true;
+    setError(null);
+    setAttemptFeedbackState(v);
+  }
+
+  function handleAttemptFeedbackAiAccept(
+    suggestedFeedback: string,
+    generationId: string | null,
+  ) {
+    editingRef.current = true;
+    setAttemptFeedbackState(suggestedFeedback);
+    setPendingGenerationId(generationId);
+    setError(null);
   }
 
   function handleStartOverride(qid: string) {
@@ -279,27 +319,43 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
       });
     }
 
-    if (writes.length === 0) {
+    if (writes.length === 0 && !isAttemptFeedbackDirty) {
       setError('No changes to save.');
       return;
     }
 
+    const generationId = pendingGenerationId;
+    const feedbackToSave = attemptFeedback;
+    const shouldSaveAttemptFeedback = isAttemptFeedbackDirty;
+
     startTransition(async () => {
       try {
-        // Parallel writes; one recompute at the end. Per Session 11 design
+        // Parallel writes: per-question grades + optional attempt-level
+        // feedback. One recompute at the end. Per Session 11 design
         // decision: leave returned_at as-is — recomputeQuizScore updates
         // the score but doesn't re-release.
-        await Promise.all(
-          writes.map((w) =>
-            setManualResponseGrade({
-              responseId: w.responseId,
-              manualPoints: w.manualPoints,
-              feedback: w.feedback,
-            }),
-          ),
+        const promises: Promise<unknown>[] = writes.map((w) =>
+          setManualResponseGrade({
+            responseId: w.responseId,
+            manualPoints: w.manualPoints,
+            feedback: w.feedback,
+          }),
         );
+        if (shouldSaveAttemptFeedback) {
+          promises.push(setAttemptFeedback(view.attempt.id, feedbackToSave));
+        }
+        await Promise.all(promises);
         await recomputeQuizScore(view.attempt.id);
+
+        if (generationId && shouldSaveAttemptFeedback) {
+          // Best-effort: never throws.
+          await markAiGenerationPublished(generationId, {
+            feedback: feedbackToSave,
+          });
+        }
+
         editingRef.current = false;
+        setPendingGenerationId(null);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to save grades.');
@@ -309,6 +365,8 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
 
   function handleDiscardAll() {
     setDrafts(buildInitialDrafts());
+    setAttemptFeedbackState(view.attempt.feedback);
+    setPendingGenerationId(null);
     editingRef.current = false;
     setError(null);
   }
@@ -414,8 +472,7 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
         <div className="text-xs text-gray-600">
           {hasDirty ? (
             <span className="font-medium text-amber-700">
-              {dirtyQuestionIds.length} question
-              {dirtyQuestionIds.length === 1 ? '' : 's'} with unsaved changes
+              {totalDirtyCount} change{totalDirtyCount === 1 ? '' : 's'} unsaved
             </span>
           ) : (
             <span className="text-gray-400">No unsaved changes</span>
@@ -617,6 +674,47 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
           );
         })}
       </ul>
+
+      {/* Overall (attempt-level) feedback */}
+      <div
+        className={`rounded-lg border bg-white p-4 shadow-sm ${
+          isAttemptFeedbackDirty ? 'border-amber-300' : 'border-gray-200'
+        }`}
+      >
+        <AISuggestFeedbackProvider
+          endpoint="/api/ai/feedback/quiz"
+          body={{ attemptId: view.attempt.id }}
+          disabled={pending}
+          onAccept={handleAttemptFeedbackAiAccept}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <MessageSquare className="h-4 w-4" />
+              Overall feedback
+              {isAttemptFeedbackDirty && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                  Unsaved
+                </span>
+              )}
+            </h2>
+            <AISuggestFeedbackButton />
+          </div>
+          <p className="mb-2 text-xs text-gray-500">
+            Shown to the student alongside their score after release.
+            Per-question feedback above is independent of this.
+          </p>
+          <AISuggestFeedbackCard />
+          <div className="mt-2">
+            <MarkdownEditor
+              value={attemptFeedback}
+              onChange={handleAttemptFeedbackChange}
+              placeholder="Overall thoughts on this attempt — what stood out, what to work on next…"
+              rows={5}
+              disabled={pending}
+            />
+          </div>
+        </AISuggestFeedbackProvider>
+      </div>
 
       {/* Bottom save bar (mirrors top — convenient on long quizzes) */}
       <div className="flex items-center justify-end gap-2 border-t border-gray-200 pt-4">
