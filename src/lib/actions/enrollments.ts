@@ -8,6 +8,8 @@ import type {
   PendingJoinRequest,
   StudentClassListItem,
 } from '@/types/class';
+import { notifyJoinRequestCreated } from '@/lib/actions/notifications';
+import { notifyJoinRequestDecided } from '@/lib/actions/notifications';
 
 async function requireAuthUserId() {
   const supabase = await createClient();
@@ -29,7 +31,7 @@ export type JoinByCodeResult =
   | { kind: 'request_pending'; class_id: string };
 
 export async function requestJoinClassByCode(code: string): Promise<JoinByCodeResult> {
-  const { supabase } = await requireAuthUserId();
+  const { supabase, userId } = await requireAuthUserId();
 
   const trimmed = code.trim();
   if (!trimmed) throw new Error('Please enter an invite code');
@@ -54,6 +56,38 @@ export async function requestJoinClassByCode(code: string): Promise<JoinByCodeRe
   if (message === 'request already pending') {
     return { kind: 'request_pending', class_id: classId };
   }
+
+  // Notification fan-out (Session 13). A new pending request was created
+  // (kind === 'pending'); notify the class teacher. ref_id is the class_id
+  // rather than the request_id because the RPC doesn't return the latter.
+  // Teacher click-through lands on the students tab where the request shows.
+  try {
+    const { data: classRow } = await supabase
+      .from('classes')
+      .select('name, teacher_id')
+      .eq('id', classId)
+      .maybeSingle();
+    const cls = classRow as { name: string; teacher_id: string } | null;
+    if (cls) {
+      const { data: studentRow } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', userId)
+        .maybeSingle();
+      const student = studentRow as { full_name: string | null; email: string } | null;
+      const studentName = student?.full_name?.trim() || student?.email || 'A student';
+      await notifyJoinRequestCreated({
+        requestId: classId,
+        classId,
+        className: cls.name,
+        teacherId: cls.teacher_id,
+        studentName,
+      });
+    }
+  } catch (e) {
+    console.error('[enrollments] join request notify error:', e);
+  }
+
   return { kind: 'pending', class_id: classId, message };
 }
 
@@ -179,12 +213,43 @@ export async function decideJoinRequest(
   classId: string,
 ): Promise<void> {
   const { supabase } = await requireAuthUserId();
+
+  // Read the request row BEFORE deciding — decide_join_request may delete
+  // or alter it, and we need student_id for the notification.
+  const { data: reqRow } = await supabase
+    .from('class_join_requests')
+    .select('student_id')
+    .eq('id', requestId)
+    .maybeSingle();
+
   const { error } = await supabase.rpc('decide_join_request', {
     p_request_id: requestId,
     p_approve: approve,
   });
   if (error) throw new Error(`Failed to ${approve ? 'approve' : 'reject'} request: ${error.message}`);
   revalidatePath(`/teacher/classes/${classId}`);
+
+  // Notification fan-out (Session 13). Tell the student the outcome.
+  const student = reqRow as { student_id: string } | null;
+  if (student) {
+    try {
+      const { data: classRow } = await supabase
+        .from('classes')
+        .select('name')
+        .eq('id', classId)
+        .maybeSingle();
+      const className = (classRow as { name: string } | null)?.name ?? 'a class';
+      await notifyJoinRequestDecided({
+        requestId,
+        classId,
+        className,
+        studentId: student.student_id,
+        decision: approve ? 'approved' : 'rejected',
+      });
+    } catch (e) {
+      console.error('[enrollments] decide notify error:', e);
+    }
+  }
 }
 
 export async function listClassRoster(

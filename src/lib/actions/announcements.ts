@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import type { RecentAnnouncementItem } from '@/lib/types/dashboard';
+import { notifyAnnouncementCreated } from '@/lib/actions/notifications';
+import { notifyAnnouncementComment } from '@/lib/actions/notifications';
 
 export type AnnouncementAuthor = {
   id: string;
@@ -86,15 +88,42 @@ export async function createAnnouncement(
   const trimmed = body.trim();
   if (!trimmed) throw new Error('Announcement body cannot be empty.');
 
-  const { error } = await supabase
+  const { data: inserted, error } = await supabase
     .from('class_announcements')
     .insert({
       class_id: classId,
       author_id: userId,
       body: trimmed,
-    });
+    })
+    .select('id')
+    .single();
 
   if (error) throw new Error(`Failed to create announcement: ${error.message}`);
+
+  // Notification fan-out (Session 13). Best-effort: look up the context we
+  // need (class name, author name) and notify all enrolled students. Errors
+  // in the notify helper are swallowed internally so the announcement
+  // succeeds even if notification fan-out has a hiccup.
+  try {
+    const [{ data: classRow }, { data: authorRow }] = await Promise.all([
+      supabase.from('classes').select('name').eq('id', classId).maybeSingle(),
+      supabase.from('profiles').select('full_name, email').eq('id', userId).maybeSingle(),
+    ]);
+    const className = (classRow as { name: string } | null)?.name ?? 'your class';
+    const author = authorRow as { full_name: string | null; email: string } | null;
+    const authorName = author?.full_name?.trim() || author?.email || 'A teacher';
+    const titlePreview = trimmed.split('\n')[0].slice(0, 140);
+    await notifyAnnouncementCreated({
+      announcementId: (inserted as { id: string }).id,
+      classId,
+      className,
+      authorName,
+      titlePreview,
+    });
+  } catch (e) {
+    console.error('[announcements] notify fan-out error:', e);
+  }
+
   revalidatePath(`/teacher/classes/${classId}`);
   revalidatePath(`/student/classes/${classId}`);
 }
@@ -191,9 +220,37 @@ export async function createComment(
     .select('class_id')
     .eq('id', announcementId)
     .maybeSingle();
-  if (data?.class_id) {
-    revalidatePath(`/teacher/classes/${data.class_id}`);
-    revalidatePath(`/student/classes/${data.class_id}`);
+  const classId = (data as { class_id: string } | null)?.class_id;
+
+  // Notification fan-out (Session 13). Notify everyone who has previously
+  // engaged with this thread (author + prior commenters), minus the current
+  // commenter. See notifyAnnouncementComment for participant logic.
+  if (classId) {
+    try {
+      const [{ data: classRow }, { data: authorRow }] = await Promise.all([
+        supabase.from('classes').select('name').eq('id', classId).maybeSingle(),
+        supabase.from('profiles').select('full_name, email').eq('id', userId).maybeSingle(),
+      ]);
+      const className = (classRow as { name: string } | null)?.name ?? 'your class';
+      const author = authorRow as { full_name: string | null; email: string } | null;
+      const commenterName = author?.full_name?.trim() || author?.email || 'Someone';
+      const commentPreview = trimmed.slice(0, 140);
+      await notifyAnnouncementComment({
+        announcementId,
+        classId,
+        className,
+        commenterId: userId,
+        commenterName,
+        commentPreview,
+      });
+    } catch (e) {
+      console.error('[announcements] comment notify error:', e);
+    }
+  }
+
+  if (classId) {
+    revalidatePath(`/teacher/classes/${classId}`);
+    revalidatePath(`/student/classes/${classId}`);
   }
 }
 

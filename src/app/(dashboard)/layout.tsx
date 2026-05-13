@@ -4,6 +4,7 @@ import { SidebarProvider } from '@/context/SidebarContext'
 import { PageTitleProvider } from '@/context/PageTitleContext'
 import Sidebar from '@/components/dashboard/Sidebar'
 import TopNavbar from '@/components/dashboard/TopNavbar'
+import NotificationBell from '@/components/dashboard/NotificationBell'
 import type { Profile } from '@/types/user'
 
 export default async function DashboardLayout({
@@ -13,7 +14,6 @@ export default async function DashboardLayout({
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-
   if (!user) redirect('/')
 
   const { data: profile } = await supabase
@@ -21,7 +21,6 @@ export default async function DashboardLayout({
     .select('*')
     .eq('id', user.id)
     .single<Profile>()
-
   if (!profile) redirect('/unauthorized')
 
   return (
@@ -30,7 +29,7 @@ export default async function DashboardLayout({
         <div data-app-shell className="flex min-h-screen bg-background">
           <Sidebar role={profile.role} />
           <div className="flex-1 flex flex-col min-w-0">
-            <TopNavbar profile={profile} />
+            <TopNavbar profile={profile} bell={<NotificationBell />} />
             <main className="flex-1 overflow-auto px-4 sm:px-6 py-6 lg:py-8">
               {children}
             </main>

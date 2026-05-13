@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import type { ModuleTerm } from '@/lib/types/modules';
+import { notifyModuleCreated } from '@/lib/actions/notifications';
+import { notifyLessonPublished } from '@/lib/actions/notifications';
 
 // ---------- Types ----------
 
@@ -162,10 +164,31 @@ export async function createModule(
 
   if (error) throw new Error(`Failed to create module: ${error.message}`);
 
+  const moduleId = data.id as string;
+
+  // Notification fan-out (Session 13). Modules are visible to enrolled
+  // students on creation (no published toggle); notify them immediately.
+  try {
+    const { data: classRow } = await supabase
+      .from('classes')
+      .select('name')
+      .eq('id', classId)
+      .maybeSingle();
+    const className = (classRow as { name: string } | null)?.name ?? 'your class';
+    await notifyModuleCreated({
+      moduleId,
+      classId,
+      className,
+      moduleTitle: trimmed,
+    });
+  } catch (e) {
+    console.error('[modules] create notify error:', e);
+  }
+
   revalidatePath(`/teacher/classes/${classId}`);
   revalidatePath(`/student/classes/${classId}`);
 
-  return { moduleId: data.id as string };
+  return { moduleId };
 }
 
 export async function renameModule(
@@ -420,15 +443,43 @@ export async function setLessonPublished(
     .from('module_lessons')
     .update({ published })
     .eq('id', lessonId)
-    .select('class_modules!inner ( class_id )')
+    .select('title, class_modules!inner ( class_id )')
     .single();
 
   if (error) throw new Error(`Failed to update publish state: ${error.message}`);
 
-  const classId = (data?.class_modules as unknown as { class_id: string })?.class_id;
+  const row = data as unknown as {
+    title: string;
+    class_modules: { class_id: string };
+  };
+  const classId = row.class_modules?.class_id;
   if (classId) {
     revalidatePath(`/teacher/classes/${classId}`);
     revalidatePath(`/student/classes/${classId}`);
+
+    // Notification fan-out (Session 13). Only fire on publish=true. Like
+    // setActivityPublished, we don't track the previous state — toggling
+    // to true implies it was previously a draft. Re-publishing wouldn't
+    // re-notify in practice because the UI doesn't expose that flow.
+    if (published) {
+      try {
+        const { data: classRow } = await supabase
+          .from('classes')
+          .select('name')
+          .eq('id', classId)
+          .maybeSingle();
+        const className = (classRow as { name: string } | null)?.name ?? 'your class';
+        await notifyLessonPublished({
+          lessonId,
+          moduleId: '',
+          classId,
+          className,
+          lessonTitle: row.title,
+        });
+      } catch (e) {
+        console.error('[modules] lesson publish notify error:', e);
+      }
+    }
   }
 }
 

@@ -17,6 +17,10 @@ import {
   type SubmissionType,
   computeActivityStatus,
 } from '@/lib/types/activities';
+import { notifyActivityPublished } from '@/lib/actions/notifications';
+import { notifyGradeReleased } from '@/lib/actions/notifications';
+import { notifyGradesReleasedBulk } from '@/lib/actions/notifications';
+import { notifySubmissionCreated } from '@/lib/actions/notifications';
 
 // --- Internal helpers -----------------------------------------------------
 
@@ -625,10 +629,38 @@ export async function setActivityPublished(
     .from('activities')
     .update({ published })
     .eq('id', activityId)
-    .select('class_id')
+    .select('class_id, title, activity_kind')
     .single();
   if (error) throw new Error(error.message);
-  revalidateClassPaths((data as { class_id: string }).class_id, activityId);
+  const row = data as { class_id: string; title: string; activity_kind: 'assignment' | 'quiz' };
+  revalidateClassPaths(row.class_id, activityId);
+
+  // Notification fan-out (Session 13). Only fire on the publish transition
+  // (false -> true). We don't currently track the previous published state
+  // here; setActivityPublished is the explicit publish/unpublish toggle so
+  // a `published=true` call means "make this visible". Firing on every
+  // true-set means re-publishing an already-published activity would
+  // re-notify, but the UI shouldn't allow that — toggling publish to true
+  // implies it was previously false.
+  if (published) {
+    try {
+      const { data: classRow } = await supabase
+        .from('classes')
+        .select('name')
+        .eq('id', row.class_id)
+        .maybeSingle();
+      const className = (classRow as { name: string } | null)?.name ?? 'your class';
+      await notifyActivityPublished({
+        activityId,
+        classId: row.class_id,
+        className,
+        activityTitle: row.title,
+        activityKind: row.activity_kind,
+      });
+    } catch (e) {
+      console.error('[activities] publish notify error:', e);
+    }
+  }
 }
 
 export async function deleteActivity(activityId: string): Promise<void> {
@@ -743,6 +775,32 @@ export async function returnGrade(submissionId: string): Promise<void> {
 
   const ctx = await lookupClassAndActivityForSubmission(submissionId);
   if (ctx) revalidateClassPaths(ctx.classId, ctx.activityId);
+
+  // Notification fan-out (Session 13). Look up the submission's student
+  // and the activity title/class name, then notify the student.
+  try {
+    const { data: subRow } = await supabase
+      .from('activity_submissions')
+      .select('student_id, activity:activity_id(id, title, class_id, class:class_id(name))')
+      .eq('id', submissionId)
+      .maybeSingle();
+    const row = subRow as unknown as {
+      student_id: string;
+      activity: { id: string; title: string; class_id: string; class: { name: string } | null } | null;
+    } | null;
+    if (row && row.activity) {
+      await notifyGradeReleased({
+        submissionId,
+        activityId: row.activity.id,
+        activityTitle: row.activity.title,
+        classId: row.activity.class_id,
+        className: row.activity.class?.name ?? 'your class',
+        studentId: row.student_id,
+      });
+    }
+  } catch (e) {
+    console.error('[activities] returnGrade notify error:', e);
+  }
 }
 
 export async function returnAllGrades(activityId: string): Promise<number> {
@@ -754,11 +812,25 @@ export async function returnAllGrades(activityId: string): Promise<number> {
 
   const { data: act } = await supabase
     .from('activities')
-    .select('class_id')
+    .select('class_id, title, class:class_id(name)')
     .eq('id', activityId)
     .single();
   if (act) {
-    revalidateClassPaths((act as { class_id: string }).class_id, activityId);
+    const row = act as unknown as { class_id: string; title: string; class: { name: string } | null };
+    revalidateClassPaths(row.class_id, activityId);
+
+    // Notification fan-out (Session 13). All students whose grade was just
+    // released (or was already released and re-touched) get notified.
+    try {
+      await notifyGradesReleasedBulk({
+        activityId,
+        activityTitle: row.title,
+        classId: row.class_id,
+        className: row.class?.name ?? 'your class',
+      });
+    } catch (e) {
+      console.error('[activities] returnAllGrades notify error:', e);
+    }
   }
 
   return Number(data) || 0;
@@ -915,11 +987,45 @@ export async function submitActivity(
 
   const { data: act } = await supabase
     .from('activities')
-    .select('class_id')
+    .select('class_id, title, class:class_id(name, teacher_id)')
     .eq('id', activityId)
     .single();
   if (act) {
-    revalidateClassPaths((act as { class_id: string }).class_id, activityId);
+    const actRow = act as unknown as {
+      class_id: string;
+      title: string;
+      class: { name: string; teacher_id: string } | null;
+    };
+    revalidateClassPaths(actRow.class_id, activityId);
+
+    // Notification fan-out (Session 13). Notify the class teacher that a
+    // new submission has landed (or been resubmitted — replacedGrade=true
+    // means it overwrote a returned grade; the teacher should know).
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user && actRow.class) {
+        const { data: studentRow } = await supabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', user.id)
+          .maybeSingle();
+        const student = studentRow as { full_name: string | null; email: string } | null;
+        const studentName = student?.full_name?.trim() || student?.email || 'A student';
+        await notifySubmissionCreated({
+          submissionId: row.submission_id,
+          activityId,
+          activityTitle: actRow.title,
+          classId: actRow.class_id,
+          className: actRow.class.name,
+          teacherId: actRow.class.teacher_id,
+          studentName,
+        });
+      }
+    } catch (e) {
+      console.error('[activities] submit notify error:', e);
+    }
   }
 
   return {

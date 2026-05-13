@@ -1,6 +1,6 @@
 'use client'
 
-import { Menu, Bell } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useSidebar } from '@/context/SidebarContext'
 import { usePageTitle } from '@/context/PageTitleContext'
@@ -10,6 +10,10 @@ import './TopNavbar.css'
 
 interface TopNavbarProps {
   profile: Profile
+  // The bell is fetched server-side in the layout and passed in as JSX
+  // so we keep this component a pure client component (it uses useSidebar
+  // and other client hooks) without forcing the bell to client-fetch too.
+  bell?: React.ReactNode
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -30,7 +34,7 @@ function getFallbackTitle(pathname: string): string {
   return titleSegment.charAt(0).toUpperCase() + titleSegment.slice(1).replace(/-/g, ' ')
 }
 
-export default function TopNavbar({ profile }: TopNavbarProps) {
+export default function TopNavbar({ profile, bell }: TopNavbarProps) {
   const { toggle } = useSidebar()
   const pathname = usePathname()
   const { title: explicitTitle } = usePageTitle()
@@ -47,9 +51,7 @@ export default function TopNavbar({ profile }: TopNavbarProps) {
         >
           <Menu size={20} strokeWidth={2} />
         </button>
-
         <div className="topnav-divider hidden sm:block" />
-
         <h1 className="topnav-title text-[15px] sm:text-base font-semibold tracking-tight truncate">
           {title}
         </h1>
@@ -57,16 +59,8 @@ export default function TopNavbar({ profile }: TopNavbarProps) {
 
       {/* Right cluster */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <button className="bell-btn relative p-2 rounded-lg" aria-label="Notifications">
-          <Bell size={19} strokeWidth={2} className="bell-icon" />
-          <span
-            className="notification-badge absolute top-[7px] right-[7px] w-[8px] h-[8px] bg-primary-500 ring-2 ring-white rounded-full"
-            aria-hidden="true"
-          />
-        </button>
-
+        {bell}
         <div className="topnav-divider mx-1" />
-
         <ProfileDropdown profile={profile} />
       </div>
     </header>
