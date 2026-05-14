@@ -33,10 +33,10 @@ export default function DashboardBanner({
     <section className="relative overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-red-50 via-rose-50 to-white p-6 shadow-sm sm:p-8">
       <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-red-700">
+          <p className="text-2xl font-bold text-red-700">
             {greeting}, {userName}
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+          <h1 className="mt-1 text-[10px] font-bold tracking-tight text-gray-900 sm:text-[20px]">
             {subtitle}
           </h1>
           {showCreateClass && (

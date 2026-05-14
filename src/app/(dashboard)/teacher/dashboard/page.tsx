@@ -100,7 +100,7 @@ export default async function TeacherDashboardPage() {
       <DashboardBanner
         greeting={greetingForHour(now.getHours())}
         userName={userName}
-        subtitle="Ready to keep teaching?"
+        subtitle="Ready to keep teaching? (˶>⩊<˶)"
         todayLabel={todayLabel}
         todayDayOfMonth={now.getDate()}
         showCreateClass

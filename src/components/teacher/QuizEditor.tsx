@@ -17,12 +17,14 @@ import {
   Timer,
   Shuffle,
   CheckCircle2,
+  Sparkles,
   ListChecks,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import QuestionEditor from '@/components/teacher/QuestionEditor';
+import AIQuizGenerator from '@/components/teacher/ai/AIQuizGenerator';
 import QuizAttemptsPanel from '@/components/teacher/QuizAttemptsPanel';
 import {
   updateActivity,
@@ -168,6 +170,8 @@ export default function QuizEditor({
 
   // Add-question UI
   const [addingKind, setAddingKind] = useState<QuestionKind | ''>('');
+
+  const [aiGenOpen, setAiGenOpen] = useState(false);
 
   // Confirms
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -748,12 +752,23 @@ export default function QuizEditor({
         </div>
       </section>
 
-      {/* Questions */}
+     {/* Questions */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
             Questions
           </h2>
+          {!locked && (
+            <button
+              type="button"
+              onClick={() => setAiGenOpen(true)}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Generate with AI
+            </button>
+          )}
         </div>
 
         {quizView.questions.length === 0 ? (
@@ -860,6 +875,18 @@ export default function QuizEditor({
         onConfirm={handleConfirmUnpublish}
         onClose={() => setConfirmUnpublish(false)}
       />
+
+      <AIQuizGenerator
+        open={aiGenOpen}
+        onClose={() => setAiGenOpen(false)}
+        activityId={activity.id}
+        classId={classId}
+        onGenerated={() => {
+          refetchQuizView();
+          router.refresh();
+        }}
+      />
+
     </div>
   );
 }

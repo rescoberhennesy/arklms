@@ -17,6 +17,11 @@ import { StudentsTab } from '@/components/teacher/StudentsTab';
 import ModulesTab from '@/components/teacher/ModulesTab';
 import ActivitiesTab from '@/components/teacher/ActivitiesTab';
 import GradebookTab from '@/components/teacher/GradebookTab';
+import AnalyticsTab from '@/components/teacher/AnalyticsTab';
+import {
+  getClassStudentStats,
+  listActivitiesForAnalytics,
+} from '@/lib/actions/analytics';
 import { listAnnouncements } from '@/lib/actions/announcements';
 import { listModulesWithLessons } from '@/lib/actions/modules';
 import { listActivitiesForTeacher } from '@/lib/actions/activities';
@@ -26,7 +31,7 @@ import ClassCover from '@/components/dashboard/ClassCover';
 
 export const dynamic = 'force-dynamic';
 
-const TABS = ['stream', 'modules', 'activities', 'students', 'grades'] as const;
+const TABS = ['stream', 'modules', 'activities', 'students', 'grades', 'analytics'] as const;
 type Tab = (typeof TABS)[number];
 
 interface PageProps {
@@ -103,6 +108,16 @@ export default async function ClassDetailPage({
     gradebookView = await getGradebookView(klass.id);
   }
 
+  // Pre-fetch analytics-tab data on the server when that tab is active
+  let analyticsStats: Awaited<ReturnType<typeof getClassStudentStats>> | null = null;
+  let analyticsActivities: Awaited<ReturnType<typeof listActivitiesForAnalytics>> = [];
+  if (tab === 'analytics') {
+    [analyticsStats, analyticsActivities] = await Promise.all([
+      getClassStudentStats(klass.id),
+      listActivitiesForAnalytics(klass.id),
+    ]);
+  }
+
 
   
       return (
@@ -140,15 +155,7 @@ export default async function ClassDetailPage({
             <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
               {klass.semester}
             </span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-wide text-white/80">
-                Code
-              </span>
-              <code className="rounded bg-white/20 px-2 py-0.5 font-mono text-sm">
-                {klass.invite_code}
-              </code>
-              <CopyButton text={klass.invite_code} />
-            </div>
+          
           </div>
         </div>
       </ClassCover>
@@ -213,6 +220,13 @@ export default async function ClassDetailPage({
         )}
         {tab === 'grades' && gradebookView && (
           <GradebookTab view={gradebookView} classId={klass.id} />
+        )}
+        {tab === 'analytics' && analyticsStats && (
+          <AnalyticsTab
+            classId={klass.id}
+            studentStats={analyticsStats}
+            activities={analyticsActivities}
+          />
         )}
       </div>
     </div>

@@ -23,7 +23,6 @@ interface ActionTile {
 }
 
 const TILES: ActionTile[] = [
-  { label: 'Create class', href: '/teacher/classes?create=1', icon: Plus },
   { label: 'Create activity', href: '/teacher/quick/activity', icon: ClipboardList },
   { label: 'Create module', href: '/teacher/quick/module', icon: BookOpen },
   { label: 'Announce', href: '/teacher/quick/announce', icon: Megaphone },
