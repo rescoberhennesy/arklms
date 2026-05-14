@@ -2,8 +2,20 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeSanitize from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { cn } from '@/lib/utils/cn';
+
+// Extended sanitize schema: defaultSchema strips <details>/<summary>, which
+// we use for collapse/reveal blocks (e.g. AI-generated reviewer practice
+// answers). Both tags are inert (no scripting); explicitly allow them.
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'details', 'summary'],
+  attributes: {
+    ...(defaultSchema.attributes ?? {}),
+    details: [...((defaultSchema.attributes ?? {}).details ?? []), 'open'],
+  },
+};
 
 interface MarkdownContentProps {
   body: string;
@@ -27,7 +39,7 @@ export default function MarkdownContent({ body, className }: MarkdownContentProp
     <div className={cn('text-sm text-gray-800', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeSanitize]}
+        rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
         components={{
           p: ({ children }) => (
             <p className="my-2 first:mt-0 last:mb-0 leading-relaxed">{children}</p>

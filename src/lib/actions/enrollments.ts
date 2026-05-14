@@ -1,3 +1,4 @@
+
 // src/lib/actions/enrollments.ts
 'use server';
 
@@ -61,14 +62,28 @@ export async function requestJoinClassByCode(code: string): Promise<JoinByCodeRe
   // (kind === 'pending'); notify the class teacher. ref_id is the class_id
   // rather than the request_id because the RPC doesn't return the latter.
   // Teacher click-through lands on the students tab where the request shows.
+ // Notification fan-out (Session 13). A new pending request was created
+  // (kind === 'pending'); notify the class teacher. ref_id is the class_id
+  // rather than the request_id because the RPC doesn't return the latter.
+  // Teacher click-through lands on the students tab where the request shows.
+  //
+  // Class name + teacher_id come via get_join_request_class_meta (a scoped
+  // SECURITY DEFINER fn): the student isn't enrolled yet, so a direct
+  // classes select would be hidden by RLS and return null -- which used to
+  // silently skip this whole block and the teacher never got notified.
   try {
-    const { data: classRow } = await supabase
-      .from('classes')
-      .select('name, teacher_id')
-      .eq('id', classId)
-      .maybeSingle();
-    const cls = classRow as { name: string; teacher_id: string } | null;
-    if (cls) {
+    const { data: metaData, error: metaErr } = await supabase.rpc(
+      'get_join_request_class_meta',
+      { p_class_id: classId },
+    );
+    if (metaErr) {
+      console.error('[enrollments] join request class meta error:', metaErr.message);
+    }
+    const meta = (Array.isArray(metaData) ? metaData[0] : metaData) as
+      | { class_name: string; teacher_id: string }
+      | null
+      | undefined;
+    if (meta) {
       const { data: studentRow } = await supabase
         .from('profiles')
         .select('full_name, email')
@@ -79,8 +94,8 @@ export async function requestJoinClassByCode(code: string): Promise<JoinByCodeRe
       await notifyJoinRequestCreated({
         requestId: classId,
         classId,
-        className: cls.name,
-        teacherId: cls.teacher_id,
+        className: meta.class_name,
+        teacherId: meta.teacher_id,
         studentName,
       });
     }
@@ -137,25 +152,32 @@ export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
   ];
 }
 
-export async function listMyPendingRequests(): Promise<
+export async function listMyPendingRequests(): Promise <
   Array<{ id: string; class_id: string; class_name: string; requested_at: string }>
 > {
-  const { supabase, userId } = await requireAuthUserId();
-  const { data, error } = await supabase
-    .from('class_join_requests')
-    .select(`id, class_id, requested_at, classes:class_id ( name )`)
-    .eq('student_id', userId)
-    .eq('status', 'pending')
-    .order('requested_at', { ascending: false });
+  const { supabase } = await requireAuthUserId();
+
+  // Uses the get_my_join_requests() SECURITY DEFINER function rather than a
+  // direct select with an embedded classes join: a pending-request student
+  // isn't enrolled, so classes RLS hides the class row and the embedded join
+  // would return a null name ("(unknown class)"). The function is scoped to
+  // student_id = auth.uid() internally.
+  const { data, error } = await supabase.rpc('get_my_join_requests');
 
   if (error) throw new Error(`Failed to list pending requests: ${error.message}`);
 
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    class_id: row.class_id,
-    class_name: row.classes?.name ?? '(unknown class)',
-    requested_at: row.requested_at,
-  }));
+  return (data ?? [])
+    .filter((row: any) => row.status === 'pending')
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime(),
+    )
+    .map((row: any) => ({
+      id: row.id,
+      class_id: row.class_id,
+      class_name: row.class_name ?? '(unknown class)',
+      requested_at: row.requested_at,
+    }));
 }
 
 export async function cancelMyJoinRequest(requestId: string): Promise<void> {
@@ -205,6 +227,18 @@ export async function listPendingJoinRequests(
     student_email: row.student?.email ?? null,
     student_avatar_url: row.student?.avatar_url ?? null,
   }));
+}
+
+export async function countPendingJoinRequests(classId: string): Promise<number> {
+  const { supabase } = await requireAuthUserId();
+  const { count, error } = await supabase
+    .from('class_join_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('class_id', classId)
+    .eq('status', 'pending');
+
+  if (error) throw new Error(`Failed to count join requests: ${error.message}`);
+  return count ?? 0;
 }
 
 export async function decideJoinRequest(
@@ -261,6 +295,7 @@ export async function listClassRoster(
     email: string | null;
     avatar_url: string | null;
     enrolled_at: string;
+    last_active_at: string | null;
   }>
 > {
   const { supabase } = await requireAuthUserId();
@@ -269,7 +304,7 @@ export async function listClassRoster(
     .select(
       `
         enrolled_at, student_id,
-        student:student_id ( full_name, email, avatar_url )
+        student:student_id ( full_name, email, avatar_url, last_active_at )
       `,
     )
     .eq('class_id', classId)
@@ -277,13 +312,22 @@ export async function listClassRoster(
 
   if (error) throw new Error(`Failed to list roster: ${error.message}`);
 
-  return (data ?? []).map((row: any) => ({
-    student_id: row.student_id,
-    full_name: row.student?.full_name ?? null,
-    email: row.student?.email ?? null,
-    avatar_url: row.student?.avatar_url ?? null,
-    enrolled_at: row.enrolled_at,
-  }));
+  return (data ?? [])
+    .map((row: any) => ({
+      student_id: row.student_id,
+      full_name: row.student?.full_name ?? null,
+      email: row.student?.email ?? null,
+      avatar_url: row.student?.avatar_url ?? null,
+      enrolled_at: row.enrolled_at,
+      last_active_at: row.student?.last_active_at ?? null,
+    }))
+    .sort((a, b) => {
+      // Alphabetical by display name; fall back to email so rows with no
+      // full_name still sort sensibly. Case-insensitive.
+      const an = (a.full_name ?? a.email ?? '').toLowerCase();
+      const bn = (b.full_name ?? b.email ?? '').toLowerCase();
+      return an.localeCompare(bn);
+    });
 }
 
 export async function removeEnrollment(
@@ -378,22 +422,25 @@ export async function leaveClass(classId: string): Promise<void> {
 export async function listMyRejectedRequests(): Promise <
   Array<{ id: string; class_id: string; class_name: string; decided_at: string }>
 > {
-  const { supabase, userId } = await requireAuthUserId();
-  const { data, error } = await supabase
-    .from('class_join_requests')
-    .select(`id, class_id, decided_at, classes:class_id ( name )`)
-    .eq('student_id', userId)
-    .eq('status', 'rejected')
-    .order('decided_at', { ascending: false });
+  const { supabase } = await requireAuthUserId();
+
+  // Same rationale as listMyPendingRequests: a rejected-request student isn't
+  // enrolled, so the class name has to come through the SECURITY DEFINER
+  // function rather than an RLS'd embedded join.
+  const { data, error } = await supabase.rpc('get_my_join_requests');
 
   if (error) throw new Error(`Failed to list rejected requests: ${error.message}`);
 
   return (data ?? [])
-    .filter((row: any) => row.decided_at !== null)
+    .filter((row: any) => row.status === 'rejected' && row.decided_at !== null)
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.decided_at).getTime() - new Date(a.decided_at).getTime(),
+    )
     .map((row: any) => ({
       id: row.id,
       class_id: row.class_id,
-      class_name: row.classes?.name ?? '(unknown class)',
+      class_name: row.class_name ?? '(unknown class)',
       decided_at: row.decided_at,
     }));
 }

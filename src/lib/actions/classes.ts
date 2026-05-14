@@ -23,6 +23,11 @@ async function requireAuthUserId() {
     error,
   } = await supabase.auth.getUser();
   if (error || !user) redirect('/');
+
+  // TEMP DIAGNOSTIC — remove after
+    const { data: uidInInsert } = await supabase.rpc('whoami_uid');
+    console.log('[createClass] auth.uid() right before insert:', uidInInsert);
+
   return { supabase, userId: user.id };
 }
 

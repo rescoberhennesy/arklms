@@ -29,10 +29,13 @@ import {
   ChevronRight,
   Users,
   AlertCircle,
+  Copy,
+  CopyPlus,
 } from 'lucide-react';
 import {
   reorderActivities,
   deleteActivity,
+  duplicateActivity,
 } from '@/lib/actions/activities';
 import {
   type ActivityWithAllSubmissions,
@@ -45,6 +48,7 @@ import {
 } from '@/lib/types/modules';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import AddActivityBar from '@/components/teacher/AddActivityBar';
+import CopyFromClassModal from '@/components/teacher/CopyFromClassModal';
 import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
 
 // Mirror of the listClassRoster return-row shape. Defined inline (rather than
@@ -130,10 +134,6 @@ function activitiesSignature(activities: ActivityWithAllSubmissions[]): string {
     .join('|');
 }
 
-// "Fully graded" means: every existing submission has a grade. Activities
-// with zero submissions are vacuously fully graded; we exclude them from
-// this bucket because the filter intent is "I'm done grading this" not
-// "no one has submitted yet."
 function activityIsFullyGraded(a: ActivityWithAllSubmissions): boolean {
   if (a.submissions.length === 0) return false;
   return a.submissions.every((s: SubmissionWithGrade) => s.grade !== null);
@@ -152,17 +152,14 @@ export default function ActivitiesTab({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Server-synced local state: optimistic mutations preserved between
-  // server pushes; full resync when the parent re-fetches and the
-  // signature changes.
   const [activities, setActivities] = useServerSyncedState(
     initialActivities,
     activitiesSignature,
   );
 
   const [error, setError] = useState<string | null>(null);
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
 
-  // URL-driven completion filter (Session 13). Survives refresh.
   const filterParam = searchParams.get('completion');
   const filter: CompletionFilter =
     filterParam === 'has_ungraded' || filterParam === 'fully_graded'
@@ -180,8 +177,6 @@ export default function ActivitiesTab({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  // Counts for filter pill badges — based on the published activities only.
-  // Drafts never count toward grading-state buckets (no one's submitting yet).
   const filterCounts = useMemo(() => {
     let hasUngraded = 0;
     let fullyGraded = 0;
@@ -197,8 +192,6 @@ export default function ActivitiesTab({
     };
   }, [activities]);
 
-  // Apply filter. Drafts are kept under "All" and hidden under the grading
-  // buckets (since there's nothing to grade yet).
   function passesFilter(a: ActivityWithAllSubmissions): boolean {
     if (filter === 'all') return true;
     if (!a.published) return false;
@@ -206,11 +199,6 @@ export default function ActivitiesTab({
     return activityIsFullyGraded(a);
   }
 
-  // Dashboard quick-action deep-link support: when arriving with
-  // ?tab=activities&create=1 (the picker route at /teacher/quick/activity
-  // produces this), open the AddActivityBar in its expanded form. We
-  // snapshot the param once at mount and immediately strip it from the URL
-  // so a refresh / close / reopen flow doesn't re-trigger.
   const [createOpenFromParam, setCreateOpenFromParam] = useState(false);
   const hasConsumedCreateParam = useRef(false);
   useEffect(() => {
@@ -243,6 +231,13 @@ export default function ActivitiesTab({
     });
   }
 
+  function handleCopyCompleted(newActivityId: string) {
+    // Navigate to the editor of the new copy. The router.refresh() inside
+    // the modal repopulates the list, but we also want the teacher to land
+    // in the editor so they can edit dates / publish.
+    router.push(`/teacher/classes/${classId}/activities/${newActivityId}`);
+  }
+
   const rosterSize = roster.length;
   const submitterIdsByActivity = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -260,12 +255,25 @@ export default function ActivitiesTab({
         </div>
       )}
 
-      <AddActivityBar
-        classId={classId}
-        onOptimisticAdd={handleOptimisticAdd}
-        onError={setError}
-        defaultOpen={createOpenFromParam}
-      />
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <AddActivityBar
+            classId={classId}
+            onOptimisticAdd={handleOptimisticAdd}
+            onError={setError}
+            defaultOpen={createOpenFromParam}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setCopyModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          title="Copy an activity from another class"
+        >
+          <CopyPlus className="h-4 w-4" />
+          Copy from another class
+        </button>
+      </div>
 
       {/* Completion filter pills */}
       <div className="flex flex-wrap items-center gap-2">
@@ -317,6 +325,13 @@ export default function ActivitiesTab({
           />
         );
       })}
+
+      <CopyFromClassModal
+        open={copyModalOpen}
+        targetClassId={classId}
+        onClose={() => setCopyModalOpen(false)}
+        onCopied={handleCopyCompleted}
+      />
     </div>
   );
 }
@@ -379,8 +394,6 @@ function TermSection({
     });
   }
 
-  // Empty-state messaging differs depending on whether the filter is hiding
-  // things or the term genuinely has nothing in it.
   const emptyMsg = filterActive
     ? 'No activities in this term match the current filter.'
     : 'No activities in this term yet.';
@@ -459,6 +472,7 @@ function ActivityCard({
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const {
     attributes,
     listeners,
@@ -481,9 +495,6 @@ function ActivityCard({
     (s: SubmissionWithGrade) => s.grade,
   ).length;
 
-  // Roster-aware "X of N" completeness — only meaningful for published,
-  // started activities. For drafts and not-yet-started, fall back to the
-  // older raw-counts display.
   const startAtMs = new Date(activity.startAt).getTime();
   const showRosterCompleteness =
     activity.published && Date.now() >= startAtMs && rosterSize > 0;
@@ -503,6 +514,26 @@ function ActivityCard({
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed to delete activity.');
     }
+  }
+
+  async function handleDuplicate() {
+    if (duplicating) return;
+    setDuplicating(true);
+    onError(null);
+    try {
+      const { activityId: newId } = await duplicateActivity({
+        sourceActivityId: activity.id,
+        targetClassId: classId,
+        targetTerm: activity.term,
+      });
+      router.refresh();
+      router.push(`/teacher/classes/${classId}/activities/${newId}`);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to duplicate activity.');
+      setDuplicating(false);
+    }
+    // No setDuplicating(false) on success — the page is about to navigate
+    // and unmount this card.
   }
 
   return (
@@ -596,6 +627,17 @@ function ActivityCard({
 
         <button
           type="button"
+          onClick={handleDuplicate}
+          disabled={duplicating}
+          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+          aria-label="Duplicate activity in this class"
+          title="Duplicate in this class"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+
+        <button
+          type="button"
           onClick={() => setConfirmDelete(true)}
           className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
           aria-label="Delete activity"
@@ -605,7 +647,6 @@ function ActivityCard({
         </button>
       </div>
 
-      {/* Inline missing-students expand */}
       {expanded && showRosterCompleteness && (
         <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2.5">
           {missingStudents.length === 0 ? (

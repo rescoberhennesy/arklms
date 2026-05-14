@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { getStudentClassById } from '@/lib/actions/enrollments';
 import LeaveClassButton from '@/components/student/LeaveClassButton';
-import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StreamView from '@/components/dashboard/StreamView';
 import StudentModulesView from '@/components/student/StudentModulesView';
@@ -14,6 +13,7 @@ import { listModulesWithLessons } from '@/lib/actions/modules';
 import { listActivitiesForStudent } from '@/lib/actions/activities';
 import { getStudentGradebookView } from '@/lib/actions/gradebook';
 import { createClient } from '@/lib/supabase/server';
+import ClassCover from '@/components/dashboard/ClassCover';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,7 +81,6 @@ export default async function StudentClassDetailPage({
     gradesView = await getStudentGradebookView(klass.id);
   }
 
-  const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
 
   return (
     <div className="space-y-6">
@@ -94,11 +93,11 @@ export default async function StudentClassDetailPage({
         Back to classes
       </Link>
 
-      <div
-        className="relative overflow-hidden rounded-xl px-6 py-8 text-white shadow-sm"
-        style={{ backgroundColor: headerColor }}
+      <ClassCover
+        url={klass.cover_photo_url}
+        color={klass.color}
+        className="rounded-xl px-6 py-8 text-white shadow-sm"
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-black/0 to-black/15" />
         <div className="absolute right-4 top-4 z-10">
           <LeaveClassButton classId={klass.id} className={klass.name} />
         </div>
@@ -120,7 +119,7 @@ export default async function StudentClassDetailPage({
             )}
           </div>
         </div>
-      </div>
+      </ClassCover>
 
       <nav className="border-b border-gray-200">
         <div className="-mb-px flex gap-6 overflow-x-auto">

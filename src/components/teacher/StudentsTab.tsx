@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useTransition } from 'react';
@@ -11,12 +12,44 @@ interface RosterEntry {
   email: string | null;
   avatar_url: string | null;
   enrolled_at: string;
+  last_active_at: string | null;
 }
 
 interface StudentsTabProps {
   classId: string;
   initialPending: PendingJoinRequest[];
   initialRoster: RosterEntry[];
+}
+
+// Relative-time formatter for last_active_at. Mirrors the granularity
+// used by the notification bell: minutes -> hours -> days -> date.
+function formatLastActive(iso: string | null): string {
+  if (!iso) return 'Never';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'Never';
+  const diff = Date.now() - then;
+  if (diff < 0) return 'Just now'; // clock skew guard
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(diff / 3_600_000);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(diff / 86_400_000);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Dot color buckets:
+//   - green: active within the last 24h
+//   - gray:  seen, but more than 24h ago
+//   - hollow: never seen since the column shipped (last_active_at null)
+function activityDotClass(iso: string | null): string {
+  if (!iso) return 'border border-gray-300 bg-transparent';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'border border-gray-300 bg-transparent';
+  const diff = Date.now() - then;
+  if (diff < 24 * 3_600_000) return 'bg-green-500';
+  return 'bg-gray-300';
 }
 
 export function StudentsTab({
@@ -46,6 +79,8 @@ export function StudentsTab({
               email: request.student_email,
               avatar_url: request.student_avatar_url,
               enrolled_at: new Date().toISOString(),
+              // A just-approved student has no recorded activity yet.
+              last_active_at: null,
             },
           ]);
         }
@@ -144,6 +179,7 @@ export function StudentsTab({
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Student</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Email</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Last active</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Joined</th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -153,6 +189,23 @@ export function StudentsTab({
                   <tr key={s.student_id}>
                     <td className="px-4 py-3 text-sm text-gray-900">{s.full_name ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.email ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          aria-hidden
+                          className={`h-2 w-2 shrink-0 rounded-full ${activityDotClass(
+                            s.last_active_at,
+                          )}`}
+                        />
+                        <span
+                          className={
+                            s.last_active_at ? 'text-gray-600' : 'text-gray-400'
+                          }
+                        >
+                          {formatLastActive(s.last_active_at)}
+                        </span>
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {new Date(s.enrolled_at).toLocaleDateString()}
                     </td>

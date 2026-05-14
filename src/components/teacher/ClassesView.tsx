@@ -14,7 +14,7 @@ import {
   deleteClass,
   reorderMyClasses,
 } from '@/lib/actions/classes';
-import type { ClassFormInput, TeacherClassListItem } from '@/types/class';
+import type { ClassFormInput, ClassRow, TeacherClassListItem } from '@/types/class';
 import SortableClassGrid from '@/components/dashboard/SortableClassGrid';
 import SortableItem from '@/components/dashboard/SortableItem';
 
@@ -95,7 +95,7 @@ export function ClassesView({
     }
   }
 
-  async function handleSubmit(input: ClassFormInput) {
+  async function handleSubmit(input: ClassFormInput): Promise<ClassRow> {
     if (formState.kind === 'edit') {
       const res = await updateClass(formState.cls.id, input);
       if (!res.ok) throw new Error(res.error);
@@ -108,6 +108,7 @@ export function ClassesView({
         ),
       );
       showToast('Class updated');
+      return updated;
     } else {
       const res = await createClass(input);
       if (!res.ok) throw new Error(res.error);
@@ -115,6 +116,7 @@ export function ClassesView({
       const newItem: TeacherClassListItem = { ...created, enrolled_count: 0 };
       setClasses((prev) => [newItem, ...prev]);
       showToast('Class created');
+      return created;
     }
   }
 
@@ -170,14 +172,6 @@ export function ClassesView({
           <p className="mt-1 text-sm text-gray-500">
             Create your first class to get started.
           </p>
-          <button
-            type="button"
-            onClick={() => setFormState({ kind: 'create' })}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-          >
-            <Plus className="h-4 w-4" />
-            Create class
-          </button>
         </div>
       )}
 

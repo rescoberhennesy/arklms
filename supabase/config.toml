@@ -309,7 +309,7 @@ email_optional = false
 enabled = true
 client_id = "env(AZURE_CLIENT_ID)"
 secret = "env(AZURE_CLIENT_SECRET)"
-url = "https://login.microsoftonline.com/common"
+url = "https://login.microsoftonline.com/a169255e-0e33-4db1-bf85-289a67af73d3"
 redirect_uri = "http://localhost:54321/auth/v1/callback"
 skip_nonce_check = false
 

@@ -55,7 +55,7 @@ export async function listMyActivePersonalTasks(
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, notes, due_at, created_at')
+    .select('id, title, notes, due_at, completed_at, created_at')
     .eq('owner_id', user.id)
     .is('completed_at', null)
     .order('created_at', { ascending: false });
@@ -67,6 +67,7 @@ export async function listMyActivePersonalTasks(
     title: string;
     notes: string | null;
     due_at: string | null;
+    completed_at: string | null;
     created_at: string;
   };
   const rows = (data ?? []) as Row[];
@@ -78,6 +79,7 @@ export async function listMyActivePersonalTasks(
     dueAt: r.due_at,
     isOverdue: r.due_at ? new Date(r.due_at).getTime() < now : null,
     createdAt: r.created_at,
+    completedAt: r.completed_at,
   }));
 
   // Sort: overdue first (oldest-due first), then dated upcoming
@@ -102,6 +104,53 @@ export async function listMyActivePersonalTasks(
   });
 
   return items.slice(0, limit);
+}
+
+// Completed tasks (completed_at IS NOT NULL) for the current user.
+// Ordered: most-recently-completed first. Used by the "Completed" view
+// in PersonalTasksPanel; fetched on-demand from the client when the
+// user opens that view, NOT eager-loaded by the to-do widgets.
+//
+// `limit` defaults higher than active because users may have a long
+// completed-history they want to scroll.
+export async function listMyCompletedPersonalTasks(
+  limit: number = 50,
+): Promise<PersonalTaskItem[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('personal_tasks')
+    .select('id, title, notes, due_at, completed_at, created_at')
+    .eq('owner_id', user.id)
+    .not('completed_at', 'is', null)
+    .order('completed_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to load completed tasks: ${error.message}`);
+
+  const now = Date.now();
+  type Row = {
+    id: string;
+    title: string;
+    notes: string | null;
+    due_at: string | null;
+    completed_at: string | null;
+    created_at: string;
+  };
+  const rows = (data ?? []) as Row[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    notes: r.notes,
+    dueAt: r.due_at,
+    isOverdue: r.due_at ? new Date(r.due_at).getTime() < now : null,
+    createdAt: r.created_at,
+    completedAt: r.completed_at,
+  }));
 }
 
 // Active dated tasks for the current user falling within [windowStart,
@@ -202,6 +251,67 @@ export async function createPersonalTask(
   return { id: data.id as string };
 }
 
+// Patch-style update for an existing task. Any field omitted in the
+// patch is left unchanged in the DB. Pass `dueAt: null` explicitly to
+// clear the due date; omit it to leave it alone. Same shape for notes.
+//
+// Note: there's no public "transfer ownership" — owner_id is never in
+// the patch surface. RLS enforces owner-only updates anyway, so even
+// if we slipped owner_id through it would be rejected by WITH CHECK.
+export interface UpdatePersonalTaskInput {
+  title?: string;
+  notes?: string | null;
+  dueAt?: string | null;
+}
+
+export async function updatePersonalTask(
+  taskId: string,
+  patch: UpdatePersonalTaskInput,
+): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  // Build the update payload from only the keys present in the patch.
+  // Using `in patch` (not truthiness) so explicit nulls survive.
+  const updates: Record<string, unknown> = {};
+
+  if ('title' in patch && patch.title !== undefined) {
+    updates.title = normalizeTitle(patch.title);
+  }
+
+  if ('notes' in patch) {
+    updates.notes = normalizeNotes(patch.notes ?? null);
+  }
+
+  if ('dueAt' in patch) {
+    if (patch.dueAt == null || patch.dueAt === '') {
+      updates.due_at = null;
+    } else {
+      const parsed = new Date(patch.dueAt);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new Error('Invalid due date.');
+      }
+      updates.due_at = parsed.toISOString();
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    // No-op patch. Bail before round-tripping to the DB.
+    return;
+  }
+
+  const { error } = await supabase
+    .from('personal_tasks')
+    .update(updates)
+    .eq('id', taskId);
+  if (error) throw new Error(`Failed to update task: ${error.message}`);
+
+  revalidateAllSurfaces();
+}
+
 // Mark a task done (soft-delete via completed_at). RLS ensures only
 // the owner can update; we don't re-check ownership here.
 export async function markPersonalTaskDone(taskId: string): Promise<void> {
@@ -214,8 +324,8 @@ export async function markPersonalTaskDone(taskId: string): Promise<void> {
   revalidateAllSurfaces();
 }
 
-// Undo a "mark done" — clear completed_at. Not exposed in v1 UI but
-// kept here so a future "Completed" view can offer un-completion.
+// Undo a "mark done" — clear completed_at. Used by the Completed view
+// in PersonalTasksPanel to restore a task to active.
 export async function markPersonalTaskUndone(taskId: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase

@@ -87,6 +87,7 @@ export interface PersonalTaskItem {
   dueAt: string | null; // ISO or null
   isOverdue: boolean | null; // null when undated
   createdAt: string;
+  completedAt: string | null;
 }
 
 // ==========================================================================

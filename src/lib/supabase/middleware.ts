@@ -1,3 +1,4 @@
+
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
@@ -76,6 +77,29 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(new URL('/unauthorized', request.url))
       }
     }
+
+    // "Last seen" tracking (Session 14).
+    //
+    // The user is authenticated and on a protected route — touch their
+    // last_active_at via the touch_last_active() RPC.
+    //
+    // WHY AN RPC: profiles has no self-service FOR UPDATE RLS policy, so a
+    // direct `.update()` from this (anon-key + user-cookie) client matches
+    // zero rows and silently no-ops. The SECURITY DEFINER RPC
+    // (migration 20260514010000) bypasses RLS but can only ever set
+    // last_active_at for auth.uid() — no privilege-escalation surface.
+    //
+    // Fire-and-forget: deliberately NOT awaited. A slow or failed RPC must
+    // never delay or break a page load. The `.then()` error sink keeps an
+    // unhandled rejection from surfacing; there is no success path to
+    // handle. No throttle — at ALMS scale a few RPC calls per minute is
+    // negligible, and an unconditional call avoids fragile filter logic.
+    void supabase.rpc('touch_last_active').then(
+      () => {},
+      (err: unknown) => {
+        console.error('[middleware] touch_last_active error:', err)
+      }
+    )
   }
 
   return supabaseResponse

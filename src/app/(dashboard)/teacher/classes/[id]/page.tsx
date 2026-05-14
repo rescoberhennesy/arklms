@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, Settings } from 'lucide-react';
 import { getClassById } from '@/lib/actions/classes';
-import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import {
   listPendingJoinRequests,
   listClassRoster,
+  countPendingJoinRequests,
 } from '@/lib/actions/enrollments';
 import { CopyButton } from '@/components/teacher/CopyButton';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
@@ -22,6 +22,7 @@ import { listModulesWithLessons } from '@/lib/actions/modules';
 import { listActivitiesForTeacher } from '@/lib/actions/activities';
 import { getGradebookView } from '@/lib/actions/gradebook';
 import { createClient } from '@/lib/supabase/server';
+import ClassCover from '@/components/dashboard/ClassCover';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,11 @@ export default async function ClassDetailPage({
   if (!classRes.ok) notFound();
   const klass = classRes.data;
   if (!klass) notFound();
+
+// Pending-request count is fetched on EVERY tab so the Students tab can
+  // show a badge -- otherwise the teacher wouldn't know there are pending
+  // requests without opening that tab. Cheap: head:true count query.
+  const pendingCount = await countPendingJoinRequests(klass.id);
 
   // Pre-fetch students-tab data on the server when that tab is active
   let pendingRequests: Awaited<ReturnType<typeof listPendingJoinRequests>> = [];
@@ -96,9 +102,10 @@ export default async function ClassDetailPage({
   if (tab === 'grades') {
     gradebookView = await getGradebookView(klass.id);
   }
-  const headerColor = klass.color ?? DEFAULT_CLASS_COLOR;
 
-  return (
+
+  
+      return (
     <div className="space-y-6">
       <SetPageTitle title={klass.name} />
       <Link
@@ -110,11 +117,11 @@ export default async function ClassDetailPage({
       </Link>
 
       {/* Header */}
-      <div
-        className="relative overflow-hidden rounded-xl px-6 py-8 text-white shadow-sm"
-        style={{ backgroundColor: headerColor }}
+      <ClassCover
+        url={klass.cover_photo_url}
+        color={klass.color}
+        className="rounded-xl px-6 py-8 text-white shadow-sm"
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-black/0 to-black/15" />
         <Link
           href={`/teacher/classes/${klass.id}/settings`}
           className="absolute right-4 top-4 z-10 rounded-full bg-white/20 p-2 text-white shadow-sm hover:bg-white/30"
@@ -144,27 +151,34 @@ export default async function ClassDetailPage({
             </div>
           </div>
         </div>
-      </div>
+      </ClassCover>
 
       {/* Tabs */}
       <nav className="border-b border-gray-200">
         <div className="-mb-px flex gap-6 overflow-x-auto">
           {TABS.map((t) => {
             const isActive = t === tab;
+            const showBadge = t === 'students' && pendingCount > 0;
             return (
               <Link
                 key={t}
                 href={`/teacher/classes/${id}?tab=${t}`}
-                className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium capitalize transition ${
+                className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium capitalize transition ${
                   isActive
                     ? 'border-red-600 text-red-600'
                     : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
                 }`}
               >
                 {t}
+                {showBadge && (
+                  <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold leading-none text-white">
+                    {pendingCount}
+                  </span>
+                )}
               </Link>
             );
           })}
+
         </div>
       </nav>
 

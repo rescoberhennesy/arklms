@@ -30,8 +30,8 @@ interface ActivityRow {
   term: ModuleTerm;
   activity_kind: 'assignment' | 'quiz';
   title: string;
-  instructions: string; // was: description
-  prompt: string;       // NEW
+  instructions: string;
+  prompt: string;
   max_points: string | number;
   start_at: string;
   due_at: string;
@@ -635,13 +635,6 @@ export async function setActivityPublished(
   const row = data as { class_id: string; title: string; activity_kind: 'assignment' | 'quiz' };
   revalidateClassPaths(row.class_id, activityId);
 
-  // Notification fan-out (Session 13). Only fire on the publish transition
-  // (false -> true). We don't currently track the previous published state
-  // here; setActivityPublished is the explicit publish/unpublish toggle so
-  // a `published=true` call means "make this visible". Firing on every
-  // true-set means re-publishing an already-published activity would
-  // re-notify, but the UI shouldn't allow that — toggling publish to true
-  // implies it was previously false.
   if (published) {
     try {
       const { data: classRow } = await supabase
@@ -693,6 +686,18 @@ export async function deleteActivity(activityId: string): Promise<void> {
       );
       await supabase.storage.from('submission-attachments').remove(paths);
     }
+  }
+
+  // Also clean up activity attachments (teacher-uploaded reference files).
+  const { data: activityAttachments } = await supabase
+    .from('activity_attachments')
+    .select('file_path')
+    .eq('activity_id', activityId);
+  if (activityAttachments && activityAttachments.length > 0) {
+    const paths = (activityAttachments as Array<{ file_path: string }>).map(
+      (a) => a.file_path,
+    );
+    await supabase.storage.from('activity-attachments').remove(paths);
   }
 
   const { error } = await supabase
@@ -776,8 +781,6 @@ export async function returnGrade(submissionId: string): Promise<void> {
   const ctx = await lookupClassAndActivityForSubmission(submissionId);
   if (ctx) revalidateClassPaths(ctx.classId, ctx.activityId);
 
-  // Notification fan-out (Session 13). Look up the submission's student
-  // and the activity title/class name, then notify the student.
   try {
     const { data: subRow } = await supabase
       .from('activity_submissions')
@@ -819,8 +822,6 @@ export async function returnAllGrades(activityId: string): Promise<number> {
     const row = act as unknown as { class_id: string; title: string; class: { name: string } | null };
     revalidateClassPaths(row.class_id, activityId);
 
-    // Notification fan-out (Session 13). All students whose grade was just
-    // released (or was already released and re-touched) get notified.
     try {
       await notifyGradesReleasedBulk({
         activityId,
@@ -850,16 +851,6 @@ export async function ungradeSubmission(submissionId: string): Promise<void> {
 
 // --- Grade weights --------------------------------------------------------
 
-/**
- * Read-only fetch of grade weights for a class.
- * Returns null if no weights row exists (caller falls back to unweighted).
- *
- * Renamed from getOrCreateGradeWeights (Session 9 carry-forward). The
- * previous version auto-inserted a 25/25/25/25 row on first read, which
- * defeated the "absent row = unweighted fallback" design from Session 7.
- * Weighted vs unweighted only behaved identically when per-term cardinality
- * was equal; once it diverged, weighted scores became silently wrong.
- */
 export async function getGradeWeights(
   classId: string,
 ): Promise<ClassGradeWeights | null> {
@@ -874,17 +865,6 @@ export async function getGradeWeights(
   return mapGradeWeights(data as GradeWeightsRow);
 }
 
-/**
- * Insert a new weights row for a class. Used by GradeWeightsModal when
- * the class has no row yet. Validates sum=100 client-side; DB-level CHECK
- * also enforces this.
- *
- * For updating an existing row, call updateGradeWeights instead — it
- * uses upsert so it works for both create and update paths, but keeping
- * the explicit create function makes the modal's intent clearer and
- * surfaces a primary-key violation if the caller's weightsExist flag
- * is wrong.
- */
 export async function createGradeWeights(
   classId: string,
   weights: {
@@ -998,9 +978,6 @@ export async function submitActivity(
     };
     revalidateClassPaths(actRow.class_id, activityId);
 
-    // Notification fan-out (Session 13). Notify the class teacher that a
-    // new submission has landed (or been resubmitted — replacedGrade=true
-    // means it overwrote a returned grade; the teacher should know).
     try {
       const {
         data: { user },
@@ -1136,8 +1113,6 @@ export async function deleteActivityAttachment(
     activities: { class_id: string };
   };
 
-  // Delete the storage object first (best effort — if this fails, abort the
-  // DB delete so we don't orphan a row pointing at a missing file).
   const { error: storageErr } = await supabase.storage
     .from('activity-attachments')
     .remove([row.file_path]);
@@ -1167,4 +1142,319 @@ export async function getSignedActivityAttachmentUrl(
     .createSignedUrl(filePath, 60 * 60); // 1-hour signed URL
   if (error) throw new Error(error.message);
   return data.signedUrl;
+}
+
+// ==========================================================================
+// Activity duplication (Session 14)
+// ==========================================================================
+//
+// Three actions:
+//   - listTeacherClassesForCopy: classes the current user teaches; used to
+//     populate the cross-class picker.
+//   - listClassActivitiesForCopy: lightweight activity list for a given
+//     class id, used inside the picker once the user chooses a source class.
+//   - duplicateActivity: actually performs the copy.
+//
+// duplicateActivity copies the activity row (with title-suffix on same-class
+// copy), all quiz settings/questions, and all activity_attachments
+// (deep-copying storage objects via the Supabase Storage copy() API).
+// Submissions/attempts/grades are NEVER copied.
+//
+// Atomicity model: insert activity -> insert quiz questions if any -> copy
+// storage objects + insert attachment rows. If a storage copy fails partway
+// through, delete the new activity (cascades to questions/attachments)
+// AND remove any storage objects already copied. Returns the new activity
+// id on success.
+
+export interface TeacherClassForCopy {
+  classId: string;
+  name: string;
+  section: string | null;
+}
+
+export async function listTeacherClassesForCopy(): Promise<
+  TeacherClassForCopy[]
+> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr) throw new Error(userErr.message);
+  if (!user) throw new Error('Not authenticated');
+
+  // RLS on classes already filters to the teacher's classes for teacher
+  // role. We further narrow by teacher_id in case the SELECT policy is
+  // broader than we expect.
+  const { data, error } = await supabase
+    .from('classes')
+    .select('id, name, section')
+    .eq('teacher_id', user.id)
+    .order('name', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  type Row = { id: string; name: string; section: string | null };
+  return ((data ?? []) as Row[]).map((r) => ({
+    classId: r.id,
+    name: r.name,
+    section: r.section,
+  }));
+}
+
+export interface ClassActivityForCopy {
+  activityId: string;
+  title: string;
+  activityKind: 'assignment' | 'quiz';
+  term: ModuleTerm;
+}
+
+export async function listClassActivitiesForCopy(
+  classId: string,
+): Promise<ClassActivityForCopy[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('activities')
+    .select('id, title, activity_kind, term, display_order')
+    .eq('class_id', classId)
+    .order('term', { ascending: true })
+    .order('display_order', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  type Row = {
+    id: string;
+    title: string;
+    activity_kind: 'assignment' | 'quiz';
+    term: ModuleTerm;
+  };
+  return ((data ?? []) as Row[]).map((r) => ({
+    activityId: r.id,
+    title: r.title,
+    activityKind: r.activity_kind,
+    term: r.term,
+  }));
+}
+
+export interface DuplicateActivityInput {
+  sourceActivityId: string;
+  targetClassId: string;
+  targetTerm: ModuleTerm;
+}
+
+export async function duplicateActivity(
+  input: DuplicateActivityInput,
+): Promise<{ activityId: string }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr) throw new Error(userErr.message);
+  if (!user) throw new Error('Not authenticated');
+
+  // Fetch source activity (all the quiz/config columns too).
+  const { data: srcData, error: srcErr } = await supabase
+    .from('activities')
+    .select(
+      'id, class_id, term, activity_kind, title, instructions, prompt, max_points, allow_late, allow_resubmission, submission_type, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points',
+    )
+    .eq('id', input.sourceActivityId)
+    .single();
+  if (srcErr) throw new Error(`Failed to load source activity: ${srcErr.message}`);
+  const src = srcData as {
+    id: string;
+    class_id: string;
+    term: ModuleTerm;
+    activity_kind: 'assignment' | 'quiz';
+    title: string;
+    instructions: string;
+    prompt: string;
+    max_points: string | number;
+    allow_late: boolean;
+    allow_resubmission: boolean;
+    submission_type: SubmissionType;
+    time_limit_minutes: number | null;
+    shuffle_questions: boolean;
+    auto_release_grade: boolean;
+    show_correct_answers: boolean;
+    quiz_total_points: string | number | null;
+  };
+
+  const sameClass = src.class_id === input.targetClassId;
+  const newTitle = sameClass ? `${src.title} (copy)` : src.title;
+
+  // Compute next display_order in the target term.
+  const { data: orderRows, error: orderErr } = await supabase
+    .from('activities')
+    .select('display_order')
+    .eq('class_id', input.targetClassId)
+    .eq('term', input.targetTerm)
+    .order('display_order', { ascending: false })
+    .limit(1);
+  if (orderErr) throw new Error(orderErr.message);
+  const nextOrder =
+    orderRows && orderRows.length > 0
+      ? (orderRows[0] as { display_order: number }).display_order + 1
+      : 0;
+
+  // Default dates: starts now, due 7 days from now. Teacher edits after.
+  const now = new Date();
+  const dueDate = new Date(now);
+  dueDate.setDate(dueDate.getDate() + 7);
+
+  const insertPayload: Record<string, unknown> = {
+    class_id: input.targetClassId,
+    term: input.targetTerm,
+    activity_kind: src.activity_kind,
+    title: newTitle,
+    instructions: src.instructions,
+    prompt: src.prompt,
+    max_points: Number(src.max_points),
+    start_at: now.toISOString(),
+    due_at: dueDate.toISOString(),
+    allow_late: src.allow_late,
+    allow_resubmission: src.allow_resubmission,
+    submission_type: src.submission_type,
+    display_order: nextOrder,
+    published: false, // ALWAYS start as draft
+    time_limit_minutes: src.time_limit_minutes,
+    shuffle_questions: src.shuffle_questions,
+    auto_release_grade: src.auto_release_grade,
+    show_correct_answers: src.show_correct_answers,
+    quiz_total_points:
+      src.quiz_total_points === null ? null : Number(src.quiz_total_points),
+  };
+
+  const { data: newActData, error: insErr } = await supabase
+    .from('activities')
+    .insert(insertPayload)
+    .select('id')
+    .single();
+  if (insErr) throw new Error(`Failed to create duplicate: ${insErr.message}`);
+  const newActivityId = (newActData as { id: string }).id;
+
+  // Storage paths we've copied (for rollback if a later step fails).
+  const copiedStoragePaths: string[] = [];
+
+  try {
+    // 1) Copy quiz questions (if any).
+    if (src.activity_kind === 'quiz') {
+      const { data: srcQuestions, error: qErr } = await supabase
+        .from('quiz_questions')
+        .select(
+          'question_kind, prompt, points, display_order, shuffle_options, config',
+        )
+        .eq('activity_id', src.id)
+        .order('display_order', { ascending: true });
+      if (qErr) throw new Error(`Failed to load source questions: ${qErr.message}`);
+
+      const qRows = (srcQuestions ?? []) as Array<{
+        question_kind: string;
+        prompt: string;
+        points: string | number;
+        display_order: number;
+        shuffle_options: boolean;
+        config: unknown;
+      }>;
+
+      if (qRows.length > 0) {
+        const newQuestions = qRows.map((q) => ({
+          activity_id: newActivityId,
+          question_kind: q.question_kind,
+          prompt: q.prompt,
+          points: Number(q.points),
+          display_order: q.display_order,
+          shuffle_options: q.shuffle_options,
+          config: q.config,
+        }));
+        const { error: qInsErr } = await supabase
+          .from('quiz_questions')
+          .insert(newQuestions);
+        if (qInsErr)
+          throw new Error(`Failed to copy questions: ${qInsErr.message}`);
+      }
+    }
+
+    // 2) Copy attachments (storage objects + DB rows).
+    const { data: srcAttachments, error: attErr } = await supabase
+      .from('activity_attachments')
+      .select('file_path, file_name, file_size, mime_type')
+      .eq('activity_id', src.id);
+    if (attErr) throw new Error(`Failed to load source attachments: ${attErr.message}`);
+
+    const attRows = (srcAttachments ?? []) as Array<{
+      file_path: string;
+      file_name: string;
+      file_size: number;
+      mime_type: string;
+    }>;
+
+    for (const att of attRows) {
+      // Generate a path mirroring the existing convention:
+      //   <class_id>/<new_uuid>/<timestamp>-<filename>
+      // Use crypto.randomUUID for the segment; Date.now() for the timestamp;
+      // file_name carries the original filename.
+      const newUuid = crypto.randomUUID();
+      const ts = Date.now();
+      const safeName = att.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const destPath = `${input.targetClassId}/${newUuid}/${ts}-${safeName}`;
+
+      // Server-side copy via Supabase Storage. This is the cheap path —
+      // no download-reupload round trip.
+      const { error: copyErr } = await supabase.storage
+        .from('activity-attachments')
+        .copy(att.file_path, destPath);
+      if (copyErr) {
+        throw new Error(`Failed to copy file "${att.file_name}": ${copyErr.message}`);
+      }
+      copiedStoragePaths.push(destPath);
+
+      const { error: attInsErr } = await supabase
+        .from('activity_attachments')
+        .insert({
+          activity_id: newActivityId,
+          file_path: destPath,
+          file_name: att.file_name,
+          file_size: att.file_size,
+          mime_type: att.mime_type,
+          uploaded_by: user.id,
+        });
+      if (attInsErr) {
+        // The storage object now exists but no DB row. Treat as the same
+        // failure mode — rollback will catch the path we already pushed.
+        throw new Error(
+          `Failed to insert attachment row for "${att.file_name}": ${attInsErr.message}`,
+        );
+      }
+    }
+  } catch (err) {
+    // Rollback: best-effort cleanup. Errors here are logged, not thrown,
+    // because the caller already has a real error to surface.
+    try {
+      if (copiedStoragePaths.length > 0) {
+        await supabase.storage
+          .from('activity-attachments')
+          .remove(copiedStoragePaths);
+      }
+    } catch (cleanupErr) {
+      console.error(
+        '[activities] duplicate rollback storage cleanup error:',
+        cleanupErr,
+      );
+    }
+    try {
+      // Cascade deletes quiz_questions and activity_attachments rows.
+      await supabase.from('activities').delete().eq('id', newActivityId);
+    } catch (cleanupErr) {
+      console.error(
+        '[activities] duplicate rollback activity delete error:',
+        cleanupErr,
+      );
+    }
+    throw err;
+  }
+
+  revalidateClassPaths(input.targetClassId);
+  return { activityId: newActivityId };
 }

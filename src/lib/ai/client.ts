@@ -27,7 +27,11 @@ function resolveModel(model: AIModel): string {
 export type GenerateTextOptions = {
   model?: AIModel;
   systemInstruction?: string;
-  prompt: string;
+  /**
+   * Either a plain text prompt OR an array of Gemini Content parts
+   * (e.g. for multipart: [{fileData: ...}, {text: ...}]).
+   */
+  prompt: string | unknown[];
   /** If provided, Gemini will be forced to return JSON matching this schema. */
   responseSchema?: Record<string, unknown>;
   /** Lower = more deterministic. Default 0.7. */
@@ -66,7 +70,9 @@ export async function generateText(
     try {
       const res = await client.models.generateContent({
         model: modelName,
-        contents: opts.prompt,
+        // Cast through unknown to satisfy both string and Content[] shapes.
+        // String callers behave exactly as before.
+        contents: opts.prompt as unknown as string,
         config,
       });
 

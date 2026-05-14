@@ -14,9 +14,12 @@ import {
   Download,
   FileText,
   Paperclip,
+  Sparkles,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
+import AIReviewerModal from '@/components/teacher/ai/AIReviewerModal';
+import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import {
   type LessonDetail,
@@ -61,6 +64,14 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // AI reviewer state
+  const [aiReviewerOpen, setAiReviewerOpen] = useState(false);
+  const [pendingAiGenerationId, setPendingAiGenerationId] = useState<string | null>(null);
+  const [confirmAiOverwrite, setConfirmAiOverwrite] = useState<{
+    markdown: string;
+    generationId: string | null;
+  } | null>(null);
+
   function handleSaveTitle() {
     const trimmed = titleDraft.trim();
     if (!trimmed || trimmed === lesson.title) {
@@ -83,15 +94,40 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
 
   function handleSaveBody() {
     setError(null);
+    const generationId = pendingAiGenerationId;
+    const savedBodyToPublish = body;
     startSaving(async () => {
       try {
         await updateLesson(lesson.id, { body });
         setSavedBody(body);
+        if (generationId) {
+          // Best-effort: never throws.
+          await markAiGenerationPublished(generationId, {
+            body: savedBodyToPublish,
+          });
+          setPendingAiGenerationId(null);
+        }
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to save.');
       }
     });
+  }
+
+  // Called by the reviewer modal on accept. If the lesson already has
+  // body content, prompt before clobbering; otherwise fill directly.
+  function handleAiAccept(markdown: string, generationId: string | null) {
+    if (body.trim().length > 0) {
+      setConfirmAiOverwrite({ markdown, generationId });
+      return;
+    }
+    applyAiDraft(markdown, generationId);
+  }
+
+  function applyAiDraft(markdown: string, generationId: string | null) {
+    setBody(markdown);
+    setPendingAiGenerationId(generationId);
+    setError(null);
   }
 
   function handleTogglePublish() {
@@ -199,6 +235,16 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
             Lesson content
           </h2>
           <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setAiReviewerOpen(true)}
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Generate a study reviewer from PDFs/DOCX"
+            >
+              <Sparkles className="h-3 w-3" />
+              Generate from files
+            </button>
             {isDirty ? (
               <span className="text-amber-600">Unsaved changes</span>
             ) : (
@@ -269,6 +315,31 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
         confirmLabel="Unpublish"
         onConfirm={async () => doTogglePublish(false)}
         onClose={() => setConfirmUnpublish(false)}
+      />
+
+      <AIReviewerModal
+        open={aiReviewerOpen}
+        classId={classId}
+        onClose={() => setAiReviewerOpen(false)}
+        onAccept={handleAiAccept}
+      />
+
+      <ConfirmDialog
+        open={confirmAiOverwrite !== null}
+        title="Replace existing lesson content?"
+        message="This lesson already has content. Accepting the AI draft will overwrite it. The change is not final until you click Save."
+        confirmLabel="Replace"
+        destructive
+        onConfirm={async () => {
+          if (confirmAiOverwrite) {
+            applyAiDraft(
+              confirmAiOverwrite.markdown,
+              confirmAiOverwrite.generationId,
+            );
+            setConfirmAiOverwrite(null);
+          }
+        }}
+        onClose={() => setConfirmAiOverwrite(null)}
       />
     </div>
   );
