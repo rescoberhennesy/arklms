@@ -15,6 +15,12 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Move it here, right at the root of nextConfig
+  outputFileTracingIncludes: {
+    '/api/ai/quiz/export': [
+      './node_modules/pdfkit/js/data/**',
+    ],
+  },
 };
 
 export default nextConfig;

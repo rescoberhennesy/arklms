@@ -776,11 +776,11 @@ When does the notifications trigger:
 (f) Personal-task-due-today → user gets notified
 (g) Teacher uploads new materials (modules/lessons/activities)
 
-Current Project Folder and File Structure
+Current Project Folder and File Structure (u might need this)
 / - folder
 * - file
 
-arkadian_lms:
+(project foler name) arkadian_lms:
 
 /next
 /node_modules
@@ -856,12 +856,28 @@ arkadian_lms:
    *layout.tsx
   /api
    /ai
+    /analytics
+     /activity
+      /diagnostics
+       *route.ts
+      *route.ts
+     /class
+      *route.ts
     /anouncement
      *route.ts
     /feedback
+     /quiz
+      *route.ts
      /submission
       *route.ts
     /ping
+     *route.ts
+    /quiz
+     /generate
+      *route.ts
+     /lessons
+      *route.ts
+    /reviewer
      *route.ts
   /auth
    /callback
@@ -885,7 +901,7 @@ arkadian_lms:
    *CalendarWidget.tsx
    *ClassCover.tsx
    *DashboardBanner.tsx
-   *FullCalendar.tsx
+   *FullCalendarView.tsx
    *MarkdownContent.tsx
    *MarkdownEditor.tsx
    *nav-configs.ts
@@ -938,6 +954,8 @@ arkadian_lms:
   /teacher
    /ai
     *AIDraftPanel.tsx
+    *AIQuizGenerator
+    *AIReviewerModal.tsx
     *AISuggesFeedback.tsx
    /question-editors
     *EssayEditor.tsx
@@ -950,11 +968,13 @@ arkadian_lms:
    *ActivityAttachmentsPanel.tsx
    *ActivityEditor.tsx
    *AddActivityBar.tsx
+   *AnalyticsTab.tsx
    *ClassCard.tsx
    *ClassesView.tsx
    *ClassFormModal.tsx
    *ConfirmDialog.tsx
-   *CopyButton,tsx
+   *CopyButton.tsx
+   *CopyFromClassModal.tsx
    *CoverPhotoUploader.tsx
    *GradebookTab.tsx
    *GradeWeightsModal.tsx
@@ -971,6 +991,7 @@ arkadian_lms:
    *SettingsActions.tsx
    *StudentAnswerView.tsx
    *StudentsTab.tsx
+   *StudentWatchPanel.tsx
    *SubmissionGrader.tsx
  /config
   *navigation.ts
@@ -980,6 +1001,7 @@ arkadian_lms:
  /lib
   /actions
    *activities.ts
+   *admin.ts
    *aiGenerations.ts
    *announcements.ts
    *calendarTokens.ts
@@ -994,13 +1016,17 @@ arkadian_lms:
    *quizzes.ts
   /ai
    /prompts
+    *analytics.ts
     *announcement.ts
     *feedback.ts
+    *quizGenerator.ts
+    *reviewer.ts
    *client.ts
    *errors.ts
    *log.ts
    *rate-limits.ts
    *types.ts
+   *uploadFile.ts
   /hooks
    *useServerSyncedState.ts
   /supabase
@@ -1031,3 +1057,247 @@ arkadian_lms:
  /snippets
  *config.toml
 ...(rest of the files)
+
+
+
+Arkadian LMS (ALMS) — Continuing Development (Session 15)
+
+I'm building Arkadian LMS, a Learning Management System for ARK Technological Institute Education System Inc. Picking up from Session 14. There is also a parallel AI integration track running in separate sessions — see the dedicated section below.
+
+🎯 What was completed in Session 14
+
+Four queue items shipped, all tested and confirmed working in-browser.
+
+Item 1: Personal task improvements ✅ SHIPPED
+
+Completed the work deferred from Session 12. No migration needed — personal_tasks already had every column (completed_at, updated_at, the right partial indexes).
+
+- src/lib/actions/personalTasks.ts — added updatePersonalTask(taskId, patch) (patch-style; `'dueAt' in patch` semantics so an explicit null clears the date, omitting it leaves it alone) and listMyCompletedPersonalTasks(limit=50) (sorted completed_at desc). listMyActivePersonalTasks now also selects completed_at. markPersonalTaskUndone already existed from Session 13 and is now actually wired to UI.
+- src/components/dashboard/PersonalTasksPanel.tsx — full rewrite. Active/Completed filter pills (Completed view fetches on-demand the first time it's opened — the parent to-do widgets only pass active items, so completed tasks are NOT eager-loaded). Edit-in-place via a pencil icon (title, due date with a Clear button, notes; Escape cancels; ISO→local-input conversion handled). Expandable rows show full notes — the old 8rem truncation is gone. Completed rows: strikethrough title, "completed Xh ago", Restore button (markPersonalTaskUndone), Delete-forever.
+- src/lib/types/dashboard.ts — added `completedAt: string | null` to PersonalTaskItem.
+
+Recurring tasks were deliberately NOT done — bigger lift, still deferred.
+
+Item 2: Activity duplicate / "Copy from another class" ✅ SHIPPED
+
+No migration — everything fit existing schema. Storage attachments are deep-copied (independent classes; storage cost accepted).
+
+- src/lib/actions/activities.ts — three new actions: listTeacherClassesForCopy(), listClassActivitiesForCopy(classId), and duplicateActivity({sourceActivityId, targetClassId, targetTerm}). Also a bonus fix: deleteActivity was leaking activity_attachment storage objects on delete (RLS cascade kills DB rows but not storage) — added the cleanup loop.
+- duplicateActivity behavior: copies title (with "(copy)" suffix only on same-class duplicates; cross-class keeps original title), instructions, prompt, activity_kind, max_points, submission_type, allow_late, allow_resubmission, all quiz settings (time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points), all quiz_questions with config jsonb intact, all activity_attachments. Resets: published→false, start_at→now(), due_at→now()+7d, display_order→end of target term. Never copies submissions/attempts/responses/grades.
+- Atomicity: insert activity → insert questions → storage.copy() each attachment + insert attachment rows. On any failure: remove already-copied storage objects, delete the new activity (FK cascade cleans questions + attachment rows), rethrow. Uses Supabase Storage server-side copy() (no download/reupload). Storage path scheme mirrors existing convention: `<target_class_id>/<new_uuid>/<timestamp>-<safe_filename>`.
+- quiz_total_points and max_points are copied directly from source (no recompute needed). Quiz duplication does NOT call assertNotLocked — locking guards editing the source, not reading it to copy.
+- src/components/teacher/CopyFromClassModal.tsx — NEW. 3-step picker: pick source class → pick source activity → pick target term (defaults to source's term). Calls duplicateActivity, navigates to the new activity's editor.
+- src/components/teacher/ActivitiesTab.tsx — full rewrite. Inline Copy icon on each activity card (same-class duplicate → navigates to editor). Top-level "Copy from another class" button next to AddActivityBar → opens the modal.
+
+Item 3: Admin dashboard audit ✅ SHIPPED (Tier 1 + Tier 2 read-only)
+
+Audit finding correction: my initial "C1 critical — no admin auth gate" was overstated. src/lib/supabase/middleware.ts ALREADY does role-based protection (redirects /admin for non-admins, /teacher for non-teachers, /student for non-students). The admin layout I added is defense-in-depth, not the sole gate — harmless and kept.
+
+- src/app/(dashboard)/admin/layout.tsx — NEW. Shared guard for all /admin/* routes; re-checks role==='admin', fails closed (redirect /unauthorized on any error/missing profile/non-admin). Belt-and-suspenders on top of the middleware.
+- src/lib/actions/admin.ts — NEW. getAdminDashboardStats() (teacher/student/admin counts + active/archived class counts, all parallel, surfaces errors instead of silently showing 0), listAllStudents() (profiles + per-student enrollment count), listAllTeachers() (profiles + per-teacher total/active class count). All assume admin caller (route layer + RLS both enforce).
+- src/app/(dashboard)/admin/dashboard/page.tsx — rewritten: force-dynamic, error handling, light red/white theme. THREE stat cards only: Registered Teachers, Registered Students, Active Classes. (The user explicitly had me remove the Administrators card, remove the Archived Sections card, and rename "Active Sections" → "Active Classes". A dormant "X archived" hint still sits under Active Classes but won't render while archived count is 0.)
+- src/app/(dashboard)/admin/students/page.tsx — was a "Coming soon..." stub, now a real read-only table (name, email, username, enrollment count, joined date). Light theme, force-dynamic, error + empty states.
+- src/app/(dashboard)/admin/teachers/page.tsx — same treatment (name, email, username, class count showing active / total, joined date).
+- admin/sections/page.tsx — DELIBERATELY NOT TOUCHED. Still its old stub. User explicitly deferred it.
+
+Item 4: "Last seen" / "Last activity" indicators ✅ SHIPPED (after a 3-attempt debugging arc — read the bugs section)
+
+- Migration 20260514000000_profiles_last_active.sql — adds profiles.last_active_at (timestamptz, nullable, no index — never queried by, only selected as a column and updated by PK).
+- Migration 20260514010000_touch_last_active.sql — adds touch_last_active() SECURITY DEFINER function. See Bug 3 below for WHY this exists instead of a direct UPDATE.
+- src/lib/supabase/middleware.ts — after the role-protection block, fires `void supabase.rpc('touch_last_active')` fire-and-forget (not awaited, error-sunk) for any authenticated user on a protected route. NO throttle — unconditional call every protected navigation; at ALMS scale a few RPC calls/min is negligible and avoids fragile filter logic.
+- src/lib/actions/enrollments.ts — listClassRoster now selects last_active_at on the student join and returns it on each row.
+- src/components/teacher/StudentsTab.tsx — roster table has a new "Last active" column: colored dot (green if active <24h, gray if older, hollow if never) + relative text ("Xm ago" / "Xh ago" / "Xd ago" / date / "Never"). Just-approved students get last_active_at: null optimistically.
+
+🐛 Bugs found + fixed (Session 14)
+
+Bug 1: Migration tracker drift, again (parallel AI track). supabase migration up refused to apply 20260514000000 because 20260513150349_add_feedback_to_quiz_attempts.sql (an AI-track migration) was on disk but never recorded in supabase_migrations.schema_migrations — leaving a gap. Diagnosed it was Case A (the feedback column already existed on quiz_attempts — the migration's effect WAS applied, just not tracked). Fixed with the Bug-2-from-Session-13 repair pattern: manually INSERT the tracker row, then `supabase migration up` applied only the new migration cleanly. The file itself is idempotent (`add column if not exists`) so re-running would've been safe anyway, but recording-as-applied is the correct fix. Lesson: this is the SECOND time the AI track caused tracker drift. The pre-migration check protocol works and caught it — but the AI track keeps writing migrations without recording them. See coordination note below.
+
+Bug 2: `.or()` with a timestamp in the filter string silently matched zero rows. First cut of the last_active_at middleware update used `.or('last_active_at.is.null,last_active_at.lt.' + isoString)` as a self-throttle. PostgREST's `.or()` string parser chokes on the `:` characters in an ISO timestamp; the filter matched nothing, the UPDATE no-op'd, fire-and-forget swallowed it. Lesson: never put a raw ISO timestamp inside a PostgREST `.or()` filter string. If you need a timestamp comparison in a throttle, do it in SQL (RPC) where comparison actually works — or drop the throttle.
+
+Bug 3: profiles has NO self-service FOR UPDATE RLS policy. After removing the `.or()`, an unconditional `.update({last_active_at}).eq('id', user.id)` STILL didn't write. Root cause: the middleware's Supabase client runs as the user (anon key + user cookies) under RLS, and profiles' only UPDATE policy is "Admins can update all profiles". profiles_self_service is FOR SELECT, not UPDATE — I'd assumed it covered update from the name. A regular user's UPDATE matched zero rows and silently no-op'd. Fix: 20260514010000_touch_last_active.sql — a SECURITY DEFINER function that bypasses RLS but can ONLY ever set last_active_at for auth.uid(). NOT a blanket self-update RLS policy, because Postgres RLS restricts which ROWS an UPDATE touches, not which COLUMNS — a blanket policy would let a student rewrite their own `role` to 'admin' (privilege escalation). The function is the entire attack surface and does exactly one harmless thing. Lesson: before assuming a user can write their own row, check `SELECT polname, polcmd FROM pg_policy WHERE polrelid = '<table>'::regclass` — polcmd, not the policy name. r=select, w=update, a=insert, d=delete, *=all. For "let a user touch one specific field of their own row," a SECURITY DEFINER RPC is the correct pattern.
+
+📁 Files added/modified Session 14
+
+src/
+├── lib/
+│   ├── actions/
+│   │   ├── personalTasks.ts (modified: updatePersonalTask + listMyCompletedPersonalTasks)
+│   │   ├── activities.ts (modified: listTeacherClassesForCopy, listClassActivitiesForCopy,
+│   │   │                  duplicateActivity; deleteActivity storage-cleanup fix)
+│   │   ├── enrollments.ts (modified: listClassRoster selects/returns last_active_at)
+│   │   └── admin.ts ✅ (NEW)
+│   ├── supabase/
+│   │   └── middleware.ts (modified: touch_last_active RPC call on protected nav)
+│   └── types/
+│       └── dashboard.ts (modified: completedAt on PersonalTaskItem)
+├── app/
+│   └── (dashboard)/
+│       └── admin/
+│           ├── layout.tsx ✅ (NEW — shared admin guard)
+│           ├── dashboard/page.tsx (rewritten: real stats, light theme, force-dynamic)
+│           ├── students/page.tsx (rewritten: real read-only table)
+│           └── teachers/page.tsx (rewritten: real read-only table)
+│           └── sections/page.tsx (UNTOUCHED — still a stub, deferred)
+└── components/
+    ├── dashboard/
+    │   └── PersonalTasksPanel.tsx (rewritten: filter pills, edit-in-place, expand)
+    └── teacher/
+        ├── ActivitiesTab.tsx (rewritten: inline Copy icon + "Copy from another class")
+        ├── CopyFromClassModal.tsx ✅ (NEW)
+        └── StudentsTab.tsx (modified: "Last active" column)
+
+supabase/migrations/
+├── 20260514000000_profiles_last_active.sql ✅ (NEW)
+└── 20260514010000_touch_last_active.sql ✅ (NEW)
+
+🤖 AI Integration Track (PARALLEL WORK — important context)
+
+There is a separate AI integration effort running in parallel sessions. State at start of Session 15 (unchanged by Session 14 — Session 14 touched no AI files):
+
+Already shipped:
+- AI infrastructure (src/lib/ai/, @google/genai SDK, gemini-2.5-flash model, rate limiting, audit trail in ai_generations, usage log in ai_usage_log)
+- Feature 6: Announcement Writer — in StreamView.tsx Composer, publishes via createAnnouncement so notification fan-out works
+- Feature 5 Part 1: Submission Feedback Generator — in SubmissionGrader.tsx, saves via gradeSubmission
+- quiz_attempts.feedback column exists (migration 20260513150349) — see Bug 1; the migration is now properly tracked
+
+Migrations from AI track:
+- 20260513150349_add_feedback_to_quiz_attempts.sql (tracker row was MISSING — repaired in Session 14 Bug 1, now recorded)
+- 20260513173404_ai_foundation.sql
+- 20260513175713_ai_usage_log_insert_policy.sql
+
+Key files to NOT touch without coordination:
+- src/lib/ai/* (entire AI infrastructure)
+- src/lib/ai/prompts/* (per-feature Gemini prompts)
+- src/lib/actions/aiGenerations.ts (audit trail actions)
+- src/app/api/ai/* (Gemini-backed routes)
+- src/components/teacher/ai/* (AI compound components)
+
+Files modified by both tracks (be careful):
+- src/components/dashboard/StreamView.tsx — AI Draft composer
+- src/components/teacher/SubmissionGrader.tsx — AI feedback
+- src/lib/actions/announcements.ts — Session 13 notification fan-out
+
+Pending AI work (separate sessions, not Session 15's job unless explicitly requested):
+- Feature 5 Part 2: Quiz attempt feedback (the quiz_attempts.feedback column already exists for this)
+- Feature 2: Reviewer / study material generator (first feature with file uploads)
+- Feature 1: Quiz generator (most complex; multi-question-kind structured output)
+- Feature 3: Activity suggester + rubric generator
+- Feature 4: Analytics + recommendation engine (thesis-critical 3rd objective)
+
+Coordination protocol for parallel tracks: Before modifying any "key files to NOT touch" or "modified by both tracks" file, the active session asks the user to confirm the file is current — user cats it fresh, does NOT paste from memory. AND (NEW, see Bug 1): the AI track keeps writing migrations without recording the tracker row. Whoever runs AI sessions should, after `supabase migration up`, confirm the tracker row was actually inserted — or stop hand-running migrations and let them go through the normal flow. The pre-migration drift check (below) is now mandatory at the start of any session that will write a migration.
+
+📋 Important contracts and gotchas (cumulative + new)
+
+All Session 4–13 constraints still apply, plus everything from "Bugs found" above, plus these:
+
+- profiles has NO self-service UPDATE RLS policy. A user CANNOT update their own profile row directly through the RLS'd client. last_active_at is updated via the touch_last_active() SECURITY DEFINER RPC. If a future feature needs a user to edit their own profile (e.g. change display name, avatar), it needs EITHER a carefully column-scoped approach (SECURITY DEFINER RPC per field, or an UPDATE policy + a BEFORE UPDATE trigger that rejects changes to role/email/calendar_token) — NOT a blanket "users can update their own profile" policy. That policy would be a privilege-escalation hole because RLS can't restrict columns.
+- touch_last_active() is the ONLY current SECURITY DEFINER write-path outside of pre-existing RPCs. It only ever sets last_active_at for auth.uid(). Don't extend it to touch other columns — if you need more, write a separate scoped function.
+- last_active_at update is unthrottled. Every protected-route navigation by any authenticated user fires touch_last_active(). This also bumps profiles.updated_at via the existing trigger on every navigation — harmless (updated_at isn't load-bearing) but be aware. If write volume ever becomes a concern (it won't at this scale), add an interval check INSIDE the SQL function, not in the PostgREST client.
+- last_active_at tracked for ALL roles, displayed only for students. The middleware updates it for admin/teacher/student alike; only StudentsTab renders it. The data is there if you ever want "last active" on the admin teacher list etc.
+- Never put a raw ISO timestamp inside a PostgREST .or() / .filter() string. The `:` chars break the parser silently. Timestamp comparisons go in SQL.
+- duplicateActivity uses Supabase Storage copy() (server-side, no download/reupload). Storage path scheme for any new activity-attachment work: `<class_id>/<uuid>/<timestamp>-<safe_filename>` where safe_filename is `file_name.replace(/[^a-zA-Z0-9._-]/g, '_')`.
+- deleteActivity now also cleans up activity_attachments storage objects (was leaking them — RLS cascade only kills DB rows). If you add another path that deletes activities, mirror this.
+- Admin pages assume the caller is admin. middleware.ts gates /admin/* by role AND admin/layout.tsx re-checks. admin.ts actions don't re-check role (rely on those two layers + RLS). Keep that invariant — don't add an /admin/* page that does its own un-gated data fetch.
+- admin/sections/page.tsx is still a stub. Deferred by user decision. The /admin/* guard still protects it.
+- The Session 13 contracts all still hold: SUPABASE_SERVICE_ROLE_KEY required (calendar .ics route only), notifications insert policy is permissive, notify* inserters swallow errors, useServerSyncedState is list/object-prop-sync ONLY (not for ActivityEditor/QuizEditor paired-draft pattern), xlsx-js-style NOT xlsx for exports, calendar fetch contract uses getStudentCalendarItems/getTeacherCalendarItems.
+
+MANDATORY pre-migration drift check (run at the start of ANY session that will write a migration):
+```
+ls supabase/migrations/ | tail -5
+docker exec -i $(docker ps -q -f name=supabase_db) psql -U postgres -d postgres -c "SELECT version FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 5;"
+```
+The file list and tracker rows must match. If a file exists on disk but not in the tracker (AI-track drift), diagnose first:
+- Check whether the migration's effect is already in the DB (e.g. `\d <table>` for the column it adds).
+- If YES (effect present, tracker row missing) → manual repair, then `supabase migration up`:
+  ```
+  INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
+  VALUES ('<timestamp>', '<name>', ARRAY['-- manually marked applied'])
+  ON CONFLICT (version) DO NOTHING;
+  ```
+- If NO (effect genuinely missing) → `supabase migration up --include-all` is appropriate.
+Never run --include-all blindly without checking which case you're in.
+
+🎯 What's next — Session 15 priorities
+
+Remaining from the Session 14 queue:
+
+1. Notification follow-ups (item 5 from Session 14, never started) — a grab-bag, pick pieces:
+   - Per-type mute (user can disable e.g. comment notifications) — needs a small notification_preferences table or a jsonb column on profiles, plus a check in each notify* inserter
+   - Settings page surface for notification preferences
+   - Realtime updates via Supabase Realtime channel (deferred since Session 13 — the bell currently only re-fetches on page navigation, no live updates)
+   - QuizLanding / QuizPostSubmit attachment rendering (deferred "cheap-path" call from Session 13 — attachments don't render on those two quiz screens)
+
+2. Admin sections page — the deliberately-deferred /admin/sections/page.tsx is still a "Coming soon..." stub. A read-only class/section list (mirroring the students/teachers pages built in Session 14) would close the last admin hole. Low-stakes, well-scoped, ~30–45 min.
+
+3. Recurring personal tasks ("every Friday") — deferred since Session 12, still standing. Bigger lift: needs a recurrence model on personal_tasks (rrule-ish or a simpler interval enum), generation logic, and UI. Defer again unless explicitly wanted.
+
+4. Admin mutation actions — Session 14 admin pages are READ-ONLY. Promote/demote/delete users is a natural next step but was deliberately scoped out — it needs careful confirm-dialogs, "can't demote/delete yourself" guards, and thought about the profiles RLS (admins CAN update/delete profiles per existing policy, so the RLS is already there — it's the UX safety rails that need work).
+
+5. AI track work — only if an AI session is paused AND the user explicitly requests it.
+
+Suggested priority order:
+1. Admin sections page (well-scoped, closes the last admin stub, mirrors work already done)
+2. Notification follow-ups — pick QuizLanding/QuizPostSubmit attachment rendering first (smallest, pure UI) and per-type mute second (most user-visible value)
+3. Realtime notifications — only if 1–2 finish with time to spare; it's the highest-effort notification item
+4. Admin mutation actions / recurring tasks — only if everything else is done
+
+⚠️ Demo-prep + thesis concerns (cumulative — not Session 15's job unless raised)
+
+- Demo rehearsal time isn't budgeted. Allocate a full day near defense date for pre-generated AI examples (Gemini API can hiccup), stress-testing rate limits, walking the full flow.
+- Thesis metrics from ai_generations. Edit-rate (raw_output vs edited_output) is a real research finding. Query it once usage data exists.
+- Student-facing AI disclosure ethics. Should students see "AI-drafted, teacher-reviewed" on feedback/announcements? Pick a position before defense.
+- Feature 4 (analytics) is the thesis-critical 3rd objective. Start it earlier than feels comfortable — depends on real student data which needs seeding for demo. NOTE: last_active_at (shipped Session 14) is now available as one engagement signal for the analytics feature.
+- Migration tracker drift has happened twice (Session 13 Bug 2, Session 14 Bug 1), both from the AI track. Before the defense, do a full reconciliation pass: `ls supabase/migrations/` vs the tracker, top to bottom, confirm they match exactly. A drift discovered during a live demo would be bad.
+
+🛠️ Tech Stack & Setup (unchanged)
+
+- Next.js 16 (App Router, Turbopack) + TypeScript
+- Tailwind CSS + custom red/white theme
+- Supabase local CLI (supabase start). Direct SQL: docker exec -i $(docker ps -q -f name=supabase_db) psql -U postgres -d postgres
+- Auth: Microsoft Entra ID via Supabase OAuth
+- pnpm
+- OS: Linux at /home/eiah/Capstone/arkadian_lms
+- Project structure: src/ with @/* → ./src/*
+- Middleware at src/proxy.ts (thin wrapper) → src/lib/supabase/middleware.ts (actual logic)
+- Auth callback at src/app/auth/callback/route.ts
+- Excel: xlsx-js-style (NOT xlsx)
+- AI: @google/genai 2.2.0, model gemini-2.5-flash — coordinated via parallel AI track
+
+🗄️ Current Database State (Session 14 end)
+
+Tables: profiles, classes, class_enrollments, class_join_requests, class_announcements, announcement_comments, class_modules, module_lessons, lesson_attachments, activities, activity_submissions, submission_attachments, activity_grades, class_grade_weights, quiz_questions, quiz_attempts, quiz_responses, activity_attachments, personal_tasks, notifications, ai_generations, ai_usage_log.
+
+New in Session 14:
+- profiles.last_active_at (timestamptz, nullable, no index)
+- touch_last_active() SECURITY DEFINER function
+
+Migration tracker note: 20260513150349_add_feedback_to_quiz_attempts (AI track) had its tracker row manually inserted during Session 14 Bug 1 repair — it is now properly recorded. As of Session 14 end the tracker and the migrations directory should match. Re-verify at the start of Session 15 with the mandatory drift check.
+
+profiles current columns: id, email, full_name, username, avatar_url, role, institution, created_at, updated_at, calendar_token, last_active_at.
+
+⚠️ How to give me code (Session 15)
+
+Same as Session 14, with the markdown-wrap point promoted because it mattered this session:
+
+- ALWAYS markdown-wrap .tsx/.ts as .md with ```tsx / ```ts fenced code blocks — the user cannot reliably render raw .tsx/.ts inline. This is not optional; plain .tsx output was unreadable for them this session.
+- Whole-file paste/replacement for any TSX. Never heredoc for TSX.
+- For server-side .ts: heredocs OK; avoid Promise<Array<{...}>>.
+- Just put the whole code, don't tell the user to make small edits.
+- For multi-file changes: dump everything in one message, or in labeled batches.
+- Don't run the user's code through other AIs.
+- For migration apply or smoke-test runs, GIVE EVERYTHING IN ONE MESSAGE.
+- Before writing SQL referencing tables outside this session's work, ask the user to run \d <table> first.
+- For RLS-affecting work, ALSO check the policy COMMANDS, not just names: `SELECT polname, polcmd FROM pg_policy WHERE polrelid = '<table>'::regclass` (Session 14 Bug 3 — a policy named *_self_service was select-only, not update).
+- For component prop signatures, ALWAYS check the actual file before guessing.
+- When the user pastes an existing file, treat it as authoritative.
+- For new SQL trigger functions: use clock_timestamp() for updated_at columns, not now().
+- Server-component → client-component props: JSON-serializable only. No function props.
+- For Python heredocs that emit JS string-escapes: use raw triple-quoted strings or write to a temp file, NOT heredoc-with-escapes (Session 13 Bug 1).
+- RUN THE MANDATORY PRE-MIGRATION DRIFT CHECK before writing any migration (see Important Contracts above). The AI track has caused tracker drift twice now.
+- Never put a raw ISO timestamp inside a PostgREST .or()/.filter() string (Session 14 Bug 2).
+- DO NOT modify AI-track files without confirming with the user first: src/lib/ai/*, src/lib/ai/prompts/*, src/lib/actions/aiGenerations.ts, src/app/api/ai/*, src/components/teacher/ai/*.
+- DO NOT use xlsx for new spreadsheet exports — use xlsx-js-style.
+- DO NOT bypass RLS with service-role except for the calendar .ics route. New SECURITY DEFINER functions are OK when properly scoped (like touch_last_active) but require the same scrutiny — the function body is the entire attack surface.
+- Audit/review tasks: do a bounded findings-report pass FIRST (read + report, severity-ranked), let the user choose what to fix, THEN fix. Don't sprawl. (This worked well for the admin audit in Session 14.)
+
+Session 14 in numbers: 4 queue items shipped, 2 new migrations, 2 new server-action files, 2 new components, 3 bugs caught + codified (1 migration drift, 2 in the last_active_at debugging arc), 1 incorrect audit finding self-corrected, ~13 file touches. The last_active_at feature took 3 attempts (filter bug → RLS gap → SECURITY DEFINER RPC) — the lesson got codified. 🎉

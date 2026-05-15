@@ -3,8 +3,10 @@ import { notFound, redirect } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { getStudentClassById } from '@/lib/actions/enrollments';
 import { getLesson } from '@/lib/actions/modules';
+import { listFlashcardDecksForLesson } from '@/lib/actions/flashcards';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StudentLessonView from '@/components/student/StudentLessonView';
+import { FlashcardDeckLauncher } from '@/components/student/FlashcardStudyMode';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +41,11 @@ export default async function StudentLessonPage({ params }: PageProps) {
   }
   if (lesson.class_id !== classId) notFound();
 
+  // RLS filters unpublished decks for students — this returns only decks
+  // where (deck.published = true AND lesson.published = true) for this
+  // student's enrollment.
+  const flashcardDecks = await listFlashcardDecksForLesson(lessonId);
+
   return (
     <div className="space-y-6">
       <SetPageTitle title={lesson.title} />
@@ -50,6 +57,10 @@ export default async function StudentLessonPage({ params }: PageProps) {
         Back to {klass.name}
       </Link>
       <StudentLessonView lesson={lesson} />
+
+      {flashcardDecks.length > 0 && (
+        <FlashcardDeckLauncher decks={flashcardDecks} />
+      )}
     </div>
   );
 }

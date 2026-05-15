@@ -84,7 +84,7 @@ export default function CalendarWidget({
 
   // Group both activities and tasks by local date key for fast lookup.
   const byDateKey = useMemo(() => {
-    const map = new Map <
+    const map = new Map<
       string,
       { activities: CalendarActivity[]; tasks: CalendarPersonalTask[] }
     >();
@@ -157,7 +157,7 @@ export default function CalendarWidget({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[8rem] text-center text-sm font-medium text-gray-800">
+          <span className="min-w-[7rem] text-center text-sm font-medium text-gray-800">
             {formatMonthLabel(year, month0)}
           </span>
           <button
@@ -189,6 +189,7 @@ export default function CalendarWidget({
         </div>
       )}
 
+      {/* Day-of-week headers — same 7-col grid as the cell grid */}
       <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-gray-400">
         {weekdays.map((w) => (
           <div key={w}>{w}</div>
@@ -209,7 +210,8 @@ export default function CalendarWidget({
               type="button"
               onClick={() => setSelectedDateKey(isSelected ? null : day.dateKey)}
               className={[
-                'relative aspect-square min-h-[2.25rem] rounded-md text-xs transition',
+                // Flex column: number on top (centered), dots row at bottom.
+                'flex aspect-square min-h-[2.25rem] flex-col items-center justify-center gap-0.5 rounded-md text-xs transition',
                 day.inCurrentMonth ? 'text-gray-700' : 'text-gray-300',
                 day.isToday ? 'ring-1 ring-red-500' : '',
                 isSelected
@@ -221,11 +223,11 @@ export default function CalendarWidget({
               aria-label={`${day.dateKey}${hasAnything ? `, ${items.length + tasks.length} item(s)` : ''}`}
               aria-pressed={isSelected}
             >
-              <span className="absolute left-1 top-1 font-medium">
+              <span className="font-medium leading-none">
                 {day.date.getDate()}
               </span>
               {hasAnything && (
-                <span className="absolute inset-x-0 bottom-1 flex justify-center gap-0.5">
+                <span className="flex h-1.5 items-center justify-center gap-0.5">
                   {items.slice(0, 3).map((a, i) => (
                     <DayDot
                       key={`a${i}`}
@@ -237,7 +239,7 @@ export default function CalendarWidget({
                     <DayDot key={`t${i}`} colorHex={TASK_DOT_COLOR} isDraft={false} />
                   ))}
                   {items.length + tasks.length > totalDots && (
-                    <span className="text-[9px] font-bold text-gray-500">
+                    <span className="text-[9px] font-bold leading-none text-gray-500">
                       +{items.length + tasks.length - totalDots}
                     </span>
                   )}

@@ -16,6 +16,7 @@ import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import { createClient } from '@/lib/supabase/server';
 import CalendarWidget from '@/components/dashboard/CalendarWidget';
 import TeacherTodoWidget from '@/components/dashboard/TeacherTodoWidget';
+import ClassDeadlinesWidget from '@/components/dashboard/ClassDeadlinesWidget';
 import AnnouncementsWidget from '@/components/dashboard/AnnouncementsWidget';
 import DashboardBanner from '@/components/dashboard/DashboardBanner';
 import StatCardsRow from '@/components/dashboard/StatCardsRow';
@@ -130,6 +131,7 @@ export default async function TeacherDashboardPage() {
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* LEFT: Your Classes → Class Deadlines → Quick Actions */}
         <div className="space-y-6 lg:col-span-2">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
@@ -162,9 +164,12 @@ export default async function TeacherDashboardPage() {
             )}
           </section>
 
+          <ClassDeadlinesWidget items={todoItems} />
+
           <QuickActionsRow />
         </div>
 
+        {/* RIGHT: Calendar → To-do (grading) → Announcements */}
         <aside className="space-y-4 lg:col-span-1">
           <CalendarWidget
             initialData={calendarData}

@@ -16,6 +16,7 @@ import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
 import { StudentsTab } from '@/components/teacher/StudentsTab';
 import ModulesTab from '@/components/teacher/ModulesTab';
 import ActivitiesTab from '@/components/teacher/ActivitiesTab';
+import TeacherProgressStrip from '@/components/teacher/TeacherProgressStrip';
 import GradebookTab from '@/components/teacher/GradebookTab';
 import AnalyticsTab from '@/components/teacher/AnalyticsTab';
 import {
@@ -204,13 +205,18 @@ export default async function ClassDetailPage({
         {tab === 'modules' && (
           <ModulesTab classId={klass.id} initialModules={modules} />
         )}
+
         {tab === 'activities' && (
-          <ActivitiesTab
-            classId={klass.id}
-            activities={activities}
-            roster={activitiesRoster}
-          />
+          <div className="space-y-4">
+            <TeacherProgressStrip classId={klass.id} />
+            <ActivitiesTab
+              classId={klass.id}
+              activities={activities}
+              roster={activitiesRoster}
+            />
+          </div>
         )}
+
         {tab === 'students' && (
           <StudentsTab
             classId={klass.id}

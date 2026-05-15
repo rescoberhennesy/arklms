@@ -7,6 +7,7 @@ import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StreamView from '@/components/dashboard/StreamView';
 import StudentModulesView from '@/components/student/StudentModulesView';
 import StudentActivitiesTab from '@/components/student/StudentActivitiesTab';
+import StudentProgressStrip from '@/components/student/StudentProgressStrip';
 import StudentGradebookView from '@/components/student/StudentGradebookView';
 import { listAnnouncements } from '@/lib/actions/announcements';
 import { listModulesWithLessons } from '@/lib/actions/modules';
@@ -154,8 +155,11 @@ export default async function StudentClassDetailPage({
         {tab === 'modules' && (
           <StudentModulesView classId={klass.id} modules={modules} />
         )}
-        {tab === 'activities' && (
-          <StudentActivitiesTab classId={klass.id} activities={activities} />
+       {tab === 'activities' && (
+          <div className="space-y-4">
+            <StudentProgressStrip classId={klass.id} />
+            <StudentActivitiesTab classId={klass.id} activities={activities} />
+          </div>
         )}
         {tab === 'grades' && gradesView && (
           <StudentGradebookView view={gradesView} />

@@ -3,13 +3,14 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import type {
-  ClassFormInput,
-  ClassRow,
-  TeacherClassListItem,
-  InviteExpirationHours,
-  Semester,
-  ActionResult,
+import {
+  CLASS_COLORS,
+  type ClassFormInput,
+  type ClassRow,
+  type TeacherClassListItem,
+  type InviteExpirationHours,
+  type Semester,
+  type ActionResult,
 } from '@/types/class';
 
 // --------------------------------------------------------------------------
@@ -23,11 +24,6 @@ async function requireAuthUserId() {
     error,
   } = await supabase.auth.getUser();
   if (error || !user) redirect('/');
-
-  // TEMP DIAGNOSTIC — remove after
-    const { data: uidInInsert } = await supabase.rpc('whoami_uid');
-    console.log('[createClass] auth.uid() right before insert:', uidInInsert);
-
   return { supabase, userId: user.id };
 }
 
@@ -194,6 +190,41 @@ export async function updateClass(id: string, input: ClassFormInput): Promise<Ac
   }
 }
 
+export async function updateClassColor(
+  id: string,
+  color: string,
+): Promise<ActionResult<ClassRow>> {
+  try {
+    const { supabase } = await requireAuthUserId();
+
+    // Sanity check: the chosen color must be one of the preset palette
+    // values. Done client-side too, but cheap to enforce here so a crafted
+    // request can't write an arbitrary string into the color field.
+    const valid = (CLASS_COLORS as readonly string[]).includes(color);
+    if (!valid) {
+      return { ok: false, error: 'Invalid color' };
+    }
+
+    const { data, error } = await supabase
+      .from('classes')
+      .update({ color })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    revalidatePath('/teacher/classes');
+    revalidatePath(`/teacher/classes/${id}`);
+    revalidatePath(`/teacher/classes/${id}/settings`);
+    revalidatePath('/teacher/dashboard');
+    return { ok: true, data: data as ClassRow };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to update color';
+    return { ok: false, error: msg };
+  }
+}
+
 export async function setClassArchived(id: string, archived: boolean): Promise<ActionResult> {
   try {
     const { supabase } = await requireAuthUserId();
@@ -255,78 +286,6 @@ export async function setInviteCodeDisabled(classId: string, disabled: boolean):
     return { ok: true, data: undefined };
   } catch (e: any) {
     return { ok: false, error: e.message || 'Failed to toggle invite code' };
-  }
-}
-// --------------------------------------------------------------------------
-// Cover photo
-// --------------------------------------------------------------------------
-
-/**
- * Persist a new cover_photo_url on a class, or clear it.
- * The actual upload to Supabase Storage happens client-side (the bucket's
- * RLS policies gate it). This action just records the resulting public URL.
- *
- * Pass `null` to remove the cover; the storage object is also deleted so we
- * don't leak orphans. Pass a URL to set/replace.
- *
- * Note: when *replacing* a cover, the client overwrites the same storage path
- * (`<class_id>/cover.<ext>`) with `upsert: true`, so no orphan cleanup is
- * needed in the replace case. Only the explicit-remove path deletes the file.
- */
-export async function setClassCoverUrl(
-  classId: string,
-  url: string | null,
-): Promise<ActionResult<{ cover_photo_url: string | null }>> {
-  try {
-    const { supabase } = await requireAuthUserId();
-
-    // If clearing, also delete the storage object(s) for this class.
-    // We list the folder and remove whatever's there -- this handles the
-    // case where the extension might have changed across uploads.
-    if (url === null) {
-      const { data: list, error: listErr } = await supabase
-        .storage
-        .from('class-covers')
-        .list(classId);
-
-      if (listErr) {
-        return { ok: false, error: listErr.message };
-      }
-
-      if (list && list.length > 0) {
-        const paths = list.map((f) => `${classId}/${f.name}`);
-        const { error: rmErr } = await supabase
-          .storage
-          .from('class-covers')
-          .remove(paths);
-        if (rmErr) {
-          return { ok: false, error: rmErr.message };
-        }
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('classes')
-      .update({ cover_photo_url: url })
-      .eq('id', classId)
-      .select('cover_photo_url')
-      .single();
-
-    if (error) {
-      return { ok: false, error: error.message };
-    }
-
-    revalidatePath('/teacher/classes');
-    revalidatePath(`/teacher/classes/${classId}`);
-    revalidatePath('/teacher/dashboard');
-
-    return {
-      ok: true,
-      data: { cover_photo_url: data.cover_photo_url as string | null },
-    };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Failed to update cover photo';
-    return { ok: false, error: msg };
   }
 }
 

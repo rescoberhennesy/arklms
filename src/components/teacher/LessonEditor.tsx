@@ -19,6 +19,8 @@ import {
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import AIReviewerModal from '@/components/teacher/ai/AIReviewerModal';
+import AIQualityPanel from '@/components/teacher/ai/AIQualityPanel';
+import FlashcardDeckPanel from '@/components/teacher/ai/FlashcardDeckPanel';
 import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import {
@@ -273,6 +275,10 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
           disabled={isSaving}
         />
       </section>
+
+      {/* AI quality analysis — read-only diagnostic, never mutates the lesson */}
+      <AIQualityPanel lessonId={lesson.id} />
+      <FlashcardDeckPanel lessonId={lesson.id} />
 
       {/* Attachments */}
       <AttachmentsSection

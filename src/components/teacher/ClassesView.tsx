@@ -14,7 +14,7 @@ import {
   deleteClass,
   reorderMyClasses,
 } from '@/lib/actions/classes';
-import type { ClassFormInput, ClassRow, TeacherClassListItem } from '@/types/class';
+import type { ClassFormInput, TeacherClassListItem } from '@/types/class';
 import SortableClassGrid from '@/components/dashboard/SortableClassGrid';
 import SortableItem from '@/components/dashboard/SortableItem';
 
@@ -95,7 +95,7 @@ export function ClassesView({
     }
   }
 
-  async function handleSubmit(input: ClassFormInput): Promise<ClassRow> {
+  async function handleSubmit(input: ClassFormInput) {
     if (formState.kind === 'edit') {
       const res = await updateClass(formState.cls.id, input);
       if (!res.ok) throw new Error(res.error);
@@ -108,7 +108,6 @@ export function ClassesView({
         ),
       );
       showToast('Class updated');
-      return updated;
     } else {
       const res = await createClass(input);
       if (!res.ok) throw new Error(res.error);
@@ -116,7 +115,6 @@ export function ClassesView({
       const newItem: TeacherClassListItem = { ...created, enrolled_count: 0 };
       setClasses((prev) => [newItem, ...prev]);
       showToast('Class created');
-      return created;
     }
   }
 

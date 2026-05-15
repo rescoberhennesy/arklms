@@ -11,6 +11,8 @@ import {
   Eye,
   EyeOff,
   Calendar,
+  FileDown,
+  ChevronDown,
   Award,
   Plus,
   Lock,
@@ -168,16 +170,12 @@ export default function QuizEditor({
     autoReleaseGrade !== savedAutoReleaseGrade ||
     showCorrectAnswers !== savedShowCorrectAnswers;
 
-  // Add-question UI
   const [addingKind, setAddingKind] = useState<QuestionKind | ''>('');
-
   const [aiGenOpen, setAiGenOpen] = useState(false);
-
-  // Confirms
+  const [exportOpen, setExportOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
 
-  // Prop-sync
   const actSig = activitySignature(activity);
   const cfgSig = quizConfigSignature(initialQuizView);
   const lastActSig = useRef(actSig);
@@ -222,12 +220,10 @@ export default function QuizEditor({
         setAutoReleaseGrade(initialQuizView.config.autoReleaseGrade);
         setShowCorrectAnswers(initialQuizView.config.showCorrectAnswers);
       }
-      // Always resync the questions list + lock + count from server fetch
       setQuizView(initialQuizView);
     }
   }, [actSig, cfgSig, activity, initialQuizView]);
 
-  // ---- Refresh quiz view (after question CRUD) ----
   const refetchQuizView = useCallback(async () => {
     try {
       const next = await getTeacherQuizView(activity.id);
@@ -237,7 +233,7 @@ export default function QuizEditor({
     }
   }, [activity.id]);
 
-  // ---- Handlers ----
+  // ------------------------ Handlers ------------------------
 
   function handleSaveTitle() {
     const trimmed = titleDraft.trim();
@@ -292,13 +288,11 @@ export default function QuizEditor({
 
   function handleSaveSettings() {
     setError(null);
-
     if (!dueLocal) {
       setError('Due date is required.');
       return;
     }
     const dueIso = localToIso(dueLocal);
-
     let timeLimitToSend: number | null = null;
     if (hasTimeLimit) {
       const n = Number(timeLimitMinutes);
@@ -308,14 +302,11 @@ export default function QuizEditor({
       }
       timeLimitToSend = n;
     }
-
     startTransition(async () => {
       try {
-        // Activity-level fields go through updateActivity
         if (dueLocal !== savedDueLocal) {
           await updateActivity(activity.id, { dueAt: dueIso });
         }
-        // Quiz-config fields go through updateQuizConfig
         const configPatch: Record<string, unknown> = {};
         if (
           hasTimeLimit !== savedHasTimeLimit ||
@@ -335,7 +326,6 @@ export default function QuizEditor({
         if (Object.keys(configPatch).length > 0) {
           await updateQuizConfig(activity.id, configPatch);
         }
-
         setSavedDueLocal(dueLocal);
         setSavedHasTimeLimit(hasTimeLimit);
         setSavedTimeLimitMinutes(timeLimitMinutes);
@@ -406,7 +396,7 @@ export default function QuizEditor({
     });
   }
 
-  // ---- Render ----
+  // ------------------------ Render ------------------------
 
   const totalPoints = quizView.questions.reduce((acc, q) => acc + q.points, 0);
   const questionCount = quizView.questions.length;
@@ -419,6 +409,8 @@ export default function QuizEditor({
           {error}
         </div>
       )}
+
+      {/* ============================== FULL-WIDTH HEADER ============================== */}
 
       {/* Title bar */}
       <div className="flex items-start gap-3">
@@ -549,283 +541,352 @@ export default function QuizEditor({
         </div>
       )}
 
-      {/* Description */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Instructions
-          </h2>
-          {descEditing ? (
-            <div className="flex items-center gap-2 text-xs">
-              {isDescDirty ? (
-                <span className="text-amber-600">Unsaved changes</span>
+      {/* ============================== TWO-COLUMN UPPER ============================== */}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* LEFT: Instructions, Questions, Attachments */}
+        <div className="space-y-6 lg:col-span-2">
+          {/* Instructions */}
+          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Instructions
+              </h2>
+              {descEditing ? (
+                <div className="flex items-center gap-2 text-xs">
+                  {isDescDirty ? (
+                    <span className="text-amber-600">Unsaved changes</span>
+                  ) : (
+                    <span className="text-gray-400">No changes</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCancelDescription}
+                    disabled={isPending}
+                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveDescription}
+                    disabled={isPending || !isDescDirty}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Save className="h-3 w-3" />
+                    )}
+                    Save
+                  </button>
+                </div>
               ) : (
-                <span className="text-gray-400">No changes</span>
+                <button
+                  type="button"
+                  onClick={() => setDescEditing(true)}
+                  className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Edit instructions"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
               )}
-              <button
-                type="button"
-                onClick={handleCancelDescription}
-                disabled={isPending}
-                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveDescription}
-                disabled={isPending || !isDescDirty}
-                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
-                Save
-              </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDescEditing(true)}
-              className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-              aria-label="Edit instructions"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
 
-        {descEditing ? (
-          <MarkdownEditor
-            value={instructions}
-            onChange={setInstructions}
-            placeholder="Instructions students see before starting the quiz. Markdown supported."
-            rows={6}
-            disabled={isPending}
-          />
-        ) : savedInstructions.trim() ? (
-          <MarkdownContent body={savedInstructions} />
-        ) : (
-          <p className="text-sm italic text-gray-400">
-            No instructions yet. Click the pencil icon to add some.
-          </p>
-        )}
-      </section>
-
-      {/* Quiz settings */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Quiz settings
-          </h2>
-          {isSettingsDirty && (
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-amber-600">Unsaved changes</span>
-              <button
-                type="button"
-                onClick={handleCancelSettings}
+            {descEditing ? (
+              <MarkdownEditor
+                value={instructions}
+                onChange={setInstructions}
+                placeholder="Instructions students see before starting the quiz. Markdown supported."
+                rows={6}
                 disabled={isPending}
-                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveSettings}
-                disabled={isPending}
-                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
-                Save
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Due date
-            </label>
-            <input
-              type="datetime-local"
-              value={dueLocal}
-              onChange={(e) => setDueLocal(e.target.value)}
-              disabled={isPending}
-              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-            />
-          </div>
-
-          <div className="md:col-span-2 rounded-md border border-gray-200 p-3">
-            <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
-              <input
-                type="checkbox"
-                checked={hasTimeLimit}
-                onChange={(e) => setHasTimeLimit(e.target.checked)}
-                disabled={isPending}
-                className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
               />
-              <Timer className="h-4 w-4 text-gray-500" />
-              Enforce time limit
-            </label>
-            {hasTimeLimit && (
-              <div className="mt-2 flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={timeLimitMinutes}
-                  onChange={(e) => setTimeLimitMinutes(e.target.value)}
+            ) : savedInstructions.trim() ? (
+              <MarkdownContent body={savedInstructions} />
+            ) : (
+              <p className="text-sm italic text-gray-400">
+                No instructions yet. Click the pencil icon to add some.
+              </p>
+            )}
+          </section>
+
+          {/* Questions */}
+          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Questions
+              </h2>
+              <div className="flex items-center gap-2">
+                {/* Export quiz — temporarily disabled. */}
+                {false && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setExportOpen((v) => !v)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none"
+                    >
+                      <FileDown className="h-3.5 w-3.5" />
+                      Export quiz
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </button>
+                    {exportOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setExportOpen(false)}
+                        />
+                        <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                          <a
+                            href={`/api/ai/quiz/export?activityId=${activity.id}&variant=student`}
+                            download
+                            onClick={() => setExportOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          >
+                            <FileDown className="h-4 w-4 text-gray-500" />
+                            Student copy (PDF)
+                          </a>
+                          <a
+                            href={`/api/ai/quiz/export?activityId=${activity.id}&variant=teacher`}
+                            download
+                            onClick={() => setExportOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          >
+                            <FileDown className="h-4 w-4 text-red-500" />
+                            Teacher copy with answers (PDF)
+                          </a>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => setAiGenOpen(true)}
+                    disabled={isPending}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Generate with AI
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {quizView.questions.length === 0 ? (
+              <p className="text-sm italic text-gray-400">
+                No questions yet. Add one below.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {quizView.questions.map((q, idx) => (
+                  <li key={q.id}>
+                    <QuestionEditor
+                      question={q}
+                      index={idx}
+                      locked={locked}
+                      onChanged={refetchQuizView}
+                      onError={setError}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {!locked && (
+              <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3">
+                <select
+                  value={addingKind}
+                  onChange={(e) =>
+                    setAddingKind(e.target.value as QuestionKind | '')
+                  }
                   disabled={isPending}
-                  className="w-24 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-                />
-                <span className="text-sm text-gray-600">minutes</span>
+                  className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                >
+                  <option value="">Choose a question type…</option>
+                  {QUESTION_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {QUESTION_KIND_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddQuestion}
+                  disabled={isPending || !addingKind}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  Add question
+                </button>
               </div>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              Auto-submit when the timer reaches zero. Server enforces the
-              deadline regardless of client clock.
-            </p>
-          </div>
+          </section>
 
-          <label className="inline-flex items-start gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={shuffleQuestions}
-              onChange={(e) => setShuffleQuestions(e.target.checked)}
-              disabled={isPending}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-            />
-            <span>
-              <span className="inline-flex items-center gap-1 font-medium">
-                <Shuffle className="h-3.5 w-3.5 text-gray-500" />
-                Shuffle question order
-              </span>
-              <span className="block text-xs text-gray-500">
-                Each student sees a different question order.
-              </span>
-            </span>
-          </label>
-
-          <label className="inline-flex items-start gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={autoReleaseGrade}
-              onChange={(e) => setAutoReleaseGrade(e.target.checked)}
-              disabled={isPending}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-            />
-            <span>
-              <span className="inline-flex items-center gap-1 font-medium">
-                <CheckCircle2 className="h-3.5 w-3.5 text-gray-500" />
-                Release grade automatically
-              </span>
-              <span className="block text-xs text-gray-500">
-                Students see their score immediately after submitting.
-                Useful for fully auto-graded quizzes.
-              </span>
-            </span>
-          </label>
-
-          <label className="md:col-span-2 inline-flex items-start gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={showCorrectAnswers}
-              onChange={(e) => setShowCorrectAnswers(e.target.checked)}
-              disabled={isPending}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-            />
-            <span>
-              <span className="font-medium">
-                Show correct answers after submission
-              </span>
-              <span className="block text-xs text-gray-500">
-                Reveals correct answers on the post-submission review screen.
-              </span>
-            </span>
-          </label>
-        </div>
-      </section>
-
-     {/* Questions */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Questions
-          </h2>
-          {!locked && (
-            <button
-              type="button"
-              onClick={() => setAiGenOpen(true)}
-              disabled={isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Generate with AI
-            </button>
-          )}
+          {/* Attachments */}
+          <ActivityAttachmentsPanel
+            activityId={activity.id}
+            classId={classId}
+            initialAttachments={initialAttachments}
+            canEdit={true}
+          />
         </div>
 
-        {quizView.questions.length === 0 ? (
-          <p className="text-sm italic text-gray-400">
-            No questions yet. Add one below.
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {quizView.questions.map((q, idx) => (
-              <li key={q.id}>
-                <QuestionEditor
-                  question={q}
-                  index={idx}
-                  locked={locked}
-                  onChanged={refetchQuizView}
-                  onError={setError}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {!locked && (
-          <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3">
-            <select
-              value={addingKind}
-              onChange={(e) =>
-                setAddingKind(e.target.value as QuestionKind | '')
-              }
-              disabled={isPending}
-              className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-            >
-              <option value="">Choose a question type…</option>
-              {QUESTION_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {QUESTION_KIND_LABELS[k]}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={handleAddQuestion}
-              disabled={isPending || !addingKind}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
+        {/* RIGHT: Quiz settings (sticky on lg+) */}
+        <aside className="lg:col-span-1">
+          <section className="sticky top-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Quiz settings
+              </h2>
+              {isSettingsDirty && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-amber-600">Unsaved</span>
+                </div>
               )}
-              Add question
-            </button>
-          </div>
-        )}
-      </section>
+            </div>
 
-      {/* Attempts (C7 Slice A) */}
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Due date
+                </label>
+                <input
+                  type="datetime-local"
+                  value={dueLocal}
+                  onChange={(e) => setDueLocal(e.target.value)}
+                  disabled={isPending}
+                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                />
+              </div>
+
+              <div className="rounded-md border border-gray-200 p-3">
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={hasTimeLimit}
+                    onChange={(e) => setHasTimeLimit(e.target.checked)}
+                    disabled={isPending}
+                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <Timer className="h-4 w-4 text-gray-500" />
+                  Enforce time limit
+                </label>
+                {hasTimeLimit && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={timeLimitMinutes}
+                      onChange={(e) => setTimeLimitMinutes(e.target.value)}
+                      disabled={isPending}
+                      className="w-24 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                    />
+                    <span className="text-sm text-gray-600">min</span>
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Auto-submit when timer hits zero. Server enforces deadline.
+                </p>
+              </div>
+
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={shuffleQuestions}
+                  onChange={(e) => setShuffleQuestions(e.target.checked)}
+                  disabled={isPending}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <span>
+                  <span className="inline-flex items-center gap-1 font-medium">
+                    <Shuffle className="h-3.5 w-3.5 text-gray-500" />
+                    Shuffle question order
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    Each student sees a different order.
+                  </span>
+                </span>
+              </label>
+
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={autoReleaseGrade}
+                  onChange={(e) => setAutoReleaseGrade(e.target.checked)}
+                  disabled={isPending}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <span>
+                  <span className="inline-flex items-center gap-1 font-medium">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-gray-500" />
+                    Auto-release grades
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    Students see score on submit.
+                  </span>
+                </span>
+              </label>
+
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={showCorrectAnswers}
+                  onChange={(e) => setShowCorrectAnswers(e.target.checked)}
+                  disabled={isPending}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <span>
+                  <span className="font-medium">Show correct answers</span>
+                  <span className="block text-xs text-gray-500">
+                    Reveal on the review screen after submission.
+                  </span>
+                </span>
+              </label>
+
+              {/* Save / cancel inline at bottom of settings panel */}
+              {isSettingsDirty && (
+                <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
+                  <button
+                    type="button"
+                    onClick={handleCancelSettings}
+                    disabled={isPending}
+                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveSettings}
+                    disabled={isPending}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Save className="h-3 w-3" />
+                    )}
+                    Save settings
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      {/* ============================== DIVIDER ============================== */}
+
+      <div className="border-t border-gray-200" aria-hidden />
+
+      {/* ============================== FULL-WIDTH LOWER ============================== */}
+
       <QuizAttemptsPanel
         activityId={activity.id}
         classId={classId}
@@ -833,14 +894,6 @@ export default function QuizEditor({
         initialAttempts={initialAttempts}
       />
 
-      <ActivityAttachmentsPanel
-        activityId={activity.id}
-        classId={classId}
-        initialAttachments={initialAttachments}
-        canEdit={true}
-      />
-
-      {/* Danger zone */}
       <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">
         <h2 className="text-sm font-semibold text-red-900">Danger zone</h2>
         <p className="mt-1 text-xs text-red-700">
@@ -856,6 +909,8 @@ export default function QuizEditor({
           Delete quiz
         </button>
       </section>
+
+      {/* ============================== DIALOGS / MODALS ============================== */}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -886,7 +941,6 @@ export default function QuizEditor({
           router.refresh();
         }}
       />
-
     </div>
   );
 }

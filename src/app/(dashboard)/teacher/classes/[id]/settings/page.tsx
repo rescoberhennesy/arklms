@@ -3,9 +3,9 @@ import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { getClassById } from '@/lib/actions/classes';
 import { InviteCodePanel } from '@/components/teacher/InviteCodePanel';
-import CoverPhotoUploader from '@/components/teacher/CoverPhotoUploader';
 import SettingsActions from '@/components/teacher/SettingsActions';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
+import ClassColorPicker from '@/components/teacher/ClassColorPicker';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,16 +41,15 @@ export default async function ClassSettingsPage({ params }: PageProps) {
         <p className="mt-1 text-sm text-gray-500">{klass.name}</p>
       </div>
 
-      <SettingsSection
-        title="Cover photo"
-        description="Set a cover image for this class. Shown on cards and the class header."
-      >
-        <CoverPhotoUploader
-          classId={klass.id}
-          color={klass.color}
-          currentUrl={klass.cover_photo_url}
-        />
-      </SettingsSection>
+     <SettingsSection
+          title="Card color"
+          description="Pick a color for this class. Shown on cards and the class header."
+        >
+          <ClassColorPicker
+            classId={klass.id}
+            initialColor={klass.color}
+          />
+        </SettingsSection>
 
       <SettingsSection
         title="Class invite"
