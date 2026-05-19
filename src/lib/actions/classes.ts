@@ -31,6 +31,19 @@ function validateSemester(value: unknown): Semester {
   if (value === '1st Semester' || value === '2nd Semester') return value;
   throw new Error('Semester must be either "1st Semester" or "2nd Semester"');
 }
+function validateTrack(value: unknown): import('@/types/class').Track | null {
+  if (value == null) return null;
+  if (value === 'ABM' || value === 'HUMSS' || value === 'H.E' || value === 'ICT') {
+    return value;
+  }
+  throw new Error('Invalid track');
+}
+
+function validateGradeLevel(value: unknown): import('@/types/class').GradeLevel | null {
+  if (value == null) return null;
+  if (value === 'Grade 11' || value === 'Grade 12') return value;
+  throw new Error('Invalid grade level');
+}
 
 // --------------------------------------------------------------------------
 // READS
@@ -140,6 +153,8 @@ export async function createClass(input: ClassFormInput): Promise<ActionResult<C
         name: input.name.trim(),
         section: input.section?.trim() || null,
         semester,
+        track: validateTrack(input.track),
+        grade_level: validateGradeLevel(input.grade_level),
         description: input.description?.trim() || null,
         color: input.color ?? null,
         cover_photo_url: input.cover_photo_url ?? null,
@@ -172,6 +187,8 @@ export async function updateClass(id: string, input: ClassFormInput): Promise<Ac
         name: input.name.trim(),
         section: input.section?.trim() || null,
         semester,
+        track: validateTrack(input.track),
+        grade_level: validateGradeLevel(input.grade_level),
         description: input.description?.trim() || null,
         color: input.color ?? null,
         cover_photo_url: input.cover_photo_url ?? null,

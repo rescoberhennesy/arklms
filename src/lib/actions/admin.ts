@@ -1,15 +1,11 @@
-
 // src/lib/actions/admin.ts
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
 
 // All actions here assume the caller is an admin. The /admin/* route
-// layout (src/app/(dashboard)/admin/layout.tsx) gates access, and the
-// underlying RLS policies (profiles "Admins can view all profiles" /
-// "profiles_staff_view", classes "classes_select_admin",
-// class_enrollments "enrollments_select_admin") also enforce admin-only
-// reads. These functions therefore don't re-check the role — but they
+// layout gates access, and the underlying RLS policies also enforce
+// admin-only reads. These functions don't re-check the role — but they
 // DO require an authenticated session and will throw otherwise.
 
 async function assertAuthed() {
@@ -31,43 +27,37 @@ export interface AdminDashboardStats {
   teacherCount: number;
   studentCount: number;
   adminCount: number;
-  activeSectionCount: number; // classes where is_archived = false
+  activeSectionCount: number;
   archivedSectionCount: number;
 }
 
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const { supabase } = await assertAuthed();
 
-  const [
-    teacherRes,
-    studentRes,
-    adminRes,
-    activeRes,
-    archivedRes,
-  ] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'teacher'),
-    supabase
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'student'),
-    supabase
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'admin'),
-    supabase
-      .from('classes')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_archived', false),
-    supabase
-      .from('classes')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_archived', true),
-  ]);
+  const [teacherRes, studentRes, adminRes, activeRes, archivedRes] =
+    await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'teacher'),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'student'),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'admin'),
+      supabase
+        .from('classes')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_archived', false),
+      supabase
+        .from('classes')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_archived', true),
+    ]);
 
-  // If any count query errored, surface it rather than silently showing 0.
   const firstError =
     teacherRes.error ??
     studentRes.error ??
@@ -96,8 +86,9 @@ export interface AdminStudentRow {
   fullName: string | null;
   email: string;
   username: string | null;
+  avatarUrl: string | null;
   createdAt: string;
-  enrollmentCount: number; // number of class_enrollments rows for this student
+  enrollmentCount: number;
 }
 
 export async function listAllStudents(): Promise<AdminStudentRow[]> {
@@ -105,9 +96,8 @@ export async function listAllStudents(): Promise<AdminStudentRow[]> {
 
   const { data: profileRows, error: profErr } = await supabase
     .from('profiles')
-    .select('id, full_name, email, username, created_at')
-    .eq('role', 'student')
-    .order('created_at', { ascending: false });
+    .select('id, full_name, email, username, avatar_url, created_at')
+    .eq('role', 'student');
   if (profErr) throw new Error(`Failed to load students: ${profErr.message}`);
 
   type ProfileRow = {
@@ -115,13 +105,12 @@ export async function listAllStudents(): Promise<AdminStudentRow[]> {
     full_name: string | null;
     email: string;
     username: string | null;
+    avatar_url: string | null;
     created_at: string;
   };
   const students = (profileRows ?? []) as ProfileRow[];
   if (students.length === 0) return [];
 
-  // Enrollment counts: pull all enrollment rows for these students and
-  // tally in memory. One round trip; admin RLS allows the full select.
   const studentIds = students.map((s) => s.id);
   const { data: enrollmentRows, error: enrErr } = await supabase
     .from('class_enrollments')
@@ -139,14 +128,19 @@ export async function listAllStudents(): Promise<AdminStudentRow[]> {
     );
   }
 
-  return students.map((s) => ({
-    id: s.id,
-    fullName: s.full_name,
-    email: s.email,
-    username: s.username,
-    createdAt: s.created_at,
-    enrollmentCount: countByStudent.get(s.id) ?? 0,
-  }));
+  return students
+    .map((s) => ({
+      id: s.id,
+      fullName: s.full_name,
+      email: s.email,
+      username: s.username,
+      avatarUrl: s.avatar_url,
+      createdAt: s.created_at,
+      enrollmentCount: countByStudent.get(s.id) ?? 0,
+    }))
+    .sort((a, b) =>
+      (a.fullName ?? a.email).localeCompare(b.fullName ?? b.email),
+    );
 }
 
 // --------------------------------------------------------------------------
@@ -158,9 +152,10 @@ export interface AdminTeacherRow {
   fullName: string | null;
   email: string;
   username: string | null;
+  avatarUrl: string | null;
   createdAt: string;
-  classCount: number; // number of classes owned (any archive state)
-  activeClassCount: number; // classes where is_archived = false
+  classCount: number;
+  activeClassCount: number;
 }
 
 export async function listAllTeachers(): Promise<AdminTeacherRow[]> {
@@ -168,9 +163,8 @@ export async function listAllTeachers(): Promise<AdminTeacherRow[]> {
 
   const { data: profileRows, error: profErr } = await supabase
     .from('profiles')
-    .select('id, full_name, email, username, created_at')
-    .eq('role', 'teacher')
-    .order('created_at', { ascending: false });
+    .select('id, full_name, email, username, avatar_url, created_at')
+    .eq('role', 'teacher');
   if (profErr) throw new Error(`Failed to load teachers: ${profErr.message}`);
 
   type ProfileRow = {
@@ -178,12 +172,12 @@ export async function listAllTeachers(): Promise<AdminTeacherRow[]> {
     full_name: string | null;
     email: string;
     username: string | null;
+    avatar_url: string | null;
     created_at: string;
   };
   const teachers = (profileRows ?? []) as ProfileRow[];
   if (teachers.length === 0) return [];
 
-  // Class counts: pull all classes owned by these teachers and tally.
   const teacherIds = teachers.map((t) => t.id);
   const { data: classRows, error: classErr } = await supabase
     .from('classes')
@@ -211,13 +205,103 @@ export async function listAllTeachers(): Promise<AdminTeacherRow[]> {
     }
   }
 
-  return teachers.map((t) => ({
-    id: t.id,
-    fullName: t.full_name,
-    email: t.email,
-    username: t.username,
-    createdAt: t.created_at,
-    classCount: totalByTeacher.get(t.id) ?? 0,
-    activeClassCount: activeByTeacher.get(t.id) ?? 0,
-  }));
+  return teachers
+    .map((t) => ({
+      id: t.id,
+      fullName: t.full_name,
+      email: t.email,
+      username: t.username,
+      avatarUrl: t.avatar_url,
+      createdAt: t.created_at,
+      classCount: totalByTeacher.get(t.id) ?? 0,
+      activeClassCount: activeByTeacher.get(t.id) ?? 0,
+    }))
+    .sort((a, b) =>
+      (a.fullName ?? a.email).localeCompare(b.fullName ?? b.email),
+    );
+}
+
+// --------------------------------------------------------------------------
+// SECTIONS  (derived: classes grouped by section + grade_level + track)
+// --------------------------------------------------------------------------
+
+export interface AdminSectionRow {
+  key: string;
+  section: string | null;
+  gradeLevel: string | null;
+  track: string | null;
+  classCount: number;
+  studentCount: number;
+  teacherNames: string[];
+}
+
+export async function listAllSections(): Promise<AdminSectionRow[]> {
+  const { supabase } = await assertAuthed();
+
+  const { data: classRows, error: classErr } = await supabase
+    .from('classes')
+    .select(
+      'id, section, grade_level, track, ' +
+        'teacher:profiles!classes_teacher_id_fkey(full_name, email), ' +
+        'class_enrollments(student_id)',
+    );
+  if (classErr) {
+    throw new Error(`Failed to load sections: ${classErr.message}`);
+  }
+
+  type Row = {
+    id: string;
+    section: string | null;
+    grade_level: string | null;
+    track: string | null;
+    teacher: { full_name: string | null; email: string } | null;
+    class_enrollments: Array<{ student_id: string }> | null;
+  };
+
+  const groups = new Map<
+    string,
+    {
+      section: string | null;
+      gradeLevel: string | null;
+      track: string | null;
+      classCount: number;
+      students: Set<string>;
+      teachers: Set<string>;
+    }
+  >();
+
+ for (const r of ((classRows ?? []) as unknown) as Row[]) {
+    const key = `${r.section ?? ''}|${r.grade_level ?? ''}|${r.track ?? ''}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        section: r.section,
+        gradeLevel: r.grade_level,
+        track: r.track,
+        classCount: 0,
+        students: new Set<string>(),
+        teachers: new Set<string>(),
+      };
+      groups.set(key, g);
+    }
+    g.classCount += 1;
+    for (const e of r.class_enrollments ?? []) {
+      g.students.add(e.student_id);
+    }
+    if (r.teacher) {
+      g.teachers.add(r.teacher.full_name || r.teacher.email);
+    }
+  }
+
+  return Array.from(groups.entries())
+    .map(([key, g]) => ({
+      key,
+      section: g.section,
+      gradeLevel: g.gradeLevel,
+      track: g.track,
+      classCount: g.classCount,
+      studentCount: g.students.size,
+      teacherNames: Array.from(g.teachers).sort(),
+    }))
+    .sort((a, b) => (a.section ?? '').localeCompare(b.section ?? ''));
 }

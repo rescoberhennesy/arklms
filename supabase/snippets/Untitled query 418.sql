@@ -1,0 +1,1 @@
+SELECT id, full_name, avatar_url FROM public.profiles WHERE avatar_url IS NOT NULL;

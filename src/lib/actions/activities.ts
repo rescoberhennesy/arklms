@@ -21,6 +21,9 @@ import { notifyActivityPublished } from '@/lib/actions/notifications';
 import { notifyGradeReleased } from '@/lib/actions/notifications';
 import { notifyGradesReleasedBulk } from '@/lib/actions/notifications';
 import { notifySubmissionCreated } from '@/lib/actions/notifications';
+import { listMyClasses } from '@/lib/actions/classes';
+import { listClassRoster } from '@/lib/actions/enrollments';
+import type { TeacherClassListItem } from '@/types/class';
 
 // --- Internal helpers -----------------------------------------------------
 
@@ -1457,4 +1460,84 @@ export async function duplicateActivity(
 
   revalidateClassPaths(input.targetClassId);
   return { activityId: newActivityId };
+}
+
+// ==========================================================================
+// AGGREGATED MULTI-CLASS ACTIVITIES (teacher shortcut page)
+// ==========================================================================
+// Mirrors the inline ActivitiesTabRosterEntry shape used by the existing
+// per-class ActivitiesTab. listClassRoster already returns this shape;
+// we re-export the type so the aggregated page can import it cleanly.
+export interface AggregatedRosterEntry {
+  student_id: string;
+  full_name: string | null;
+  email: string | null;
+}
+
+/**
+ * Same filter shape as the Grades shortcut — keeps both shortcut pages
+ * speaking the same dialect so the filter bars are interchangeable.
+ */
+export interface MyClassActivitiesFilters {
+  classId?: string | null;
+  section?: string | null;
+  track?: string | null;
+  gradeLevel?: string | null;
+}
+
+export interface AggregatedClassActivities {
+  class: TeacherClassListItem;
+  activities: ActivityWithAllSubmissions[];
+  roster: AggregatedRosterEntry[];
+}
+
+/**
+ * For the signed-in teacher: load every active class they own that matches
+ * the supplied filters, then for each class fetch its full activities list
+ * (with submissions) and class roster.
+ *
+ * Per-class fan-out is intentional (each class has its own term ordering,
+ * displayOrder, and roster). Each class runs three nested queries inside
+ * listActivitiesForTeacher plus one for listClassRoster, so N classes =
+ * 4N round trips at minimum. Fine at thesis scale; we use Promise.all
+ * across classes to at least parallelize the fan-out.
+ *
+ * Archived classes are excluded — aggregated view is "what do I need to
+ * work on now"; archived terms aren't part of that.
+ */
+export async function getMyClassActivities(
+  filters?: MyClassActivitiesFilters,
+): Promise<AggregatedClassActivities[]> {
+  const classesRes = await listMyClasses();
+  if (!classesRes.ok) {
+    throw new Error(classesRes.error);
+  }
+
+  const active = classesRes.data.filter((c) => !c.is_archived);
+
+  const matched = active.filter((c) => {
+    if (filters?.classId && c.id !== filters.classId) return false;
+    if (filters?.section && c.section !== filters.section) return false;
+    if (filters?.track && c.track !== filters.track) return false;
+    if (filters?.gradeLevel && c.grade_level !== filters.gradeLevel) {
+      return false;
+    }
+    return true;
+  });
+
+  if (matched.length === 0) return [];
+
+  // For each matched class, fetch activities and roster in parallel.
+  // Cross-class is also parallel via Promise.all.
+  const perClass = await Promise.all(
+    matched.map(async (c) => {
+      const [activities, roster] = await Promise.all([
+        listActivitiesForTeacher(c.id),
+        listClassRoster(c.id),
+      ]);
+      return { class: c, activities, roster };
+    }),
+  );
+
+  return perClass;
 }

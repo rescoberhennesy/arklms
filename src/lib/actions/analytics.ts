@@ -3,6 +3,9 @@
 
 import { createClient } from '@/lib/supabase/server';
 
+import { listMyClasses } from '@/lib/actions/classes';
+import type { TeacherClassListItem } from '@/types/class';
+
 // ============================================================================
 // SHARED TYPES
 // ============================================================================
@@ -731,4 +734,226 @@ export async function listActivitiesForAnalytics(
     activityKind: a.activity_kind,
     published: a.published,
   }));
+}
+
+/**
+ * Same filter shape as the other three shortcut pages.
+ */
+export interface MyClassAnalyticsFilters {
+  classId?: string | null;
+  section?: string | null;
+  track?: string | null;
+  gradeLevel?: string | null;
+}
+
+/**
+ * Per-class health summary for the top cards grid. Derived entirely from
+ * what getClassStudentStats already returns plus a quick scan of activities
+ * for ungraded/missing counts.
+ */
+export interface ClassHealthCard {
+  class: TeacherClassListItem;
+  studentCount: number;
+  classAvgPct: number | null;
+  atRiskCount: number;
+  watchCount: number;
+  safeCount: number;
+  totalMissingSubmissions: number; // sum of missingCount across all students
+  /**
+   * Students with at least one ungraded submission across the class's
+   * activities. We don't have a direct "is anything ungraded" count in
+   * StudentStats, so we derive it from missingCount being lower than
+   * dueCount × students — but that gets messy. Simpler: we re-compute
+   * here from the same stats. See implementation below.
+   *
+   * Actually, since StudentStats doesn't expose ungraded-vs-graded
+   * counts directly, we surface the next-best signal: students whose
+   * overallAvgPct is null but who have submitted work (i.e. submissions
+   * exist but no grades yet → submissionRate > 0 but overallAvgPct null).
+   * This is "needs grading attention" at the class level.
+   */
+  studentsAwaitingGrades: number;
+}
+
+/**
+ * A single class-membership for an at-risk student in the cross-class
+ * roll-up. One student can have many of these (one per class they're
+ * at-risk in).
+ */
+export interface AtRiskClassMembership {
+  classId: string;
+  className: string;
+  risk: 'at_risk' | 'watch';
+  overallAvgPct: number | null;
+  submissionRate: number | null;
+  missingCount: number;
+  dueCount: number;
+  trend: 'improving' | 'stable' | 'declining' | 'insufficient_data';
+  riskReasons: string[];
+}
+
+/**
+ * One row in the cross-class at-risk students table. Grouped by student,
+ * so a student in three at-risk classes appears once with three memberships.
+ */
+export interface AtRiskStudentRow {
+  studentId: string;
+  fullName: string | null;
+  email: string | null;
+  /** How many of the teacher's filtered classes this student is at-risk in. */
+  atRiskClassCount: number;
+  /** How many they're in 'watch' status. */
+  watchClassCount: number;
+  /** All the classes the student is flagged in (at_risk + watch combined). */
+  memberships: AtRiskClassMembership[];
+  /**
+   * Worst overall avg pct across all their flagged classes — used for the
+   * default sort (lowest avg first). null if every flagged class has null.
+   */
+  worstAvgPct: number | null;
+}
+
+export interface AggregatedAnalytics {
+  healthCards: ClassHealthCard[];
+  atRiskStudents: AtRiskStudentRow[];
+}
+
+/**
+ * For the signed-in teacher: load every active class they own that matches
+ * the supplied filters, compute per-class health summaries AND a
+ * cross-class at-risk students roll-up.
+ *
+ * Why this shape: getClassStudentStats is heavy (it computes risk levels,
+ * trends, and submission rates for every student in a class). We run it
+ * per matched class via Promise.all and reuse the same per-class results
+ * for BOTH the health cards and the at-risk roll-up — one fan-out, two
+ * outputs. The roll-up is where the unique cross-class value lives:
+ * counting risk classifications across classes is the only aggregation
+ * that's defensible given the "grades aren't comparable across subjects"
+ * rule we've been enforcing on the other pages.
+ */
+export async function getMyClassAnalytics(
+  filters?: MyClassAnalyticsFilters,
+): Promise<AggregatedAnalytics> {
+  const classesRes = await listMyClasses();
+  if (!classesRes.ok) throw new Error(classesRes.error);
+
+  const active = classesRes.data.filter((c) => !c.is_archived);
+
+  const matched = active.filter((c) => {
+    if (filters?.classId && c.id !== filters.classId) return false;
+    if (filters?.section && c.section !== filters.section) return false;
+    if (filters?.track && c.track !== filters.track) return false;
+    if (filters?.gradeLevel && c.grade_level !== filters.gradeLevel) {
+      return false;
+    }
+    return true;
+  });
+
+  if (matched.length === 0) {
+    return { healthCards: [], atRiskStudents: [] };
+  }
+
+  // Single fan-out: per-class student stats. Used for both outputs below.
+  const perClassStats = await Promise.all(
+    matched.map((c) => getClassStudentStats(c.id)),
+  );
+
+  // ---- Build health cards ----
+  const healthCards: ClassHealthCard[] = matched.map((c, i) => {
+    const stats = perClassStats[i];
+    const safeCount =
+      stats.studentCount - stats.atRiskCount - stats.watchCount;
+    const totalMissingSubmissions = stats.stats.reduce(
+      (sum, s) => sum + s.missingCount,
+      0,
+    );
+    // Students who have submitted at least one thing but have no graded
+    // work yet (submissionRate > 0 implies they engaged; overallAvgPct
+    // null means nothing has been graded). Best proxy we have for
+    // "teacher has grading to do" at the class level without doing a
+    // second pass on activities.
+    const studentsAwaitingGrades = stats.stats.filter(
+      (s) =>
+        s.overallAvgPct === null &&
+        s.submissionRate !== null &&
+        s.submissionRate > 0,
+    ).length;
+
+    return {
+      class: c,
+      studentCount: stats.studentCount,
+      classAvgPct: stats.classAvgPct,
+      atRiskCount: stats.atRiskCount,
+      watchCount: stats.watchCount,
+      safeCount: Math.max(0, safeCount),
+      totalMissingSubmissions,
+      studentsAwaitingGrades,
+    };
+  });
+
+  // ---- Build cross-class at-risk students roll-up ----
+  // Walk every flagged student in every class and group by studentId.
+  const byStudent = new Map<string, AtRiskStudentRow>();
+
+  for (let i = 0; i < matched.length; i++) {
+    const c = matched[i];
+    const stats = perClassStats[i];
+    for (const s of stats.stats) {
+      if (s.risk !== 'at_risk' && s.risk !== 'watch') continue;
+
+      const membership: AtRiskClassMembership = {
+        classId: c.id,
+        className: stats.className,
+        risk: s.risk,
+        overallAvgPct: s.overallAvgPct,
+        submissionRate: s.submissionRate,
+        missingCount: s.missingCount,
+        dueCount: s.dueCount,
+        trend: s.trend,
+        riskReasons: s.riskReasons,
+      };
+
+      const existing = byStudent.get(s.studentId);
+      if (existing) {
+        existing.memberships.push(membership);
+        if (s.risk === 'at_risk') existing.atRiskClassCount += 1;
+        else existing.watchClassCount += 1;
+        if (
+          s.overallAvgPct !== null &&
+          (existing.worstAvgPct === null || s.overallAvgPct < existing.worstAvgPct)
+        ) {
+          existing.worstAvgPct = s.overallAvgPct;
+        }
+      } else {
+        byStudent.set(s.studentId, {
+          studentId: s.studentId,
+          fullName: s.fullName,
+          email: s.email,
+          atRiskClassCount: s.risk === 'at_risk' ? 1 : 0,
+          watchClassCount: s.risk === 'watch' ? 1 : 0,
+          memberships: [membership],
+          worstAvgPct: s.overallAvgPct,
+        });
+      }
+    }
+  }
+
+  const atRiskStudents = Array.from(byStudent.values()).sort((a, b) => {
+    // Sort priority:
+    //  1. More at_risk classes first (a 3-class at-risk student outranks a 1-class one)
+    //  2. Then more total flagged classes
+    //  3. Then lowest worstAvgPct first
+    if (a.atRiskClassCount !== b.atRiskClassCount) {
+      return b.atRiskClassCount - a.atRiskClassCount;
+    }
+    const aTotal = a.atRiskClassCount + a.watchClassCount;
+    const bTotal = b.atRiskClassCount + b.watchClassCount;
+    if (aTotal !== bTotal) return bTotal - aTotal;
+    const aAvg = a.worstAvgPct ?? 101;
+    const bAvg = b.worstAvgPct ?? 101;
+    return aAvg - bAvg;
+  });
+
+  return { healthCards, atRiskStudents };
 }

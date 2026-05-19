@@ -1,3 +1,4 @@
+// src/components/dashboard/ProfileDropdown.tsx
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -58,8 +59,21 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <div className="avatar-gradient w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-[13px] shrink-0">
-          {initials}
+        {/* Chip avatar */}
+        <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0">
+          {profile.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.avatar_url}
+              alt={displayName}
+              crossOrigin="anonymous"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="avatar-gradient w-full h-full flex items-center justify-center text-white font-bold text-[13px]">
+              {initials}
+            </div>
+          )}
         </div>
 
         <div className="hidden md:flex flex-col text-left leading-tight min-w-0">
@@ -91,10 +105,30 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
           className="topnav-dropdown dropdown-surface absolute right-0 mt-2 w-[280px] rounded-2xl py-0 overflow-hidden z-50"
           role="menu"
         >
-          {/* Header */}
+        {/* Header */}
           <div className="dropdown-header">
-            <p className="text-foreground font-semibold text-sm truncate">{displayName}</p>
-            <p className="text-foreground-subtle text-xs truncate mt-0.5">{email}</p>
+            <div className="flex items-center gap-3">
+              {/* Dropdown-header avatar */}
+              <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
+                {profile.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={profile.avatar_url}
+                    alt={displayName}
+                    crossOrigin="anonymous"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="avatar-gradient w-full h-full flex items-center justify-center text-white font-bold text-sm">
+                    {initials}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-foreground font-semibold text-sm truncate">{displayName}</p>
+                <p className="text-foreground-subtle text-xs truncate mt-0.5">{email}</p>
+              </div>
+            </div>
             <div className="mt-3">
               <span className="role-badge">{role}</span>
             </div>
@@ -102,11 +136,25 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
 
           {/* Menu Items */}
           <div className="dropdown-section">
-            <button className="dropdown-item" role="menuitem">
+            <button
+              className="dropdown-item"
+              role="menuitem"
+              onClick={() => {
+                setIsOpen(false)
+                router.push('/profile')
+              }}
+            >
               <User size={16} strokeWidth={2} className="dropdown-item-icon" />
               <span className="text-[13px] font-medium">My Profile</span>
             </button>
-            <button className="dropdown-item" role="menuitem">
+            <button
+              className="dropdown-item"
+              role="menuitem"
+              onClick={() => {
+                setIsOpen(false)
+                router.push('/settings')
+              }}
+            >
               <Settings size={16} strokeWidth={2} className="dropdown-item-icon" />
               <span className="text-[13px] font-medium">Settings</span>
             </button>

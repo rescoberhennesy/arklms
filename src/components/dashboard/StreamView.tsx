@@ -1,8 +1,9 @@
+// src/components/dashboard/StreamView.tsx
 'use client';
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pin, PinOff, Pencil, Trash2, X, Loader2 } from 'lucide-react';
+import { Pin, PinOff, Pencil, Trash2, X, Loader2, Plus } from 'lucide-react';
 import {
   type Announcement,
   type AnnouncementComment,
@@ -103,11 +104,23 @@ function Composer({ classId }: { classId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [aiMode, setAiMode] = useState(false);
   const [pendingGenerationId, setPendingGenerationId] = useState<string | null>(null);
+  // Collapsed by default — the composer expands only when the teacher
+  // chooses to post. Keeps the Stream tab from being dominated by a large
+  // always-open editor box.
+  const [expanded, setExpanded] = useState(false);
 
   function handleAiAccept(combinedBody: string, generationId: string | null) {
     setBody(combinedBody);
     setPendingGenerationId(generationId);
     setAiMode(false);
+  }
+
+  function collapse() {
+    setExpanded(false);
+    setAiMode(false);
+    setBody('');
+    setError(null);
+    setPendingGenerationId(null);
   }
 
   function handleSubmit() {
@@ -126,11 +139,26 @@ function Composer({ classId }: { classId: string }) {
         }
         setBody('');
         setPendingGenerationId(null);
+        setExpanded(false);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to post.');
       }
     });
+  }
+
+  // Collapsed state — a single quiet button.
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-500 transition hover:border-red-300 hover:text-red-600"
+      >
+        <Plus className="h-4 w-4" />
+        Post an announcement
+      </button>
+    );
   }
 
   return (
@@ -145,14 +173,26 @@ function Composer({ classId }: { classId: string }) {
         <>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700">New announcement</span>
-            <button
-              type="button"
-              onClick={() => setAiMode(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              AI Draft
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAiMode(true)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                AI Draft
+              </button>
+              <button
+                type="button"
+                onClick={collapse}
+                disabled={isPending}
+                className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                aria-label="Close composer"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <MarkdownEditor
@@ -164,7 +204,15 @@ function Composer({ classId }: { classId: string }) {
 
           {error && <p className="text-xs text-red-600">{error}</p>}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={collapse}
+              disabled={isPending}
+              className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
             <button
               type="button"
               onClick={handleSubmit}

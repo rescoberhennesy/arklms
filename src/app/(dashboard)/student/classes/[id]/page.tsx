@@ -9,16 +9,18 @@ import StudentModulesView from '@/components/student/StudentModulesView';
 import StudentActivitiesTab from '@/components/student/StudentActivitiesTab';
 import StudentProgressStrip from '@/components/student/StudentProgressStrip';
 import StudentGradebookView from '@/components/student/StudentGradebookView';
+import StudentPeopleTab from '@/components/student/StudentPeopleTab';
 import { listAnnouncements } from '@/lib/actions/announcements';
 import { listModulesWithLessons } from '@/lib/actions/modules';
 import { listActivitiesForStudent } from '@/lib/actions/activities';
 import { getStudentGradebookView } from '@/lib/actions/gradebook';
+import { getClassPeople } from '@/lib/actions/classPeople';
 import { createClient } from '@/lib/supabase/server';
 import ClassCover from '@/components/dashboard/ClassCover';
 
 export const dynamic = 'force-dynamic';
 
-const TABS = ['stream', 'modules', 'activities', 'grades'] as const;
+const TABS = ['stream', 'modules', 'activities', 'grades', 'people'] as const;
 type Tab = (typeof TABS)[number];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -82,6 +84,10 @@ export default async function StudentClassDetailPage({
     gradesView = await getStudentGradebookView(klass.id);
   }
 
+  let peopleData: Awaited<ReturnType<typeof getClassPeople>> | null = null;
+  if (tab === 'people') {
+    peopleData = await getClassPeople(klass.id);
+  }
 
   return (
     <div className="space-y-6">
@@ -97,13 +103,13 @@ export default async function StudentClassDetailPage({
       <ClassCover
         url={klass.cover_photo_url}
         color={klass.color}
-        className="rounded-xl px-6 py-8 text-white shadow-sm"
+        className="rounded-xl px-6 py-5 text-white shadow-sm"
       >
         <div className="absolute right-4 top-4 z-10">
           <LeaveClassButton classId={klass.id} className={klass.name} />
         </div>
         <div className="relative">
-          <h1 className="text-3xl font-bold drop-shadow-sm">{klass.name}</h1>
+          <h1 className="text-2xl font-bold drop-shadow-sm">{klass.name}</h1>
           {klass.section && (
             <p className="mt-1 text-base font-medium text-white/90 drop-shadow-sm">
               {klass.section}
@@ -155,7 +161,7 @@ export default async function StudentClassDetailPage({
         {tab === 'modules' && (
           <StudentModulesView classId={klass.id} modules={modules} />
         )}
-       {tab === 'activities' && (
+        {tab === 'activities' && (
           <div className="space-y-4">
             <StudentProgressStrip classId={klass.id} />
             <StudentActivitiesTab classId={klass.id} activities={activities} />
@@ -163,6 +169,14 @@ export default async function StudentClassDetailPage({
         )}
         {tab === 'grades' && gradesView && (
           <StudentGradebookView view={gradesView} />
+        )}
+        {tab === 'people' && peopleData && peopleData.ok && (
+          <StudentPeopleTab people={peopleData.data} />
+        )}
+        {tab === 'people' && peopleData && !peopleData.ok && (
+          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            Failed to load people: {peopleData.error}
+          </div>
         )}
       </div>
     </div>

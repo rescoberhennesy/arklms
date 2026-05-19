@@ -1,7 +1,19 @@
-export default function Page() {
-  return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-      <p className="text-white">Coming soon...</p>
-    </div>
-  )
+import { listAllSections } from '@/lib/actions/admin';
+import AdminSectionsView from '@/components/admin/AdminSectionsView';
+
+export const dynamic = 'force-dynamic';
+
+export default async function AdminSectionsPage() {
+  let sections;
+  try {
+    sections = await listAllSections();
+  } catch (err) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        Failed to load sections:{' '}
+        {err instanceof Error ? err.message : 'Unknown error'}
+      </div>
+    );
+  }
+  return <AdminSectionsView sections={sections} />;
 }

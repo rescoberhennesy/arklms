@@ -6,6 +6,9 @@ import type { ModuleTerm } from '@/lib/types/modules';
 import { notifyModuleCreated } from '@/lib/actions/notifications';
 import { notifyLessonPublished } from '@/lib/actions/notifications';
 
+import { listMyClasses } from '@/lib/actions/classes';
+import type { TeacherClassListItem } from '@/types/class';
+
 // ---------- Types ----------
 
 export type ModuleSummary = {
@@ -649,4 +652,64 @@ export async function getModuleForStudent(
   moduleId: string,
 ): Promise<ModuleWithLessons> {
   return getModuleWithLessons(moduleId);
+}
+
+/**
+ * Same filter shape as the Grades and Activities shortcuts — three shortcut
+ * pages now share this dialect, so the filter bars stay interchangeable.
+ */
+export interface MyClassModulesFilters {
+  classId?: string | null;
+  section?: string | null;
+  track?: string | null;
+  gradeLevel?: string | null;
+}
+
+export interface AggregatedClassModules {
+  class: TeacherClassListItem;
+  modules: ModuleWithLessons[];
+}
+
+/**
+ * For the signed-in teacher: load every active class they own that matches
+ * the supplied filters, then for each class fetch its modules-with-lessons.
+ *
+ * Per-class fan-out is intentional (modules are per-class — different terms,
+ * different ordering, different titles — and cannot be safely merged into a
+ * single list). listModulesWithLessons runs 2 queries per class, so N classes
+ * = 2N round trips. Cheap compared to the Activities aggregated page.
+ *
+ * Archived classes excluded by design — aggregated view is "what am I
+ * working on now". Add ?archived=true later if needed.
+ */
+export async function getMyClassModules(
+  filters?: MyClassModulesFilters,
+): Promise<AggregatedClassModules[]> {
+  const classesRes = await listMyClasses();
+  if (!classesRes.ok) {
+    throw new Error(classesRes.error);
+  }
+
+  const active = classesRes.data.filter((c) => !c.is_archived);
+
+  const matched = active.filter((c) => {
+    if (filters?.classId && c.id !== filters.classId) return false;
+    if (filters?.section && c.section !== filters.section) return false;
+    if (filters?.track && c.track !== filters.track) return false;
+    if (filters?.gradeLevel && c.grade_level !== filters.gradeLevel) {
+      return false;
+    }
+    return true;
+  });
+
+  if (matched.length === 0) return [];
+
+  const moduleLists = await Promise.all(
+    matched.map((c) => listModulesWithLessons(c.id)),
+  );
+
+  return matched.map((c, i) => ({
+    class: c,
+    modules: moduleLists[i],
+  }));
 }

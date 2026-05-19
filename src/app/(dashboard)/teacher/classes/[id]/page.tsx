@@ -136,7 +136,7 @@ export default async function ClassDetailPage({
       <ClassCover
         url={klass.cover_photo_url}
         color={klass.color}
-        className="rounded-xl px-6 py-8 text-white shadow-sm"
+        className="rounded-xl px-6 py-5 text-white shadow-sm"
       >
         <Link
           href={`/teacher/classes/${klass.id}/settings`}
@@ -146,7 +146,7 @@ export default async function ClassDetailPage({
           <Settings className="h-4 w-4" />
         </Link>
         <div className="relative">
-          <h1 className="text-3xl font-bold drop-shadow-sm">{klass.name}</h1>
+          <h1 className="text-2xl font-bold drop-shadow-sm">{klass.name}</h1>
           {klass.section && (
             <p className="mt-1 text-base font-medium text-white/90 drop-shadow-sm">
               {klass.section}

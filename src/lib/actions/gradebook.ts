@@ -14,6 +14,8 @@ import type {
   SubmissionWithGrade,
   ClassGradeWeights,
 } from '@/lib/types/activities';
+import { listMyClasses } from '@/lib/actions/classes';
+import type { TeacherClassListItem } from '@/types/class';
 
 // ==========================================================================
 // TEACHER GRADEBOOK
@@ -924,4 +926,77 @@ export async function getStudentGradebookView(
     isWeighted,
     weights,
   };
+}
+
+// ==========================================================================
+// AGGREGATED MULTI-CLASS GRADEBOOK (teacher shortcut page)
+// ==========================================================================
+
+/**
+ * Filters for the aggregated /teacher/grades page.
+ *
+ * - classId: pin to a single class (overrides the other three when set).
+ * - section: exact match on classes.section.
+ * - track / gradeLevel: exact match on the corresponding columns.
+ *
+ * Legacy classes may have null track / grade_level; those rows are
+ * excluded only when the corresponding filter is set.
+ */
+export interface MyClassGradebooksFilters {
+  classId?: string | null;
+  section?: string | null;
+  track?: string | null;
+  gradeLevel?: string | null;
+}
+
+export interface AggregatedClassGradebook {
+  class: TeacherClassListItem;
+  gradebook: GradebookView;
+}
+
+/**
+ * For the signed-in teacher: load every class they own that matches the
+ * supplied filters, then compute a full GradebookView for each one.
+ *
+ * Per-class fan-out is intentional (gradebook is per-class — different
+ * activities, weights, terms — and cannot be safely merged). The fan-out
+ * runs in parallel via Promise.all; at thesis scale (a handful of classes)
+ * this is fine. If this ever needs to scale, batch the per-class queries
+ * inside getGradebookView instead of changing this function.
+ */
+export async function getMyClassGradebooks(
+  filters?: MyClassGradebooksFilters,
+): Promise<AggregatedClassGradebook[]> {
+  const classesRes = await listMyClasses();
+  if (!classesRes.ok) {
+    throw new Error(classesRes.error);
+  }
+
+  const all = classesRes.data;
+
+  // Drop archived classes from the aggregated view — grades for archived
+  // terms aren't part of "what do I need to work on now". If we ever want
+  // to surface them, add an explicit ?archived=true filter.
+  const active = all.filter((c) => !c.is_archived);
+
+  const matched = active.filter((c) => {
+    if (filters?.classId && c.id !== filters.classId) return false;
+    if (filters?.section && c.section !== filters.section) return false;
+    if (filters?.track && c.track !== filters.track) return false;
+    if (filters?.gradeLevel && c.grade_level !== filters.gradeLevel) {
+      return false;
+    }
+    return true;
+  });
+
+  if (matched.length === 0) return [];
+
+  const gradebooks = await Promise.all(
+    matched.map((c) => getGradebookView(c.id)),
+  );
+
+  return matched.map((c, i) => ({
+    class: c,
+    gradebook: gradebooks[i],
+  }));
 }

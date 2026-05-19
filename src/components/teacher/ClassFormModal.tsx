@@ -1,9 +1,17 @@
-// src/components/teacher/ClassFormModal.tsx
 'use client';
 
 import { useState, useEffect, useTransition, useRef } from 'react';
 import { X } from 'lucide-react';
-import { CLASS_COLORS, type ClassFormInput, type ClassRow, type Semester } from '@/types/class';
+import {
+  CLASS_COLORS,
+  TRACKS,
+  GRADE_LEVELS,
+  type ClassFormInput,
+  type ClassRow,
+  type Semester,
+  type Track,
+  type GradeLevel,
+} from '@/types/class';
 import { cn } from '@/lib/utils/cn';
 
 type Mode = { kind: 'create' } | { kind: 'edit'; cls: ClassRow };
@@ -30,6 +38,8 @@ export function ClassFormModal({
   const [name, setName] = useState('');
   const [section, setSection] = useState('');
   const [semester, setSemester] = useState<Semester>('1st Semester');
+  const [track, setTrack] = useState<Track | ''>('');
+  const [gradeLevel, setGradeLevel] = useState<GradeLevel | ''>('');
   const [description, setDescription] = useState('');
   const [color, setColor] = useState<string>(CLASS_COLORS[0]);
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +51,16 @@ export function ClassFormModal({
       setName(mode.cls.name);
       setSection(mode.cls.section ?? '');
       setSemester(mode.cls.semester);
+      setTrack(mode.cls.track ?? '');
+      setGradeLevel(mode.cls.grade_level ?? '');
       setDescription(mode.cls.description ?? '');
       setColor(mode.cls.color ?? CLASS_COLORS[0]);
     } else {
       setName('');
       setSection('');
       setSemester('1st Semester');
+      setTrack('');
+      setGradeLevel('');
       setDescription('');
       setColor(CLASS_COLORS[0]);
     }
@@ -71,12 +85,22 @@ export function ClassFormModal({
       setError('Class name is required');
       return;
     }
+    if (!track) {
+      setError('Track is required');
+      return;
+    }
+    if (!gradeLevel) {
+      setError('Grade level is required');
+      return;
+    }
     startTransition(async () => {
       try {
         await onSubmit({
           name: name.trim(),
           section: section.trim() || null,
           semester,
+          track,
+          grade_level: gradeLevel,
           description: description.trim() || null,
           color,
         });
@@ -128,9 +152,59 @@ export function ClassFormModal({
             value={section}
             onChange={setSection}
             suggestions={sectionSuggestions}
-            placeholder="e.g. BSIT-1A"
+            placeholder="e.g. Harmonia - A"
           />
 
+          {/* Grade level */}
+          <fieldset>
+            <legend className="mb-1.5 block text-sm font-medium text-gray-700">
+              Grade level <span className="text-red-500">*</span>
+            </legend>
+            <div className="flex gap-4">
+              {GRADE_LEVELS.map((g) => (
+                <label
+                  key={g}
+                  className={cn(
+                    'flex flex-1 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm',
+                    gradeLevel === g
+                      ? 'border-red-500 bg-red-50 text-red-700'
+                      : 'border-gray-200 hover:bg-gray-50',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="grade_level"
+                    value={g}
+                    checked={gradeLevel === g}
+                    onChange={() => setGradeLevel(g)}
+                    className="h-4 w-4 accent-red-600"
+                  />
+                  <span>{g}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {/* Track */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Track <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={track}
+              onChange={(e) => setTrack(e.target.value as Track | '')}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            >
+              <option value="">Select a track…</option>
+              {TRACKS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Semester */}
           <fieldset>
             <legend className="mb-1.5 block text-sm font-medium text-gray-700">
               Semester <span className="text-red-500">*</span>
