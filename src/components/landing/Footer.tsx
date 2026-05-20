@@ -1,4 +1,4 @@
-import { Mail, Phone, MapPin, HelpCircle, MessageCircle } from 'lucide-react'
+import { Mail, Phone, MapPin, Info, MessageSquare } from 'lucide-react'
 
 export default function Footer() {
   return (
@@ -15,11 +15,11 @@ export default function Footer() {
 
         <div className="footer-col">
           <h4>QUICK LINKS</h4>
-          <a href="#">
-            <HelpCircle size={16} /> Helpdesk
+          <a href="/about">
+            <Info size={16} /> About
           </a>
-          <a href="#">
-            <MessageCircle size={16} /> FAQ
+          <a href="/contact">
+            <MessageSquare size={16} /> Contact
           </a>
         </div>
 
@@ -37,7 +37,6 @@ export default function Footer() {
           </p>
         </div>
       </div>
-
       <div className="footer-bottom">
         © 2015 ARK Technological Institute Education System Inc. All rights
         reserved.

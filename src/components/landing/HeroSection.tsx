@@ -43,19 +43,19 @@ export default function HeroSection() {
         style={{ backgroundImage: `url(${slides[active].image})` }}
       >
         <div className="hero-dark">
-          <div className="hero-content">
-            <h1>{slides[active].title}</h1>
-            <p>{slides[active].text}</p>
+          <div className="hero-inner">
+            <div className="hero-content">
+              <h1>{slides[active].title}</h1>
+              <p>{slides[active].text}</p>
+            </div>
           </div>
         </div>
-
         <button className="hero-arrow left" onClick={prevSlide} aria-label="Previous slide">
           ‹
         </button>
         <button className="hero-arrow right" onClick={nextSlide} aria-label="Next slide">
           ›
         </button>
-
         <div className="hero-dots">
           {slides.map((_, index) => (
             <span

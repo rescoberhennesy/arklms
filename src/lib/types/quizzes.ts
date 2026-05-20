@@ -25,7 +25,7 @@ export const QUESTION_KIND_LABELS: Record<QuestionKind, string> = {
   mc_single: 'Multiple choice (single answer)',
   mc_multi: 'Multiple choice (multiple answers)',
   true_false: 'True / False',
-  short_answer: 'Short answer',
+  short_answer: 'Identification',
   essay: 'Essay',
   matching: 'Matching',
 };

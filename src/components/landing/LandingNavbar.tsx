@@ -8,7 +8,6 @@ export default function LandingNavbar() {
 
   const handleLogin = async () => {
     const supabase = createClient()
-
     // Clear any stale session before starting fresh OAuth
     await supabase.auth.signOut()
 
@@ -18,6 +17,7 @@ export default function LandingNavbar() {
       rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
         ? rawNext
         : null
+
     const callbackUrl = safeNext
       ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
       : `${window.location.origin}/auth/callback`
@@ -43,22 +43,28 @@ export default function LandingNavbar() {
     <header className="nav-wrap">
       <div className="nav-inner">
         <div className="nav-left">
-          <img
-            src="/arklogo-removebg-preview.png"
-            alt="ARK Logo"
-            className="nav-logo"
-          />
-          <div className="nav-title">
-            ARK Technological Institute Education System Inc.
-          </div>
-        </div>
-
-        <div className="nav-right">
-          <a href="#" className="nav-link">
-            <strong> Helpdesk </strong>
+          <a href="/" aria-label="Go to home">
+            <img
+              src="/arklogo-removebg-preview.png"
+              alt="ARK Logo"
+              className="nav-logo"
+            />
           </a>
-          <a href="#" className="nav-link">
-            <strong> FAQ </strong>
+          <a href="/" className="nav-title-link">
+            <div className="nav-title">
+              ARK Technological Institute Education System Inc.
+            </div>
+          </a>
+        </div>
+        <div className="nav-right">
+          <a href="/" className="nav-link">
+            <strong> Home </strong>
+          </a>
+          <a href="/about" className="nav-link">
+            <strong> About </strong>
+          </a>
+          <a href="/contact" className="nav-link">
+            <strong> Contact </strong>
           </a>
           <button className="nav-login-btn" onClick={handleLogin}>
             Log in
