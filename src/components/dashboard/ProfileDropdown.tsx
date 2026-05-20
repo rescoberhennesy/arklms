@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, LogOut, User, Settings } from 'lucide-react'
+import { ChevronDown, LogOut, Settings } from 'lucide-react'
 import { getInitials } from '@/lib/utils/getInitials'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -105,7 +105,7 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
           className="topnav-dropdown dropdown-surface absolute right-0 mt-2 w-[280px] rounded-2xl py-0 overflow-hidden z-50"
           role="menu"
         >
-        {/* Header */}
+          {/* Header */}
           <div className="dropdown-header">
             <div className="flex items-center gap-3">
               {/* Dropdown-header avatar */}
@@ -136,17 +136,6 @@ export default function ProfileDropdown({ profile }: ProfileDropdownProps) {
 
           {/* Menu Items */}
           <div className="dropdown-section">
-            <button
-              className="dropdown-item"
-              role="menuitem"
-              onClick={() => {
-                setIsOpen(false)
-                router.push('/profile')
-              }}
-            >
-              <User size={16} strokeWidth={2} className="dropdown-item-icon" />
-              <span className="text-[13px] font-medium">My Profile</span>
-            </button>
             <button
               className="dropdown-item"
               role="menuitem"
