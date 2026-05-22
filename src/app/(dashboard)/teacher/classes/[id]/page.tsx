@@ -1,4 +1,3 @@
-
 // src/app/(dashboard)/teacher/classes/[id]/page.tsx
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -9,7 +8,6 @@ import {
   listClassRoster,
   countPendingJoinRequests,
 } from '@/lib/actions/enrollments';
-import { CopyButton } from '@/components/teacher/CopyButton';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StreamView from '@/components/dashboard/StreamView';
 import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
@@ -29,6 +27,7 @@ import { listActivitiesForTeacher } from '@/lib/actions/activities';
 import { getGradebookView } from '@/lib/actions/gradebook';
 import { createClient } from '@/lib/supabase/server';
 import ClassCover from '@/components/dashboard/ClassCover';
+import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,12 +55,11 @@ export default async function ClassDetailPage({
   const klass = classRes.data;
   if (!klass) notFound();
 
-// Pending-request count is fetched on EVERY tab so the Students tab can
+  // Pending-request count is fetched on EVERY tab so the Students tab can
   // show a badge -- otherwise the teacher wouldn't know there are pending
   // requests without opening that tab. Cheap: head:true count query.
   const pendingCount = await countPendingJoinRequests(klass.id);
 
-  // Pre-fetch students-tab data on the server when that tab is active
   let pendingRequests: Awaited<ReturnType<typeof listPendingJoinRequests>> = [];
   let roster: Awaited<ReturnType<typeof listClassRoster>> = [];
   if (tab === 'students') {
@@ -71,7 +69,6 @@ export default async function ClassDetailPage({
     ]);
   }
 
-  // Pre-fetch stream-tab data on the server when that tab is active
   let announcements: Awaited<ReturnType<typeof listAnnouncements>> = [];
   let currentUserId = '';
   if (tab === 'stream') {
@@ -84,16 +81,11 @@ export default async function ClassDetailPage({
     announcements = anns;
   }
 
-  // Pre-fetch modules-tab data on the server when that tab is active
   let modules: Awaited<ReturnType<typeof listModulesWithLessons>> = [];
   if (tab === 'modules') {
     modules = await listModulesWithLessons(klass.id);
   }
 
-  // Pre-fetch activities-tab data on the server when that tab is active.
-  // Session 13: roster is also fetched here so the completion-tracking
-  // "X of N submitted" rollup and inline missing-students expand on each
-  // activity card can compute against the full enrolled list.
   let activities: Awaited<ReturnType<typeof listActivitiesForTeacher>> = [];
   let activitiesRoster: Awaited<ReturnType<typeof listClassRoster>> = [];
   if (tab === 'activities') {
@@ -103,13 +95,11 @@ export default async function ClassDetailPage({
     ]);
   }
 
-  // Pre-fetch gradebook-tab data on the server when that tab is active
   let gradebookView: Awaited<ReturnType<typeof getGradebookView>> | null = null;
   if (tab === 'grades') {
     gradebookView = await getGradebookView(klass.id);
   }
 
-  // Pre-fetch analytics-tab data on the server when that tab is active
   let analyticsStats: Awaited<ReturnType<typeof getClassStudentStats>> | null = null;
   let analyticsActivities: Awaited<ReturnType<typeof listActivitiesForAnalytics>> = [];
   if (tab === 'analytics') {
@@ -119,9 +109,7 @@ export default async function ClassDetailPage({
     ]);
   }
 
-
-  
-      return (
+  return (
     <div className="space-y-6">
       <SetPageTitle title={klass.name} />
       <Link
@@ -136,27 +124,32 @@ export default async function ClassDetailPage({
       <ClassCover
         url={klass.cover_photo_url}
         color={klass.color}
-        className="rounded-xl px-6 py-5 text-white shadow-sm"
+        className="rounded-xl px-6 py-6 text-white shadow-sm"
       >
         <Link
           href={`/teacher/classes/${klass.id}/settings`}
-          className="absolute right-4 top-4 z-10 rounded-full bg-white/20 p-2 text-white shadow-sm hover:bg-white/30"
+          className="absolute right-4 top-4 z-10 rounded-full bg-white/20 p-2 text-white shadow-sm backdrop-blur-sm transition hover:bg-white/30"
           aria-label="Class settings"
+          title="Class settings"
         >
           <Settings className="h-4 w-4" />
         </Link>
         <div className="relative">
-          <h1 className="text-2xl font-bold drop-shadow-sm">{klass.name}</h1>
-          {klass.section && (
-            <p className="mt-1 text-base font-medium text-white/90 drop-shadow-sm">
-              {klass.section}
-            </p>
-          )}
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/90">
-            <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
-              {klass.semester}
-            </span>
-          
+          {/* Title — gets the most visual weight. Anchors the banner. */}
+          <h1 className="text-3xl font-bold leading-tight drop-shadow-sm">
+            {klass.name}
+          </h1>
+
+          {/* Metadata badge row — section, grade, track, semester all live
+              here as scannable pills. Replaces the old inline section
+              subtitle and lone semester pill. */}
+          <div className="mt-3">
+            <ClassMetaBadges
+              section={klass.section}
+              gradeLevel={klass.grade_level}
+              track={klass.track}
+              semester={klass.semester}
+            />
           </div>
         </div>
       </ClassCover>
@@ -186,7 +179,6 @@ export default async function ClassDetailPage({
               </Link>
             );
           })}
-
         </div>
       </nav>
 
@@ -282,15 +274,6 @@ function StreamTab({
           disabled={inviteCodeDisabled}
         />
       </div>
-    </div>
-  );
-}
-
-function ComingSoonTab({ title }: { title: string }) {
-  return (
-    <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-      <p className="mt-1 text-sm text-gray-600">This feature is coming soon.</p>
     </div>
   );
 }

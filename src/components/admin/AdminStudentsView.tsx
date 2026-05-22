@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import type { AdminStudentRow } from '@/lib/actions/admin';
 import { getInitials } from '@/lib/utils/getInitials';
+import { TrackPill } from '@/components/admin/TrackPill';
+import { TRACKS, GRADE_LEVELS } from '@/types/class';
 
 function formatJoinDate(iso: string): string {
   const d = new Date(iso);
@@ -21,17 +23,28 @@ export default function AdminStudentsView({
   students: AdminStudentRow[];
 }) {
   const [query, setQuery] = useState('');
+  const [trackFilter, setTrackFilter] = useState<string>('all');
+  const [gradeFilter, setGradeFilter] = useState<string>('all');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter(
-      (s) =>
+    return students.filter((s) => {
+      if (trackFilter !== 'all' && !s.tracks.includes(trackFilter)) {
+        return false;
+      }
+      if (gradeFilter !== 'all' && !s.gradeLevels.includes(gradeFilter)) {
+        return false;
+      }
+      if (!q) return true;
+      return (
         (s.fullName ?? '').toLowerCase().includes(q) ||
         s.email.toLowerCase().includes(q) ||
-        (s.username ?? '').toLowerCase().includes(q),
-    );
-  }, [students, query]);
+        (s.username ?? '').toLowerCase().includes(q) ||
+        s.tracks.some((t) => t.toLowerCase().includes(q)) ||
+        s.gradeLevels.some((g) => g.toLowerCase().includes(q))
+      );
+    });
+  }, [students, query, trackFilter, gradeFilter]);
 
   return (
     <div className="space-y-4">
@@ -47,15 +60,43 @@ export default function AdminStudentsView({
         </span>
       </div>
 
-      <div className="relative w-full sm:max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name, email, or username…"
-          className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, email, or username…"
+            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+          />
+        </div>
+
+        <select
+          value={trackFilter}
+          onChange={(e) => setTrackFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+        >
+          <option value="all">All tracks</option>
+          {TRACKS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={gradeFilter}
+          onChange={(e) => setGradeFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+        >
+          <option value="all">All grade levels</option>
+          {GRADE_LEVELS.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
       </div>
 
       {filtered.length === 0 ? (
@@ -73,6 +114,8 @@ export default function AdminStudentsView({
                   <th className="px-4 py-2.5">Name</th>
                   <th className="px-4 py-2.5">Email</th>
                   <th className="px-4 py-2.5">Username</th>
+                  <th className="px-4 py-2.5">Track</th>
+                  <th className="px-4 py-2.5">Grade</th>
                   <th className="px-4 py-2.5 text-right">Enrollments</th>
                   <th className="px-4 py-2.5">Joined</th>
                 </tr>
@@ -98,6 +141,28 @@ export default function AdminStudentsView({
                     <td className="px-4 py-2.5 text-gray-600">{s.email}</td>
                     <td className="px-4 py-2.5 text-gray-600">
                       {s.username ?? <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {s.tracks.length === 0 ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {s.tracks.map((t) => (
+                            <TrackPill key={t} track={t} />
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {s.gradeLevels.length === 0 ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {s.gradeLevels.map((g) => (
+                            <GradePill key={g} grade={g} />
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
                       {s.enrollmentCount}
@@ -128,6 +193,14 @@ function AvatarChip({ url, name }: { url: string | null; name: string }) {
   return (
     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-700">
       {getInitials(name)}
+    </span>
+  );
+}
+
+function GradePill({ grade }: { grade: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+      {grade}
     </span>
   );
 }

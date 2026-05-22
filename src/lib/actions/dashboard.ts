@@ -581,6 +581,63 @@ export interface StudentStatCounts {
   pendingTasks: number;
 }
 
+// Items version of countDeadlinesNext7Days. Same RLS scoping applies, so
+// teachers see their classes' deadlines and students see their enrolled
+// classes' deadlines without any explicit role filtering.
+export interface DeadlineItem {
+  activityId: string;
+  classId: string;
+  className: string;
+  title: string;
+  activityKind: ActivityKind;
+  dueAt: string;
+}
+
+export async function listMyDeadlinesNext7Days(): Promise<DeadlineItem[]> {
+  const supabase = await createClient();
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
+
+  const { data: rows, error } = await supabase
+    .from('activities')
+    .select('id, class_id, title, activity_kind, due_at')
+    .eq('published', true)
+    .gte('due_at', now.toISOString())
+    .lt('due_at', horizon.toISOString())
+    .order('due_at', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  type Row = {
+    id: string;
+    class_id: string;
+    title: string;
+    activity_kind: ActivityKind;
+    due_at: string;
+  };
+  const items = (rows ?? []) as Row[];
+  if (items.length === 0) return [];
+
+  const classIds = Array.from(new Set(items.map((i) => i.class_id)));
+  const { data: classRows, error: cErr } = await supabase
+    .from('classes')
+    .select('id, name')
+    .in('id', classIds);
+  if (cErr) throw new Error(cErr.message);
+  const classNameById = new Map<string, string>();
+  for (const c of (classRows ?? []) as Array<{ id: string; name: string }>) {
+    classNameById.set(c.id, c.name);
+  }
+
+  return items.map((i) => ({
+    activityId: i.id,
+    classId: i.class_id,
+    className: classNameById.get(i.class_id) ?? 'Unknown class',
+    title: i.title,
+    activityKind: i.activity_kind,
+    dueAt: i.due_at,
+  }));
+}
+
 async function countDeadlinesNext7Days(): Promise<number> {
   const supabase = await createClient();
   const now = new Date();
@@ -647,4 +704,119 @@ export async function getStudentStatCounts(): Promise<StudentStatCounts> {
     deadlines,
     pendingTasks: todoItems.length + personalCount,
   };
+}
+
+// ==========================================================================
+// SIDEBAR BADGE — TEACHER UNGRADED COUNT
+// ==========================================================================
+//
+// Lightweight count for the sidebar "Activities" badge. Mirrors the
+// `submission_ungraded` and `quiz_manual_pending` buckets surfaced by
+// getTeacherTodoItems(), but skips all the profile/class joins and
+// sorting. Just returns a number.
+//
+// Scoping: RLS filters activity_submissions, quiz_attempts, etc. to
+// rows on classes owned by the signed-in teacher, so no explicit
+// teacher_id filter is needed here. If this is ever called from an
+// admin context, add an explicit `classes.teacher_id = ?` join.
+export async function getTeacherUngradedCount(): Promise<number> {
+  const supabase = await createClient();
+
+  // Bucket 1: ungraded assignment submissions (final, not draft, no
+  // returned grade).
+  const { data: subRows, error: sErr } = await supabase
+    .from('activity_submissions')
+    .select('id, activity_id, is_draft')
+    .eq('is_draft', false);
+  if (sErr) throw new Error(sErr.message);
+
+  type SubLite = { id: string; activity_id: string; is_draft: boolean };
+  const submissions = (subRows ?? []) as SubLite[];
+
+  let assignmentUngradedCount = 0;
+
+  if (submissions.length > 0) {
+    const subActIds = Array.from(
+      new Set(submissions.map((s) => s.activity_id)),
+    );
+    const subIds = submissions.map((s) => s.id);
+
+    const { data: actRows, error: aErr } = await supabase
+      .from('activities')
+      .select('id, activity_kind')
+      .in('id', subActIds);
+    if (aErr) throw new Error(aErr.message);
+    type ActLite = { id: string; activity_kind: ActivityKind };
+    const assignmentIds = new Set(
+      ((actRows ?? []) as ActLite[])
+        .filter((a) => a.activity_kind === 'assignment')
+        .map((a) => a.id),
+    );
+
+    const { data: gradeRows, error: gErr } = await supabase
+      .from('activity_grades')
+      .select('submission_id, returned_at')
+      .in('submission_id', subIds);
+    if (gErr) throw new Error(gErr.message);
+    type GradeLite = { submission_id: string; returned_at: string | null };
+    const releasedSubmissionIds = new Set(
+      ((gradeRows ?? []) as GradeLite[])
+        .filter((g) => g.returned_at !== null)
+        .map((g) => g.submission_id),
+    );
+
+    for (const s of submissions) {
+      if (!assignmentIds.has(s.activity_id)) continue;
+      if (releasedSubmissionIds.has(s.id)) continue;
+      assignmentUngradedCount++;
+    }
+  }
+
+  // Bucket 2: quiz attempts with pending manual-review responses.
+  const { data: attRows, error: qErr } = await supabase
+    .from('quiz_attempts')
+    .select('id, activity_id')
+    .not('submitted_at', 'is', null);
+  if (qErr) throw new Error(qErr.message);
+  type AttemptLite = { id: string; activity_id: string };
+  const attempts = (attRows ?? []) as AttemptLite[];
+
+  let quizManualPendingCount = 0;
+
+  if (attempts.length > 0) {
+    const attemptIds = attempts.map((a) => a.id);
+    const attActIds = Array.from(new Set(attempts.map((a) => a.activity_id)));
+
+    const { data: mQuestionRows, error: mqErr } = await supabase
+      .from('quiz_questions')
+      .select('id')
+      .in('activity_id', attActIds)
+      .in('question_kind', ['essay', 'short_answer']);
+    if (mqErr) throw new Error(mqErr.message);
+    const manualQuestionIds = new Set(
+      (mQuestionRows ?? []).map((r) => (r as { id: string }).id),
+    );
+
+    if (manualQuestionIds.size > 0) {
+      const { data: respRows, error: rErr } = await supabase
+        .from('quiz_responses')
+        .select('attempt_id, question_id, manual_points')
+        .in('attempt_id', attemptIds);
+      if (rErr) throw new Error(rErr.message);
+      type RespLite = {
+        attempt_id: string;
+        question_id: string;
+        manual_points: string | number | null;
+      };
+      const pendingAttemptIds = new Set<string>();
+      for (const r of (respRows ?? []) as RespLite[]) {
+        if (!manualQuestionIds.has(r.question_id)) continue;
+        if (r.manual_points !== null) continue;
+        pendingAttemptIds.add(r.attempt_id);
+      }
+      quizManualPendingCount = pendingAttemptIds.size;
+    }
+  }
+
+  return assignmentUngradedCount + quizManualPendingCount;
 }

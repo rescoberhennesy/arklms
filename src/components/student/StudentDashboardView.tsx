@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { BookOpen, Calendar as CalendarIcon, ListChecks } from 'lucide-react';
 import { getStudentCalendarItems } from '@/lib/actions/dashboard';
 import type {
   StudentTodoItem,
@@ -12,12 +11,13 @@ import type { StudentClassListItem } from '@/types/class';
 import type {
   StudentStatCounts,
   CalendarFetchResult,
+  DeadlineItem,
 } from '@/lib/actions/dashboard';
 import CalendarWidget from '@/components/dashboard/CalendarWidget';
 import StudentTodoWidget from '@/components/dashboard/StudentTodoWidget';
 import AnnouncementsWidget from '@/components/dashboard/AnnouncementsWidget';
 import DashboardBanner from '@/components/dashboard/DashboardBanner';
-import StatCardsRow from '@/components/dashboard/StatCardsRow';
+import StudentStatCardsClient from '@/components/dashboard/StudentStatCardsClient';
 import RichClassCard from '@/components/dashboard/RichClassCard';
 
 interface StudentDashboardViewProps {
@@ -32,6 +32,7 @@ interface StudentDashboardViewProps {
   todoItems: StudentTodoItem[];
   announcements: RecentAnnouncementItem[];
   personalTasks: PersonalTaskItem[];
+  deadlineItems: DeadlineItem[];
 }
 
 export default function StudentDashboardView({
@@ -46,6 +47,7 @@ export default function StudentDashboardView({
   todoItems,
   announcements,
   personalTasks,
+  deadlineItems,
 }: StudentDashboardViewProps) {
   return (
     <div className="space-y-6">
@@ -58,27 +60,13 @@ export default function StudentDashboardView({
         showCreateClass={false}
       />
 
-      <StatCardsRow
-        items={[
-          {
-            label: 'Enrolled classes',
-            value: stats.enrolledClasses,
-            icon: BookOpen,
-            tone: 'red',
-          },
-          {
-            label: 'Deadlines (7d)',
-            value: stats.deadlines,
-            icon: CalendarIcon,
-            tone: 'amber',
-          },
-          {
-            label: 'Pending tasks',
-            value: stats.pendingTasks,
-            icon: ListChecks,
-            tone: 'indigo',
-          },
-        ]}
+      <StudentStatCardsClient
+        enrolledClasses={stats.enrolledClasses}
+        deadlinesCount={stats.deadlines}
+        pendingCount={stats.pendingTasks}
+        deadlineItems={deadlineItems}
+        todoItems={todoItems}
+        personalTasks={personalTasks}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -141,6 +129,7 @@ export default function StudentDashboardView({
             classesBasePath="/student/classes"
           />
         </aside>
+
       </div>
     </div>
   );

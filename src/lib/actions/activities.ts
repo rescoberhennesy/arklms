@@ -4,6 +4,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import type { ModuleTerm } from '@/lib/types/modules';
+import type { ActivityKind } from '@/lib/types/activities';
 import {
   type Activity,
   type ActivitySubmission,
@@ -39,7 +40,8 @@ interface ActivityRow {
   start_at: string;
   due_at: string;
   allow_late: boolean;
-  allow_resubmission: boolean;
+  allow_resubmission: boolean; // deprecated; preserved for schema compatibility
+  max_attempts: number;
   submission_type: SubmissionType;
   published: boolean;
   display_order: number;
@@ -51,9 +53,11 @@ interface SubmissionRow {
   id: string;
   activity_id: string;
   student_id: string;
-  submitted_at: string;
+  submitted_at: string | null; // NULL while draft
   text_body: string | null;
   is_late: boolean;
+  attempt_number: number;
+  is_draft: boolean;
   updated_at: string;
 }
 
@@ -107,6 +111,7 @@ function mapActivity(r: ActivityRow): Activity {
     dueAt: r.due_at,
     allowLate: r.allow_late,
     allowResubmission: r.allow_resubmission,
+    maxAttempts: r.max_attempts,
     submissionType: r.submission_type,
     published: r.published,
     displayOrder: r.display_order,
@@ -135,9 +140,14 @@ function mapSubmission(
     id: r.id,
     activityId: r.activity_id,
     studentId: r.student_id,
-    submittedAt: r.submitted_at,
+    // Drafts have submitted_at = NULL. Surface that as empty string at the
+    // edge for backward compatibility — downstream consumers should gate
+    // on isDraft rather than relying on submittedAt's truthiness.
+    submittedAt: r.submitted_at ?? '',
     textBody: r.text_body,
     isLate: r.is_late,
+    attemptNumber: r.attempt_number,
+    isDraft: r.is_draft,
     updatedAt: r.updated_at,
     attachments,
   };
@@ -226,10 +236,12 @@ export async function listActivitiesForTeacher(
     }));
   }
 
+  // Teacher never sees drafts — only final submissions.
   const { data: submissions, error: subErr } = await supabase
     .from('activity_submissions')
     .select('*')
-    .in('activity_id', activityIds);
+    .in('activity_id', activityIds)
+    .eq('is_draft', false);
   if (subErr) throw new Error(subErr.message);
 
   const submissionRows = (submissions ?? []) as SubmissionRow[];
@@ -323,6 +335,7 @@ export async function listActivitiesForStudent(
   const activityRows = activities as ActivityRow[];
   const activityIds = activityRows.map((a) => a.id);
 
+  // Student sees their OWN rows including drafts (so they can resume editing).
   const { data: submissions, error: subErr } = await supabase
     .from('activity_submissions')
     .select('*')
@@ -362,18 +375,26 @@ export async function listActivitiesForStudent(
     gradeBySubmission.set(g.submission_id, mapGrade(g));
   }
 
+  // Pick the highest-numbered row for each activity. If a draft exists,
+  // it has the highest attempt_number (since drafts are created at attempt
+  // = previous_final + 1 OR overwrite an existing draft on the same number).
   const submissionByActivity = new Map<string, ActivitySubmission>();
   for (const s of submissionRows) {
-    submissionByActivity.set(
-      s.activity_id,
-      mapSubmission(s, attachmentsBySubmission.get(s.id) ?? []),
-    );
+    const existing = submissionByActivity.get(s.activity_id);
+    const mapped = mapSubmission(s, attachmentsBySubmission.get(s.id) ?? []);
+    if (!existing || mapped.attemptNumber > existing.attemptNumber) {
+      submissionByActivity.set(s.activity_id, mapped);
+    }
   }
 
   return activityRows.map((a) => {
     const activity = mapActivity(a);
     const submission = submissionByActivity.get(a.id) ?? null;
-    const grade = submission ? gradeBySubmission.get(submission.id) ?? null : null;
+    // Grade lookup: a draft has no grade row; only check grades for submitted rows.
+    const grade =
+      submission && !submission.isDraft
+        ? gradeBySubmission.get(submission.id) ?? null
+        : null;
     return {
       ...activity,
       submission,
@@ -501,7 +522,9 @@ export async function createActivity(input: {
   startAt?: string;
   dueAt: string;
   allowLate?: boolean;
+  /** @deprecated Use `maxAttempts` instead. Ignored — always treated as false. */
   allowResubmission?: boolean;
+  maxAttempts?: number;
   submissionType: SubmissionType;
 }): Promise<{ activityId: string }> {
   const supabase = await createClient();
@@ -531,7 +554,8 @@ export async function createActivity(input: {
       start_at: input.startAt ?? new Date().toISOString(),
       due_at: input.dueAt,
       allow_late: input.allowLate ?? false,
-      allow_resubmission: input.allowResubmission ?? false,
+      allow_resubmission: false, // deprecated; no longer drives behavior
+      max_attempts: input.maxAttempts ?? 1,
       submission_type: input.submissionType,
       display_order: nextOrder,
       published: false,
@@ -554,7 +578,9 @@ export async function updateActivity(
     startAt?: string;
     dueAt?: string;
     allowLate?: boolean;
+    /** @deprecated Ignored. Use maxAttempts instead. */
     allowResubmission?: boolean;
+    maxAttempts?: number;
     submissionType?: SubmissionType;
   },
 ): Promise<void> {
@@ -568,8 +594,18 @@ export async function updateActivity(
   if (patch.startAt !== undefined) dbPatch.start_at = patch.startAt;
   if (patch.dueAt !== undefined) dbPatch.due_at = patch.dueAt;
   if (patch.allowLate !== undefined) dbPatch.allow_late = patch.allowLate;
-  if (patch.allowResubmission !== undefined)
-    dbPatch.allow_resubmission = patch.allowResubmission;
+  // allowResubmission is deprecated; intentionally ignored. The bounded
+  // max_attempts column replaces it.
+  if (patch.maxAttempts !== undefined) {
+    if (
+      !Number.isInteger(patch.maxAttempts) ||
+      patch.maxAttempts < 1 ||
+      patch.maxAttempts > 10
+    ) {
+      throw new Error('maxAttempts must be an integer between 1 and 10');
+    }
+    dbPatch.max_attempts = patch.maxAttempts;
+  }
   if (patch.submissionType !== undefined)
     dbPatch.submission_type = patch.submissionType;
 
@@ -941,13 +977,23 @@ export async function updateGradeWeights(
 
 // --- Writes (student) -----------------------------------------------------
 
+/**
+ * Submits an assignment (or saves it as a draft). Backed by the
+ * submit_activity SQL function which handles attempt-number tracking,
+ * late-flag computation, and draft state transitions.
+ *
+ * Pass `options.isDraft = true` to save without submitting.
+ */
 export async function submitActivity(
   activityId: string,
   textBody: string,
   attachments: SubmissionAttachmentInput[],
+  options?: { isDraft?: boolean },
 ): Promise<{
   submissionId: string;
   isLate: boolean;
+  isDraft: boolean;
+  attemptNumber: number;
   replacedGrade: boolean;
 }> {
   const supabase = await createClient();
@@ -959,15 +1005,19 @@ export async function submitActivity(
     p_attachment_names: attachments.map((a) => a.name),
     p_attachment_sizes: attachments.map((a) => a.size),
     p_attachment_mime_types: attachments.map((a) => a.mimeType),
+    p_is_draft: options?.isDraft ?? false,
   });
   if (error) throw new Error(error.message);
 
   const row = (data as Array<{
     submission_id: string;
     is_late: boolean;
+    is_draft: boolean;
+    attempt_number: number;
     replaced_grade: boolean;
   }>)[0];
 
+  // Look up class+activity for revalidation.
   const { data: act } = await supabase
     .from('activities')
     .select('class_id, title, class:class_id(name, teacher_id)')
@@ -981,38 +1031,108 @@ export async function submitActivity(
     };
     revalidateClassPaths(actRow.class_id, activityId);
 
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user && actRow.class) {
-        const { data: studentRow } = await supabase
-          .from('profiles')
-          .select('full_name, email')
-          .eq('id', user.id)
-          .maybeSingle();
-        const student = studentRow as { full_name: string | null; email: string } | null;
-        const studentName = student?.full_name?.trim() || student?.email || 'A student';
-        await notifySubmissionCreated({
-          submissionId: row.submission_id,
-          activityId,
-          activityTitle: actRow.title,
-          classId: actRow.class_id,
-          className: actRow.class.name,
-          teacherId: actRow.class.teacher_id,
-          studentName,
-        });
+    // Notify teacher ONLY on final submission (not on draft saves).
+    if (!row.is_draft) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user && actRow.class) {
+          const { data: studentRow } = await supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', user.id)
+            .maybeSingle();
+          const student = studentRow as {
+            full_name: string | null;
+            email: string;
+          } | null;
+          const studentName =
+            student?.full_name?.trim() || student?.email || 'A student';
+          await notifySubmissionCreated({
+            submissionId: row.submission_id,
+            activityId,
+            activityTitle: actRow.title,
+            classId: actRow.class_id,
+            className: actRow.class.name,
+            teacherId: actRow.class.teacher_id,
+            studentName,
+          });
+        }
+      } catch (e) {
+        console.error('[activities] submit notify error:', e);
       }
-    } catch (e) {
-      console.error('[activities] submit notify error:', e);
     }
   }
 
   return {
     submissionId: row.submission_id,
     isLate: row.is_late,
+    isDraft: row.is_draft,
+    attemptNumber: row.attempt_number,
     replacedGrade: row.replaced_grade,
   };
+}
+
+/**
+ * Discards a student's in-progress draft for an activity. No-op if the
+ * student has no draft. Used by the "Discard draft" button when a student
+ * decides they don't want what they've started.
+ *
+ * Only deletes drafts (is_draft = TRUE) — never touches submitted rows.
+ */
+export async function discardDraft(activityId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr) throw new Error(userErr.message);
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: draftRow, error: getErr } = await supabase
+    .from('activity_submissions')
+    .select('id')
+    .eq('activity_id', activityId)
+    .eq('student_id', user.id)
+    .eq('is_draft', true)
+    .maybeSingle();
+  if (getErr) throw new Error(getErr.message);
+  if (!draftRow) return;
+
+  const draftId = (draftRow as { id: string }).id;
+
+  // Best-effort: clear any attachments uploaded for this draft.
+  const { data: attachments } = await supabase
+    .from('submission_attachments')
+    .select('file_path')
+    .eq('submission_id', draftId);
+  if (attachments && attachments.length > 0) {
+    const paths = (attachments as Array<{ file_path: string }>).map(
+      (a) => a.file_path,
+    );
+    try {
+      await supabase.storage.from('submission-attachments').remove(paths);
+    } catch (e) {
+      console.error('[activities] discardDraft storage cleanup error:', e);
+    }
+  }
+
+  const { error } = await supabase
+    .from('activity_submissions')
+    .delete()
+    .eq('id', draftId);
+  if (error) throw new Error(error.message);
+
+  const { data: act } = await supabase
+    .from('activities')
+    .select('class_id')
+    .eq('id', activityId)
+    .single();
+  if (act) {
+    revalidateClassPaths((act as { class_id: string }).class_id, activityId);
+  }
 }
 
 // ==========================================================================
@@ -1062,7 +1182,7 @@ export async function createActivityAttachment(input: {
 }): Promise<{ attachmentId: string }> {
   const supabase = await createClient();
 
- const { data: actData, error: actErr } = await supabase
+  const { data: actData, error: actErr } = await supabase
     .from('activities')
     .select('class_id')
     .eq('id', input.activityId)
@@ -1142,32 +1262,14 @@ export async function getSignedActivityAttachmentUrl(
   const supabase = await createClient();
   const { data, error } = await supabase.storage
     .from('activity-attachments')
-    .createSignedUrl(filePath, 60 * 60); // 1-hour signed URL
+    .createSignedUrl(filePath, 60 * 60);
   if (error) throw new Error(error.message);
   return data.signedUrl;
 }
 
 // ==========================================================================
-// Activity duplication (Session 14)
+// Activity duplication
 // ==========================================================================
-//
-// Three actions:
-//   - listTeacherClassesForCopy: classes the current user teaches; used to
-//     populate the cross-class picker.
-//   - listClassActivitiesForCopy: lightweight activity list for a given
-//     class id, used inside the picker once the user chooses a source class.
-//   - duplicateActivity: actually performs the copy.
-//
-// duplicateActivity copies the activity row (with title-suffix on same-class
-// copy), all quiz settings/questions, and all activity_attachments
-// (deep-copying storage objects via the Supabase Storage copy() API).
-// Submissions/attempts/grades are NEVER copied.
-//
-// Atomicity model: insert activity -> insert quiz questions if any -> copy
-// storage objects + insert attachment rows. If a storage copy fails partway
-// through, delete the new activity (cascades to questions/attachments)
-// AND remove any storage objects already copied. Returns the new activity
-// id on success.
 
 export interface TeacherClassForCopy {
   classId: string;
@@ -1175,7 +1277,7 @@ export interface TeacherClassForCopy {
   section: string | null;
 }
 
-export async function listTeacherClassesForCopy(): Promise<
+export async function listTeacherClassesForCopy(): Promise <
   TeacherClassForCopy[]
 > {
   const supabase = await createClient();
@@ -1187,9 +1289,6 @@ export async function listTeacherClassesForCopy(): Promise<
   if (userErr) throw new Error(userErr.message);
   if (!user) throw new Error('Not authenticated');
 
-  // RLS on classes already filters to the teacher's classes for teacher
-  // role. We further narrow by teacher_id in case the SELECT policy is
-  // broader than we expect.
   const { data, error } = await supabase
     .from('classes')
     .select('id, name, section')
@@ -1256,11 +1355,10 @@ export async function duplicateActivity(
   if (userErr) throw new Error(userErr.message);
   if (!user) throw new Error('Not authenticated');
 
-  // Fetch source activity (all the quiz/config columns too).
   const { data: srcData, error: srcErr } = await supabase
     .from('activities')
     .select(
-      'id, class_id, term, activity_kind, title, instructions, prompt, max_points, allow_late, allow_resubmission, submission_type, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points',
+      'id, class_id, term, activity_kind, title, instructions, prompt, max_points, allow_late, allow_resubmission, max_attempts, submission_type, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points',
     )
     .eq('id', input.sourceActivityId)
     .single();
@@ -1276,6 +1374,7 @@ export async function duplicateActivity(
     max_points: string | number;
     allow_late: boolean;
     allow_resubmission: boolean;
+    max_attempts: number;
     submission_type: SubmissionType;
     time_limit_minutes: number | null;
     shuffle_questions: boolean;
@@ -1287,7 +1386,6 @@ export async function duplicateActivity(
   const sameClass = src.class_id === input.targetClassId;
   const newTitle = sameClass ? `${src.title} (copy)` : src.title;
 
-  // Compute next display_order in the target term.
   const { data: orderRows, error: orderErr } = await supabase
     .from('activities')
     .select('display_order')
@@ -1301,7 +1399,6 @@ export async function duplicateActivity(
       ? (orderRows[0] as { display_order: number }).display_order + 1
       : 0;
 
-  // Default dates: starts now, due 7 days from now. Teacher edits after.
   const now = new Date();
   const dueDate = new Date(now);
   dueDate.setDate(dueDate.getDate() + 7);
@@ -1317,10 +1414,11 @@ export async function duplicateActivity(
     start_at: now.toISOString(),
     due_at: dueDate.toISOString(),
     allow_late: src.allow_late,
-    allow_resubmission: src.allow_resubmission,
+    allow_resubmission: false, // deprecated
+    max_attempts: src.max_attempts,
     submission_type: src.submission_type,
     display_order: nextOrder,
-    published: false, // ALWAYS start as draft
+    published: false,
     time_limit_minutes: src.time_limit_minutes,
     shuffle_questions: src.shuffle_questions,
     auto_release_grade: src.auto_release_grade,
@@ -1337,11 +1435,9 @@ export async function duplicateActivity(
   if (insErr) throw new Error(`Failed to create duplicate: ${insErr.message}`);
   const newActivityId = (newActData as { id: string }).id;
 
-  // Storage paths we've copied (for rollback if a later step fails).
   const copiedStoragePaths: string[] = [];
 
   try {
-    // 1) Copy quiz questions (if any).
     if (src.activity_kind === 'quiz') {
       const { data: srcQuestions, error: qErr } = await supabase
         .from('quiz_questions')
@@ -1379,7 +1475,6 @@ export async function duplicateActivity(
       }
     }
 
-    // 2) Copy attachments (storage objects + DB rows).
     const { data: srcAttachments, error: attErr } = await supabase
       .from('activity_attachments')
       .select('file_path, file_name, file_size, mime_type')
@@ -1394,17 +1489,11 @@ export async function duplicateActivity(
     }>;
 
     for (const att of attRows) {
-      // Generate a path mirroring the existing convention:
-      //   <class_id>/<new_uuid>/<timestamp>-<filename>
-      // Use crypto.randomUUID for the segment; Date.now() for the timestamp;
-      // file_name carries the original filename.
       const newUuid = crypto.randomUUID();
       const ts = Date.now();
       const safeName = att.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const destPath = `${input.targetClassId}/${newUuid}/${ts}-${safeName}`;
 
-      // Server-side copy via Supabase Storage. This is the cheap path —
-      // no download-reupload round trip.
       const { error: copyErr } = await supabase.storage
         .from('activity-attachments')
         .copy(att.file_path, destPath);
@@ -1424,16 +1513,12 @@ export async function duplicateActivity(
           uploaded_by: user.id,
         });
       if (attInsErr) {
-        // The storage object now exists but no DB row. Treat as the same
-        // failure mode — rollback will catch the path we already pushed.
         throw new Error(
           `Failed to insert attachment row for "${att.file_name}": ${attInsErr.message}`,
         );
       }
     }
   } catch (err) {
-    // Rollback: best-effort cleanup. Errors here are logged, not thrown,
-    // because the caller already has a real error to surface.
     try {
       if (copiedStoragePaths.length > 0) {
         await supabase.storage
@@ -1447,7 +1532,6 @@ export async function duplicateActivity(
       );
     }
     try {
-      // Cascade deletes quiz_questions and activity_attachments rows.
       await supabase.from('activities').delete().eq('id', newActivityId);
     } catch (cleanupErr) {
       console.error(
@@ -1465,19 +1549,13 @@ export async function duplicateActivity(
 // ==========================================================================
 // AGGREGATED MULTI-CLASS ACTIVITIES (teacher shortcut page)
 // ==========================================================================
-// Mirrors the inline ActivitiesTabRosterEntry shape used by the existing
-// per-class ActivitiesTab. listClassRoster already returns this shape;
-// we re-export the type so the aggregated page can import it cleanly.
+
 export interface AggregatedRosterEntry {
   student_id: string;
   full_name: string | null;
   email: string | null;
 }
 
-/**
- * Same filter shape as the Grades shortcut — keeps both shortcut pages
- * speaking the same dialect so the filter bars are interchangeable.
- */
 export interface MyClassActivitiesFilters {
   classId?: string | null;
   section?: string | null;
@@ -1491,20 +1569,6 @@ export interface AggregatedClassActivities {
   roster: AggregatedRosterEntry[];
 }
 
-/**
- * For the signed-in teacher: load every active class they own that matches
- * the supplied filters, then for each class fetch its full activities list
- * (with submissions) and class roster.
- *
- * Per-class fan-out is intentional (each class has its own term ordering,
- * displayOrder, and roster). Each class runs three nested queries inside
- * listActivitiesForTeacher plus one for listClassRoster, so N classes =
- * 4N round trips at minimum. Fine at thesis scale; we use Promise.all
- * across classes to at least parallelize the fan-out.
- *
- * Archived classes are excluded — aggregated view is "what do I need to
- * work on now"; archived terms aren't part of that.
- */
 export async function getMyClassActivities(
   filters?: MyClassActivitiesFilters,
 ): Promise<AggregatedClassActivities[]> {
@@ -1527,8 +1591,6 @@ export async function getMyClassActivities(
 
   if (matched.length === 0) return [];
 
-  // For each matched class, fetch activities and roster in parallel.
-  // Cross-class is also parallel via Promise.all.
   const perClass = await Promise.all(
     matched.map(async (c) => {
       const [activities, roster] = await Promise.all([
@@ -1540,4 +1602,124 @@ export async function getMyClassActivities(
   );
 
   return perClass;
+}
+
+// --------------------------------------------------------------------------
+// STUDENT LOCKER — all of the student's submissions across classes
+// --------------------------------------------------------------------------
+
+export interface LockerSubmissionRow {
+  submissionId: string;
+  activityId: string;
+  activityTitle: string;
+  activityKind: ActivityKind;
+  classId: string;
+  className: string;
+  classColor: string | null;
+  submittedAt: string;
+  isLate: boolean;
+  isDraft: boolean;
+  attemptNumber: number;
+  attachmentCount: number;
+  // Grade (only present if grade row exists AND has been returned —
+  // students only see returned grades per RLS).
+  score: number | null;
+  maxPoints: number;
+  gradedAt: string | null;
+  // Computed display status, mirroring computeActivityStatus's outputs.
+  status:
+    | 'draft'
+    | 'submitted'
+    | 'late_submitted'
+    | 'graded_returned';
+}
+
+export async function listMySubmissions(): Promise<LockerSubmissionRow[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr) throw new Error(userErr.message);
+  if (!user) throw new Error('Not authenticated');
+
+  // Single query joining submission → activity → class, plus attachments
+  // (for the count) and the grade row. RLS already filters submissions to
+  // the current student and hides unreturned grades from the join.
+  const { data, error } = await supabase
+    .from('activity_submissions')
+    .select(
+      `
+        id, activity_id, submitted_at, is_late, is_draft, attempt_number, updated_at,
+        activity:activities (
+          id, title, activity_kind, max_points, class_id,
+          class:classes ( id, name, color )
+        ),
+        attachments:submission_attachments ( id ),
+        grade:activity_grades ( score, graded_at, returned_at )
+      `,
+    )
+    .eq('student_id', user.id)
+    .order('submitted_at', { ascending: false });
+
+  if (error) throw new Error(`Failed to load submissions: ${error.message}`);
+
+  type Row = {
+    id: string;
+    activity_id: string;
+    submitted_at: string;
+    is_late: boolean;
+    is_draft: boolean;
+    attempt_number: number;
+    updated_at: string;
+    activity: {
+      id: string;
+      title: string;
+      activity_kind: ActivityKind;
+      max_points: number;
+      class_id: string;
+      class: { id: string; name: string; color: string | null } | null;
+    } | null;
+    attachments: Array<{ id: string }> | null;
+    // grade may come back as an array (PostgREST quirk on 1:1) or a single object.
+    grade:
+      | Array<{ score: number; graded_at: string; returned_at: string | null }>
+      | { score: number; graded_at: string; returned_at: string | null }
+      | null;
+  };
+
+  return ((data ?? []) as unknown as Row[])
+    .filter((r) => r.activity?.class) // drop orphans defensively
+    .map((r) => {
+      const act = r.activity!;
+      const cls = act.class!;
+      const gradeRow = Array.isArray(r.grade) ? r.grade[0] : r.grade;
+      const returned =
+        gradeRow && gradeRow.returned_at ? gradeRow : null;
+
+      let status: LockerSubmissionRow['status'];
+      if (r.is_draft) status = 'draft';
+      else if (returned) status = 'graded_returned';
+      else if (r.is_late) status = 'late_submitted';
+      else status = 'submitted';
+
+      return {
+        submissionId: r.id,
+        activityId: r.activity_id,
+        activityTitle: act.title,
+        activityKind: act.activity_kind,
+        classId: cls.id,
+        className: cls.name,
+        classColor: cls.color,
+        submittedAt: r.submitted_at,
+        isLate: r.is_late,
+        isDraft: r.is_draft,
+        attemptNumber: r.attempt_number,
+        attachmentCount: r.attachments?.length ?? 0,
+        score: returned ? returned.score : null,
+        maxPoints: act.max_points,
+        gradedAt: returned ? returned.graded_at : null,
+        status,
+      };
+    });
 }

@@ -8,9 +8,11 @@ import {
   getTeacherCalendarItems,
   getTeacherTodoItems,
   getTeacherStatCounts,
+  listMyDeadlinesNext7Days,
   type TeacherStatCounts,
 } from '@/lib/actions/dashboard';
 import { listMyActivePersonalTasks } from '@/lib/actions/personalTasks';
+import TeacherStatCardsClient from '@/components/dashboard/TeacherStatCardsClient';
 import { listRecentAnnouncementsAcrossClasses } from '@/lib/actions/announcements';
 import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import { createClient } from '@/lib/supabase/server';
@@ -53,13 +55,14 @@ export default async function TeacherDashboardPage() {
   const monthStart = isoMonthStart(now.getFullYear(), now.getMonth());
   const monthEnd = isoMonthEnd(now.getFullYear(), now.getMonth());
 
-  const [
+const [
     classesResult,
     calendarResult,
     todoResult,
     statResult,
     announcementsResult,
     personalTasksResult,
+    deadlineItems,
     userName,
   ] = await Promise.all([
     listMyClasses(),
@@ -77,8 +80,11 @@ export default async function TeacherDashboardPage() {
     ),
     listRecentAnnouncementsAcrossClasses(5).catch(() => []),
     listMyActivePersonalTasks().catch(() => []),
+    listMyDeadlinesNext7Days().catch(() => []),
     getUserDisplayName(),
   ]);
+
+  const deadlineItemsSafe = Array.isArray(deadlineItems) ? deadlineItems : [];
 
   const allClasses = classesResult.ok ? classesResult.data : [];
   const calendarData = calendarResult;
@@ -107,29 +113,14 @@ export default async function TeacherDashboardPage() {
         showCreateClass
       />
 
-      <StatCardsRow
-        items={[
-          {
-            label: 'Total classes',
-            value: stats.totalClasses,
-            icon: BookOpen,
-            tone: 'red',
-          },
-          {
-            label: 'Deadlines (7d)',
-            value: stats.deadlines,
-            icon: CalendarIcon,
-            tone: 'amber',
-          },
-          {
-            label: 'Pending tasks',
-            value: stats.pendingTasks,
-            icon: ListChecks,
-            tone: 'indigo',
-          },
-        ]}
-      />
-
+      <TeacherStatCardsClient
+        totalClasses={stats.totalClasses}
+        deadlinesCount={stats.deadlines}
+        pendingCount={stats.pendingTasks}
+        deadlineItems={deadlineItemsSafe}
+        todoItems={todoItems}
+        personalTasks={personalTasks}
+      /> 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* LEFT: Your Classes → Class Deadlines → Quick Actions */}
         <div className="space-y-6 lg:col-span-2">

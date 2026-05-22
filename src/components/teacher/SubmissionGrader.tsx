@@ -13,6 +13,7 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
@@ -51,6 +52,7 @@ function gradeSignature(s: SubmissionWithGrade): string {
     g ? String(g.score) : '-',
     g?.feedback ?? '',
     g?.returnedAt ?? '',
+    s.attemptNumber,
   ].join('|');
 }
 
@@ -95,6 +97,11 @@ export default function SubmissionGrader({
   const grade = submission.grade;
   const isReleased = !!grade?.returnedAt;
   const attachments = submission.attachments;
+
+  // Is this a multi-attempt assignment? If yes, show the "Attempt X of Y"
+  // pill so the teacher knows which iteration they're looking at. Single-
+  // attempt assignments keep the header clean.
+  const showAttemptBadge = activity.maxAttempts > 1;
 
   // ---- Validation -------------------------------------------------------
 
@@ -258,6 +265,15 @@ export default function SubmissionGrader({
                     Late
                   </span>
                 )}
+                {showAttemptBadge && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700"
+                    title={`This is attempt ${submission.attemptNumber} of ${activity.maxAttempts} allowed`}
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Attempt {submission.attemptNumber} of {activity.maxAttempts}
+                  </span>
+                )}
               </div>
             </div>
             <span
@@ -266,6 +282,19 @@ export default function SubmissionGrader({
               {statusPill.label}
             </span>
           </div>
+
+          {/* Heads-up for resubmission scenario. If this is a later attempt
+              on a multi-attempt assignment, remind the teacher that any
+              prior released grade was already cleared by the RPC when the
+              student submitted this attempt. Saves them from wondering
+              "why does this look ungraded if I graded the last one?" */}
+          {showAttemptBadge && submission.attemptNumber > 1 && !grade && (
+            <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              <AlertCircle className="-mt-0.5 mr-1 inline h-3 w-3" />
+              This is a resubmission. Any previous grade for this student on
+              this assignment was cleared and needs to be re-entered.
+            </div>
+          )}
         </div>
 
         {/* Text body */}

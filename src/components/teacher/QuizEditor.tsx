@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   Sparkles,
   ListChecks,
+  Clock,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
@@ -99,6 +100,7 @@ function quizConfigSignature(view: TeacherQuizView): string {
     view.config.shuffleQuestions ? 1 : 0,
     view.config.autoReleaseGrade ? 1 : 0,
     view.config.showCorrectAnswers ? 1 : 0,
+    view.config.allowLate ? 1 : 0,
   ].join('§');
 }
 
@@ -113,20 +115,16 @@ export default function QuizEditor({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Quiz view (questions + config + lock state). Resyncable from server.
   const [quizView, setQuizView] = useState<TeacherQuizView>(initialQuizView);
 
-  // Title (inline editor)
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(activity.title);
 
-  // Instructions (manual-save, dirty-aware)
   const [instructions, setInstructions] = useState(activity.instructions);
   const [savedInstructions, setSavedInstructions] = useState(activity.instructions);
   const [descEditing, setDescEditing] = useState(false);
   const isDescDirty = instructions !== savedInstructions;
 
-  // Quiz settings (manual-save dirty-aware)
   const [dueLocal, setDueLocal] = useState(isoToLocal(activity.dueAt));
   const [savedDueLocal, setSavedDueLocal] = useState(isoToLocal(activity.dueAt));
 
@@ -162,13 +160,20 @@ export default function QuizEditor({
     initialQuizView.config.showCorrectAnswers,
   );
 
+  // NEW: allow_late for quizzes
+  const [allowLate, setAllowLate] = useState(initialQuizView.config.allowLate);
+  const [savedAllowLate, setSavedAllowLate] = useState(
+    initialQuizView.config.allowLate,
+  );
+
   const isSettingsDirty =
     dueLocal !== savedDueLocal ||
     hasTimeLimit !== savedHasTimeLimit ||
     (hasTimeLimit && timeLimitMinutes !== savedTimeLimitMinutes) ||
     shuffleQuestions !== savedShuffleQuestions ||
     autoReleaseGrade !== savedAutoReleaseGrade ||
-    showCorrectAnswers !== savedShowCorrectAnswers;
+    showCorrectAnswers !== savedShowCorrectAnswers ||
+    allowLate !== savedAllowLate;
 
   const [addingKind, setAddingKind] = useState<QuestionKind | ''>('');
   const [aiGenOpen, setAiGenOpen] = useState(false);
@@ -211,6 +216,7 @@ export default function QuizEditor({
       setSavedShuffleQuestions(initialQuizView.config.shuffleQuestions);
       setSavedAutoReleaseGrade(initialQuizView.config.autoReleaseGrade);
       setSavedShowCorrectAnswers(initialQuizView.config.showCorrectAnswers);
+      setSavedAllowLate(initialQuizView.config.allowLate);
       if (!isSettingsDirtyRef.current) {
         setHasTimeLimit(initialQuizView.config.timeLimitMinutes !== null);
         setTimeLimitMinutes(
@@ -219,6 +225,7 @@ export default function QuizEditor({
         setShuffleQuestions(initialQuizView.config.shuffleQuestions);
         setAutoReleaseGrade(initialQuizView.config.autoReleaseGrade);
         setShowCorrectAnswers(initialQuizView.config.showCorrectAnswers);
+        setAllowLate(initialQuizView.config.allowLate);
       }
       setQuizView(initialQuizView);
     }
@@ -232,8 +239,6 @@ export default function QuizEditor({
       setError(e instanceof Error ? e.message : 'Failed to refresh quiz.');
     }
   }, [activity.id]);
-
-  // ------------------------ Handlers ------------------------
 
   function handleSaveTitle() {
     const trimmed = titleDraft.trim();
@@ -304,9 +309,16 @@ export default function QuizEditor({
     }
     startTransition(async () => {
       try {
-        if (dueLocal !== savedDueLocal) {
-          await updateActivity(activity.id, { dueAt: dueIso });
+        // Push due_at + allow_late through updateActivity (assignment-level),
+        // and the quiz-specific config (timer, shuffle, etc.) through
+        // updateQuizConfig.
+        const activityPatch: Record<string, unknown> = {};
+        if (dueLocal !== savedDueLocal) activityPatch.dueAt = dueIso;
+        if (allowLate !== savedAllowLate) activityPatch.allowLate = allowLate;
+        if (Object.keys(activityPatch).length > 0) {
+          await updateActivity(activity.id, activityPatch);
         }
+
         const configPatch: Record<string, unknown> = {};
         if (
           hasTimeLimit !== savedHasTimeLimit ||
@@ -323,6 +335,9 @@ export default function QuizEditor({
         if (showCorrectAnswers !== savedShowCorrectAnswers) {
           configPatch.showCorrectAnswers = showCorrectAnswers;
         }
+        if (allowLate !== savedAllowLate) {
+          configPatch.allowLate = allowLate;
+        }
         if (Object.keys(configPatch).length > 0) {
           await updateQuizConfig(activity.id, configPatch);
         }
@@ -332,6 +347,7 @@ export default function QuizEditor({
         setSavedShuffleQuestions(shuffleQuestions);
         setSavedAutoReleaseGrade(autoReleaseGrade);
         setSavedShowCorrectAnswers(showCorrectAnswers);
+        setSavedAllowLate(allowLate);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to save settings.');
@@ -346,6 +362,7 @@ export default function QuizEditor({
     setShuffleQuestions(savedShuffleQuestions);
     setAutoReleaseGrade(savedAutoReleaseGrade);
     setShowCorrectAnswers(savedShowCorrectAnswers);
+    setAllowLate(savedAllowLate);
   }
 
   function handleTogglePublish() {
@@ -396,8 +413,6 @@ export default function QuizEditor({
     });
   }
 
-  // ------------------------ Render ------------------------
-
   const totalPoints = quizView.questions.reduce((acc, q) => acc + q.points, 0);
   const questionCount = quizView.questions.length;
   const locked = quizView.questionsLocked;
@@ -409,8 +424,6 @@ export default function QuizEditor({
           {error}
         </div>
       )}
-
-      {/* ============================== FULL-WIDTH HEADER ============================== */}
 
       {/* Title bar */}
       <div className="flex items-start gap-3">
@@ -498,7 +511,7 @@ export default function QuizEditor({
         </div>
       </div>
 
-      {/* Quick stats strip */}
+      {/* Quick stats */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
         <span className="inline-flex items-center gap-1">
           <Calendar className="h-3 w-3" />
@@ -518,6 +531,12 @@ export default function QuizEditor({
             {quizView.config.timeLimitMinutes} min
           </span>
         )}
+        {quizView.config.allowLate && (
+          <span className="inline-flex items-center gap-1 text-amber-700">
+            <Clock className="h-3 w-3" />
+            Late submissions allowed
+          </span>
+        )}
         {quizView.attemptCount > 0 && (
           <span>
             {quizView.attemptCount} attempt
@@ -526,7 +545,6 @@ export default function QuizEditor({
         )}
       </div>
 
-      {/* Lock banner */}
       {locked && (
         <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           <Lock className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -541,12 +559,8 @@ export default function QuizEditor({
         </div>
       )}
 
-      {/* ============================== TWO-COLUMN UPPER ============================== */}
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* LEFT: Instructions, Questions, Attachments */}
         <div className="space-y-6 lg:col-span-2">
-          {/* Instructions */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
@@ -610,14 +624,12 @@ export default function QuizEditor({
             )}
           </section>
 
-          {/* Questions */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                 Questions
               </h2>
               <div className="flex items-center gap-2">
-                {/* Export quiz — temporarily disabled. */}
                 {false && (
                   <div className="relative">
                     <button
@@ -728,7 +740,6 @@ export default function QuizEditor({
             )}
           </section>
 
-          {/* Attachments */}
           <ActivityAttachmentsPanel
             activityId={activity.id}
             classId={classId}
@@ -737,7 +748,6 @@ export default function QuizEditor({
           />
         </div>
 
-        {/* RIGHT: Quiz settings (sticky on lg+) */}
         <aside className="lg:col-span-1">
           <section className="sticky top-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
@@ -796,6 +806,27 @@ export default function QuizEditor({
                 </p>
               </div>
 
+              {/* NEW: Allow late for quizzes */}
+              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={allowLate}
+                  onChange={(e) => setAllowLate(e.target.checked)}
+                  disabled={isPending}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <span>
+                  <span className="inline-flex items-center gap-1 font-medium">
+                    <Clock className="h-3.5 w-3.5 text-gray-500" />
+                    Allow late submissions
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    Students can start and submit after the due date. Late
+                    attempts are flagged.
+                  </span>
+                </span>
+              </label>
+
               <label className="inline-flex items-start gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -850,7 +881,6 @@ export default function QuizEditor({
                 </span>
               </label>
 
-              {/* Save / cancel inline at bottom of settings panel */}
               {isSettingsDirty && (
                 <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
                   <button
@@ -881,11 +911,7 @@ export default function QuizEditor({
         </aside>
       </div>
 
-      {/* ============================== DIVIDER ============================== */}
-
       <div className="border-t border-gray-200" aria-hidden />
-
-      {/* ============================== FULL-WIDTH LOWER ============================== */}
 
       <QuizAttemptsPanel
         activityId={activity.id}
@@ -909,8 +935,6 @@ export default function QuizEditor({
           Delete quiz
         </button>
       </section>
-
-      {/* ============================== DIALOGS / MODALS ============================== */}
 
       <ConfirmDialog
         open={confirmDelete}

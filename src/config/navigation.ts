@@ -1,5 +1,4 @@
 // src/config/navigation.ts
-
 import {
   LayoutDashboard,
   Users,
@@ -10,7 +9,9 @@ import {
   FolderOpen,
   ClipboardList,
   ClipboardCheck,
+  BookOpenCheck,  // ← add this
   BarChart3,
+  Archive,   // ← new
   type LucideIcon,
 } from 'lucide-react'
 import type { UserRole } from '@/types/user'
@@ -19,6 +20,10 @@ export interface NavItem {
   label: string
   href: string
   icon: LucideIcon
+  /** Optional key to look up a dynamic badge count from the sidebar's
+   *  badgeCounts prop. Static value lives nowhere — counts are fetched
+   *  in the dashboard layout per role and matched by this key. */
+  badgeKey?: string
 }
 
 export interface NavSection {
@@ -61,7 +66,12 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       title: 'Shortcuts',
       items: [
         { label: 'Modules', href: '/teacher/modules', icon: FolderOpen },
-        { label: 'Activities', href: '/teacher/activities', icon: ClipboardList },
+        {
+          label: 'Activities',
+          href: '/teacher/activities',
+          icon: ClipboardList,
+          badgeKey: 'teacher_ungraded',
+        },
         { label: 'Grades', href: '/teacher/grades', icon: ClipboardCheck },
         { label: 'Analytics', href: '/teacher/analytics', icon: BarChart3 },
       ],
@@ -79,6 +89,8 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       items: [
         { label: 'My Classes', href: '/student/classes', icon: BookOpen },
         { label: 'Calendar', href: '/student/calendar', icon: Calendar },
+        { label: 'AI Practice', href: '/student/practice', icon: BookOpenCheck },
+        { label: 'Locker', href: '/student/locker', icon: Archive },
       ],
     },
   ],

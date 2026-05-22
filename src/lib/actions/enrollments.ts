@@ -8,9 +8,16 @@ import { createClient } from '@/lib/supabase/server';
 import type {
   PendingJoinRequest,
   StudentClassListItem,
+  GradeLevel,
+  Track,
+  Semester,
 } from '@/types/class';
-import { notifyJoinRequestCreated } from '@/lib/actions/notifications';
-import { notifyJoinRequestDecided } from '@/lib/actions/notifications';
+import {
+  notifyJoinRequestCreated,
+  notifyJoinRequestDecided,
+  notifyEnrollmentCreated,
+} from '@/lib/actions/notifications';
+
 
 async function requireAuthUserId() {
   const supabase = await createClient();
@@ -62,10 +69,6 @@ export async function requestJoinClassByCode(code: string): Promise<JoinByCodeRe
   // (kind === 'pending'); notify the class teacher. ref_id is the class_id
   // rather than the request_id because the RPC doesn't return the latter.
   // Teacher click-through lands on the students tab where the request shows.
- // Notification fan-out (Session 13). A new pending request was created
-  // (kind === 'pending'); notify the class teacher. ref_id is the class_id
-  // rather than the request_id because the RPC doesn't return the latter.
-  // Teacher click-through lands on the students tab where the request shows.
   //
   // Class name + teacher_id come via get_join_request_class_meta (a scoped
   // SECURITY DEFINER fn): the student isn't enrolled yet, so a direct
@@ -109,13 +112,15 @@ export async function requestJoinClassByCode(code: string): Promise<JoinByCodeRe
 export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
   const { supabase, userId } = await requireAuthUserId();
 
+  // grade_level and track are included so the student class cards / list
+  // surface the same metadata as the teacher view.
   const { data, error } = await supabase
     .from('class_enrollments')
     .select(
       `
         enrolled_at,
         classes:class_id (
-          id, name, section, semester, color, cover_photo_url, is_archived,
+          id, name, section, semester, grade_level, track, color, cover_photo_url, is_archived,
           teacher:teacher_id ( full_name )
         )
       `,
@@ -125,9 +130,6 @@ export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
 
   if (error) throw new Error(`Failed to list enrolled classes: ${error.message}`);
 
-  // Active classes first, archived after. Each block keeps the student's
-  // drag order via display_order (already the .order above). The two-pass
-  // sort below partitions by is_archived without disturbing inner order.
   const items = (data ?? [])
     .map((row: any) => {
       const c = row.classes;
@@ -137,6 +139,8 @@ export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
         name: c.name,
         section: c.section,
         semester: c.semester,
+        grade_level: c.grade_level ?? null,
+        track: c.track ?? null,
         color: c.color,
         cover_photo_url: c.cover_photo_url,
         teacher_name: c.teacher?.full_name ?? null,
@@ -146,6 +150,7 @@ export async function listMyEnrolledClasses(): Promise<StudentClassListItem[]> {
     })
     .filter((x): x is StudentClassListItem => x !== null);
 
+  // Active first, archived after — display_order preserved within each block.
   return [
     ...items.filter((c) => !c.is_archived),
     ...items.filter((c) => c.is_archived),
@@ -263,16 +268,23 @@ export async function decideJoinRequest(
   if (error) throw new Error(`Failed to ${approve ? 'approve' : 'reject'} request: ${error.message}`);
   revalidatePath(`/teacher/classes/${classId}`);
 
-  // Notification fan-out (Session 13). Tell the student the outcome.
+// Notification fan-out (Session 13). Tell the student the outcome.
   const student = reqRow as { student_id: string } | null;
   if (student) {
     try {
+      // Pull class meta once — used by both notifications below.
       const { data: classRow } = await supabase
         .from('classes')
-        .select('name')
+        .select('name, section, teacher_id')
         .eq('id', classId)
         .maybeSingle();
-      const className = (classRow as { name: string } | null)?.name ?? 'a class';
+      const cls = classRow as {
+        name: string;
+        section: string | null;
+        teacher_id: string;
+      } | null;
+      const className = cls?.name ?? 'a class';
+
       await notifyJoinRequestDecided({
         requestId,
         classId,
@@ -280,15 +292,54 @@ export async function decideJoinRequest(
         studentId: student.student_id,
         decision: approve ? 'approved' : 'rejected',
       });
+
+      // Admin-watch fan-out (Session 13 → admin watch). Only on approval,
+      // since rejection is not actually an enrollment event. We also need
+      // the new enrollment's id and the student's display name.
+      if (approve && cls) {
+        const [{ data: enrollRow }, { data: studentRow }] = await Promise.all([
+          supabase
+            .from('class_enrollments')
+            .select('id')
+            .eq('class_id', classId)
+            .eq('student_id', student.student_id)
+            .maybeSingle(),
+          supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', student.student_id)
+            .maybeSingle(),
+        ]);
+        const enrollment = enrollRow as { id: string } | null;
+        const studentProfile = studentRow as {
+          full_name: string | null;
+          email: string;
+        } | null;
+        const studentName =
+          studentProfile?.full_name?.trim() ||
+          studentProfile?.email ||
+          'A student';
+
+        if (enrollment) {
+          await notifyEnrollmentCreated({
+            enrollmentId: enrollment.id,
+            classId,
+            className: cls.name,
+            section: cls.section ?? null,
+            studentId: student.student_id,
+            studentName,
+            teacherId: cls.teacher_id,
+          });
+        }
+      }
     } catch (e) {
       console.error('[enrollments] decide notify error:', e);
     }
   }
 }
-
 export async function listClassRoster(
   classId: string,
-): Promise<
+): Promise <
   Array<{
     student_id: string;
     full_name: string | null;
@@ -322,8 +373,6 @@ export async function listClassRoster(
       last_active_at: row.student?.last_active_at ?? null,
     }))
     .sort((a, b) => {
-      // Alphabetical by display name; fall back to email so rows with no
-      // full_name still sort sensibly. Case-insensitive.
       const an = (a.full_name ?? a.email ?? '').toLowerCase();
       const bn = (b.full_name ?? b.email ?? '').toLowerCase();
       return an.localeCompare(bn);
@@ -343,15 +392,23 @@ export async function removeEnrollment(
   if (error) throw new Error(`Failed to remove student: ${error.message}`);
   revalidatePath(`/teacher/classes/${classId}`);
 }
+
 // --------------------------------------------------------------------------
 // STUDENT — class detail
 // --------------------------------------------------------------------------
 
+/**
+ * Detail shape used by the student class page. Includes grade_level and
+ * track so the banner can show the same structural metadata badges the
+ * teacher view does.
+ */
 export type StudentClassDetail = {
   id: string;
   name: string;
   section: string | null;
-  semester: string;
+  semester: Semester;
+  grade_level: GradeLevel | null;
+  track: Track | null;
   color: string | null;
   cover_photo_url: string | null;
   description: string | null;
@@ -370,7 +427,8 @@ export async function getStudentClassById(
       `
         enrolled_at,
         classes:class_id (
-          id, name, section, semester, color, cover_photo_url, description,
+          id, name, section, semester, grade_level, track,
+          color, cover_photo_url, description,
           teacher:teacher_id ( full_name )
         )
       `,
@@ -390,6 +448,8 @@ export async function getStudentClassById(
     name: c.name,
     section: c.section,
     semester: c.semester,
+    grade_level: c.grade_level ?? null,
+    track: c.track ?? null,
     color: c.color,
     cover_photo_url: c.cover_photo_url,
     description: c.description,
@@ -398,7 +458,6 @@ export async function getStudentClassById(
   };
 }
 
-
 export async function reorderMyEnrollments(orderedClassIds: string[]): Promise<void> {
   const { supabase } = await requireAuthUserId();
   const { error } = await supabase.rpc('reorder_my_enrollments', {
@@ -406,7 +465,6 @@ export async function reorderMyEnrollments(orderedClassIds: string[]): Promise<v
   });
   if (error) throw new Error(`Failed to reorder enrollments: ${error.message}`);
 }
-
 
 export async function leaveClass(classId: string): Promise<void> {
   const { supabase, userId } = await requireAuthUserId();
@@ -417,7 +475,6 @@ export async function leaveClass(classId: string): Promise<void> {
     .eq('student_id', userId);
   if (error) throw new Error(`Failed to leave class: ${error.message}`);
 }
-
 
 export async function listMyRejectedRequests(): Promise <
   Array<{ id: string; class_id: string; class_name: string; decided_at: string }>

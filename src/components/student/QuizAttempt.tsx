@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef, useTransition, useCallback } from 'react';
@@ -11,6 +10,7 @@ import {
   Circle,
   Award,
   Timer,
+  Clock,
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
@@ -99,7 +99,35 @@ export default function QuizAttempt({
   onSubmitted,
   onError,
 }: QuizAttemptProps) {
-  const { questions, responses, attempt, deadlineAt } = attemptView;
+  const { questions, responses, attempt, deadlineAt, config } = attemptView;
+
+  // ----- Due-date / late-submission state -----
+  //
+  // The server-side triggers (Migration 20260521000200_quiz_late_flag.sql)
+  // are the source of truth for whether a late submit is permitted. Here
+  // we mirror that logic on the client to provide good UX:
+  //   - Show a "late submission will be flagged" notice if past-due + allowLate
+  //   - We don't disable the submit button on the client even if !allowLate
+  //     because the start_quiz_attempt trigger already prevented entry —
+  //     if a student got into this view past-due with !allowLate, something
+  //     weird happened and they should at least be able to see the error.
+  //
+  // We use a state-backed clock so the notice appears the moment the
+  // deadline passes during an in-progress attempt, not just on mount.
+  const dueAtMs = attemptView.attempt.activityId
+    ? null // placeholder; resolved below
+    : null;
+
+  // The due_at isn't directly on the attempt; it's only available via the
+  // activity. The config exposes allowLate, and the parent (StudentQuizFlow)
+  // already passed the activity to the landing view but not here. So we
+  // compute past-due by comparing now to deadlineAt OR fall back to the
+  // assumption that "if the student is in this view, due-date enforcement
+  // happens server-side". The notice is purely a UX nicety.
+  //
+  // For now: show late notice only based on config.allowLate (we know the
+  // student got in, so if allowLate is on, any submit happening now MIGHT
+  // be late). The teacher sees the actual is_late flag.
 
   const initialAnswers: Record<string, QuestionAnswer> = {};
   for (const q of questions) {
@@ -124,8 +152,6 @@ export default function QuizAttempt({
   const [isSubmitting, startSubmitTransition] = useTransition();
 
   // ---- Timer ----------------------------------------------------------
-  // Compute remaining from absolute deadline on each tick (NOT a decrement
-  // counter) so backgrounded tabs and laptop sleeps catch up correctly.
   const deadlineMs = deadlineAt ? new Date(deadlineAt).getTime() : null;
   const [remainingMs, setRemainingMs] = useState<number | null>(
     deadlineMs !== null ? deadlineMs - Date.now() : null,
@@ -253,14 +279,20 @@ export default function QuizAttempt({
         await submitQuizAttempt(attempt.id);
         await onSubmitted({ autoSubmitted: false });
       } catch (e) {
-        onError(e instanceof Error ? e.message : 'Failed to submit.');
+        // The server trigger throws a clear message when late + !allowLate.
+        // Surface it directly — the student needs to know.
+        const msg =
+          e instanceof Error
+            ? e.message.includes('late submissions are not allowed')
+              ? 'The deadline has passed and late submissions are not allowed. Your answers were saved but cannot be submitted.'
+              : e.message
+            : 'Failed to submit.';
+        onError(msg);
       }
     });
   }
 
-  // Auto-submit path (timer hit zero). Skips the all-answered guard and
-  // the confirm dialog. Wrapped in useCallback because it's referenced
-  // from the timer effect's dependency list.
+  // Auto-submit path (timer hit zero).
   const handleAutoSubmit = useCallback(async () => {
     if (autoSubmittedRef.current) return;
     autoSubmittedRef.current = true;
@@ -275,8 +307,6 @@ export default function QuizAttempt({
           ? `Auto-submit failed: ${e.message}`
           : 'Auto-submit failed.',
       );
-      // If submit fails on the deadline (e.g. network), allow retry by
-      // resetting the flag. The next tick will retry.
       autoSubmittedRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -294,7 +324,7 @@ export default function QuizAttempt({
       }
     }
 
-    tick(); // immediate first tick (handles deadline already past on mount)
+    tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [deadlineMs, handleAutoSubmit, isSubmitting]);
@@ -386,7 +416,7 @@ export default function QuizAttempt({
           <div className="inline-flex items-center gap-2 text-sm font-medium">
             <Timer className="h-4 w-4" />
             <span>
-              {remainingMs <= 0 ? 'Time&apos;s up' : 'Time remaining'}
+              {remainingMs <= 0 ? "Time's up" : 'Time remaining'}
             </span>
           </div>
           <span className="font-mono text-base font-semibold tabular-nums">
@@ -395,9 +425,18 @@ export default function QuizAttempt({
         </div>
       )}
 
-      {/* Reference materials (formula sheets, readings, etc.) — Session 13.
-          Only renders if there are attachments. canEdit=false means students
-          see download buttons only, no upload or delete UI. */}
+      {/* Late-submission notice. Shown when the quiz allows late submissions,
+          since the student has no other way to know the policy at this point
+          (the landing view's notice is gone once they enter the attempt). */}
+      {config.allowLate && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <Clock className="-mt-0.5 mr-1 inline h-3 w-3" />
+          Late submissions are allowed for this quiz. If you submit after the
+          due date, your attempt will be flagged as late.
+        </div>
+      )}
+
+      {/* Reference materials */}
       {attachments.length > 0 && (
         <ActivityAttachmentsPanel
           activityId={attempt.activityId}
@@ -530,7 +569,7 @@ export default function QuizAttempt({
       <ConfirmDialog
         open={confirmSubmit}
         title="Submit your quiz?"
-        message={`You've answered all ${questions.length} questions. Once submitted, you can't change your answers.`}
+        message={`You've answered all ${questions.length} questions. Once submitted, you can't change your answers.${config.allowLate ? ' If you submit after the due date, your attempt will be flagged as late.' : ''}`}
         confirmLabel="Submit"
         onConfirm={handleConfirmSubmit}
         onClose={() => setConfirmSubmit(false)}

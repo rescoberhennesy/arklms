@@ -6,6 +6,7 @@ import {
   getStudentCalendarItems,
   getStudentTodoItems,
   getStudentStatCounts,
+  listMyDeadlinesNext7Days,
   type StudentStatCounts,
 } from '@/lib/actions/dashboard';
 import { listMyActivePersonalTasks } from '@/lib/actions/personalTasks';
@@ -50,7 +51,9 @@ export default async function StudentDashboardPage() {
   let stats: StudentStatCounts;
   let announcements;
   let personalTasks;
+  let deadlineItems;
   let userName: string;
+
   try {
     [
       enrolledClasses,
@@ -60,6 +63,7 @@ export default async function StudentDashboardPage() {
       stats,
       announcements,
       personalTasks,
+      deadlineItems,
       userName,
     ] = await Promise.all([
       listMyEnrolledClasses(),
@@ -69,6 +73,7 @@ export default async function StudentDashboardPage() {
       getStudentStatCounts(),
       listRecentAnnouncementsAcrossClasses(5),
       listMyActivePersonalTasks(),
+      listMyDeadlinesNext7Days(),
       getUserDisplayName(),
     ]);
   } catch (err) {
@@ -102,6 +107,7 @@ export default async function StudentDashboardPage() {
       todoItems={todoItems}
       announcements={announcements}
       personalTasks={personalTasks}
+      deadlineItems={deadlineItems}
     />
   );
 }

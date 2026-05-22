@@ -66,7 +66,18 @@ export interface Activity {
   startAt: string; // ISO timestamp
   dueAt: string; // ISO timestamp
   allowLate: boolean;
+  /**
+   * DEPRECATED. Use `maxAttempts` instead. The legacy unbounded toggle is
+   * preserved on the row for schema compatibility but no longer drives
+   * behavior. The application always treats it as `false`.
+   */
   allowResubmission: boolean;
+  /**
+   * Bounded multi-attempt support. 1 = single submission (the default).
+   * Up to `maxAttempts` submissions are allowed before the student is locked
+   * out. Quizzes ignore this field.
+   */
+  maxAttempts: number;
   submissionType: SubmissionType;
   published: boolean;
   displayOrder: number;
@@ -91,6 +102,17 @@ export interface ActivitySubmission {
   submittedAt: string;
   textBody: string | null;
   isLate: boolean;
+  /**
+   * Which attempt this submission represents. 1-indexed: first submission
+   * is `1`, first resubmission is `2`, etc. Always <= activity.maxAttempts.
+   */
+  attemptNumber: number;
+  /**
+   * TRUE while the student is composing (save-as-draft state); FALSE once
+   * the student hits Submit. Drafts are owner-only; only non-draft
+   * submissions are visible to the teacher.
+   */
+  isDraft: boolean;
   updatedAt: string;
   attachments: SubmissionAttachment[];
 }

@@ -10,7 +10,8 @@ export type AIFeature =
   | "announcement"
   | "lesson_analysis"
   | "flashcards"
-  | "ping";
+  | "ping"
+  | "practice";  // ← note the leading |
 export type GenerationStatus = "draft" | "edited" | "published" | "discarded";
 export type UsageStatus = "success" | "rate_limited" | "error";
 export type AIModel = "fast" | "pro";

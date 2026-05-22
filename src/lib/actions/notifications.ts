@@ -539,3 +539,147 @@ export async function notifyActivityPublished(params: {
     console.error('[notifications] notifyActivityPublished failed:', e);
   }
 }
+
+// ----- (h) Admin watch helpers -----
+//
+// These notify admins (and sometimes the relevant teacher) about
+// institution-level events: new signups, new classes, new enrollments.
+// They mirror the activity feed on the admin dashboard, but via the bell.
+//
+// All admin recipients are looked up at fan-out time via profiles.role.
+
+async function getAllAdminIds(): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('role', 'admin');
+  if (error) {
+    console.error('[notifications] admin lookup error:', error.message);
+    return [];
+  }
+  return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+}
+
+// New student or teacher account → all admins.
+//
+// Call this from the auth callback / first-profile-write flow, after the
+// profiles row exists. Skip silently if the new account is itself an admin —
+// admins notifying themselves about themselves is noise.
+export async function notifyAccountCreated(params: {
+  profileId: string;
+  displayName: string;
+  role: 'student' | 'teacher' | 'admin';
+}): Promise<void> {
+  if (params.role === 'admin') return;
+  try {
+    const adminIds = await getAllAdminIds();
+    if (adminIds.length === 0) return;
+    const roleLabel = params.role === 'teacher' ? 'teacher' : 'student';
+    // Admins land on the corresponding management page when they click.
+    const linkPath =
+      params.role === 'teacher' ? '/admin/teachers' : '/admin/students';
+    const rows: InsertInput[] = adminIds.map((adminId) => ({
+      userId: adminId,
+      type: 'account_new',
+      refId: params.profileId,
+      title: `New ${roleLabel} joined ARK`,
+      body: params.displayName,
+      linkPath,
+    }));
+    await bulkInsertNotifications(rows);
+  } catch (e) {
+    console.error('[notifications] notifyAccountCreated failed:', e);
+  }
+}
+
+// Class created → all admins.
+export async function notifyClassCreated(params: {
+  classId: string;
+  className: string;
+  section: string | null;
+  teacherName: string;
+}): Promise<void> {
+  try {
+    const adminIds = await getAllAdminIds();
+    if (adminIds.length === 0) return;
+    const label = params.section
+      ? `${params.className} (${params.section})`
+      : params.className;
+    const rows: InsertInput[] = adminIds.map((adminId) => ({
+      userId: adminId,
+      type: 'class_created',
+      refId: params.classId,
+      title: `New class created: ${label}`,
+      body: `By ${params.teacherName}`,
+      linkPath: '/admin/sections',
+    }));
+    await bulkInsertNotifications(rows);
+  } catch (e) {
+    console.error('[notifications] notifyClassCreated failed:', e);
+  }
+}
+
+// Student enrolled → all admins + the class's teacher.
+//
+// We dedupe in case the teacher is somehow also an admin (rare but possible).
+export async function notifyEnrollmentCreated(params: {
+  enrollmentId: string;
+  classId: string;
+  className: string;
+  section: string | null;
+  studentId: string;
+  studentName: string;
+  teacherId: string;
+}): Promise<void> {
+  try {
+    const adminIds = await getAllAdminIds();
+    const recipientIds = new Set<string>(adminIds);
+    recipientIds.add(params.teacherId);
+    // Sanity: don't notify the student about their own enrollment here —
+    // notifyJoinRequestDecided already handles the student-facing message.
+    recipientIds.delete(params.studentId);
+    if (recipientIds.size === 0) return;
+
+    const label = params.section
+      ? `${params.className} (${params.section})`
+      : params.className;
+
+    // Admins go to the Students admin page; teachers go to their class.
+    // Look up roles to build the right link per recipient.
+    const ids = Array.from(recipientIds);
+    const supabase = await createClient();
+    const { data: profileRows, error } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .in('id', ids);
+    if (error) {
+      console.error('[notifications] enrollment recipient lookup error:', error.message);
+      return;
+    }
+
+    const rows: InsertInput[] = (
+      (profileRows ?? []) as Array<{ id: string; role: string }>
+    ).map((p) => {
+      const linkPath =
+        p.role === 'admin'
+          ? '/admin/students'
+          : `/teacher/classes/${params.classId}?tab=students`;
+      const title =
+        p.role === 'admin'
+          ? `${params.studentName} enrolled in ${label}`
+          : `${params.studentName} joined your class`;
+      return {
+        userId: p.id,
+        type: 'enrollment_new' as NotificationType,
+        refId: params.enrollmentId,
+        title,
+        body: p.role === 'admin' ? null : label,
+        linkPath,
+      };
+    });
+    await bulkInsertNotifications(rows);
+  } catch (e) {
+    console.error('[notifications] notifyEnrollmentCreated failed:', e);
+  }
+}

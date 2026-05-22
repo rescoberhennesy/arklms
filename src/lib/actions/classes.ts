@@ -12,6 +12,9 @@ import {
   type Semester,
   type ActionResult,
 } from '@/types/class';
+import {
+  notifyClassCreated,
+} from '@/lib/actions/notifications';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -168,9 +171,32 @@ export async function createClass(input: ClassFormInput): Promise<ActionResult<C
 
     if (error) throw error;
 
+    // Notification fan-out (Session 13 → admin watch). Tell admins a new
+    // class was just created. Looks up the teacher's display name; falls
+    // back to email then to a generic label if neither is available.
+    try {
+      const { data: teacherRow } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', userId)
+        .maybeSingle();
+      const teacher = teacherRow as { full_name: string | null; email: string } | null;
+      const teacherName =
+        teacher?.full_name?.trim() || teacher?.email || 'A teacher';
+      await notifyClassCreated({
+        classId: (data as ClassRow).id,
+        className: (data as ClassRow).name,
+        section: (data as ClassRow).section ?? null,
+        teacherName,
+      });
+    } catch (e) {
+      console.error('[classes] notifyClassCreated error:', e);
+    }
+
     revalidatePath('/teacher/classes');
     revalidatePath('/teacher/dashboard');
     return { ok: true, data: data as ClassRow };
+
   } catch (e: any) {
     return { ok: false, error: e.message || 'Failed to create class' };
   }

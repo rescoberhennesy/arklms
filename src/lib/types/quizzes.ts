@@ -188,6 +188,12 @@ export interface QuizAttempt {
   manualScoreOverride: number | null;
   submissionId: string | null;
   feedback: string;
+  /**
+   * TRUE if this attempt was submitted after the activity due_at. Governed
+   * by `activities.allow_late` — if late submissions aren't allowed, the
+   * server rejects the submit and no late row is ever created.
+   */
+  isLate: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +220,13 @@ export interface QuizConfig {
   autoReleaseGrade: boolean;
   showCorrectAnswers: boolean;
   quizTotalPoints: number | null;
+  /**
+   * Mirrors `activities.allow_late`. When TRUE, students may start and submit
+   * attempts after the activity due_at; resulting attempts are flagged
+   * `isLate = true`. When FALSE (default), the server rejects late starts
+   * and late submits.
+   */
+  allowLate: boolean;
 }
 
 // ==========================================================================

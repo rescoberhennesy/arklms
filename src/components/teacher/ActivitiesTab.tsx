@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useTransition, useEffect, useRef, useMemo } from 'react';
@@ -60,10 +59,17 @@ export interface ActivitiesTabRosterEntry {
   email: string | null;
 }
 
+// Completion-tracking filter buckets (Session 13).
+type CompletionFilter = 'all' | 'has_ungraded' | 'fully_graded';
+
 interface ActivitiesTabProps {
   classId: string;
   activities: ActivityWithAllSubmissions[];
   roster: ActivitiesTabRosterEntry[];
+  /** Default filter when no ?completion= URL param is present.
+   *  Lets the server hint "this class has grading to do, start there".
+   *  URL always wins if the user has explicitly chosen one. */
+  initialFilter?: CompletionFilter;
 }
 
 type ActivityCardStatus =
@@ -116,9 +122,6 @@ const TERM_TEXT_ACCENTS: Record<ModuleTerm, string> = {
   final: 'text-rose-800',
 };
 
-// Completion-tracking filter buckets (Session 13).
-type CompletionFilter = 'all' | 'has_ungraded' | 'fully_graded';
-
 const FILTER_LABEL: Record<CompletionFilter, string> = {
   all: 'All',
   has_ungraded: 'Has ungraded',
@@ -147,6 +150,7 @@ export default function ActivitiesTab({
   classId,
   activities: initialActivities,
   roster,
+  initialFilter,
 }: ActivitiesTabProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -160,19 +164,28 @@ export default function ActivitiesTab({
   const [error, setError] = useState<string | null>(null);
   const [copyModalOpen, setCopyModalOpen] = useState(false);
 
+  // Filter resolution order:
+  //   1. Explicit URL param (?completion=all|has_ungraded|fully_graded)
+  //      — user has clicked a pill, this wins.
+  //   2. `initialFilter` prop from the server — used on first land when
+  //      the URL is clean. Lets the page hint "this class has grading,
+  //      start there".
+  //   3. 'all' — final fallback.
   const filterParam = searchParams.get('completion');
   const filter: CompletionFilter =
-    filterParam === 'has_ungraded' || filterParam === 'fully_graded'
-      ? filterParam
-      : 'all';
+    filterParam === 'has_ungraded' ||
+    filterParam === 'fully_graded' ||
+    filterParam === 'all'
+      ? (filterParam as CompletionFilter)
+      : (initialFilter ?? 'all');
 
   function setFilter(next: CompletionFilter) {
+    // Always write the choice into the URL — including 'all'. This
+    // ensures clicking "All" sticks even when initialFilter would have
+    // defaulted to 'has_ungraded'. Without this, removing the param
+    // would snap back to the server-side default.
     const params = new URLSearchParams(searchParams.toString());
-    if (next === 'all') {
-      params.delete('completion');
-    } else {
-      params.set('completion', next);
-    }
+    params.set('completion', next);
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }

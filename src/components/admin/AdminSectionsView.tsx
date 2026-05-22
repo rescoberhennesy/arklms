@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Search } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, Users } from 'lucide-react';
 import type { AdminSectionRow } from '@/lib/actions/admin';
 import { TRACKS, GRADE_LEVELS } from '@/types/class';
-import { cn } from '@/lib/utils/cn';
+import { TrackPill } from '@/components/admin/TrackPill';
+import { getInitials } from '@/lib/utils/getInitials';
 
 export default function AdminSectionsView({
   sections,
@@ -14,6 +15,7 @@ export default function AdminSectionsView({
   const [query, setQuery] = useState('');
   const [trackFilter, setTrackFilter] = useState<string>('all');
   const [gradeFilter, setGradeFilter] = useState<string>('all');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -25,10 +27,27 @@ export default function AdminSectionsView({
         (s.section ?? '').toLowerCase().includes(q) ||
         (s.track ?? '').toLowerCase().includes(q) ||
         (s.gradeLevel ?? '').toLowerCase().includes(q) ||
-        s.teacherNames.some((n) => n.toLowerCase().includes(q))
+        s.teacherNames.some((n) => n.toLowerCase().includes(q)) ||
+        s.students.some(
+          (st) =>
+            (st.fullName ?? '').toLowerCase().includes(q) ||
+            st.email.toLowerCase().includes(q),
+        )
       );
     });
   }, [sections, query, trackFilter, gradeFilter]);
+
+  function toggle(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -37,6 +56,7 @@ export default function AdminSectionsView({
           <h1 className="text-2xl font-bold text-gray-900">Sections</h1>
           <p className="mt-1 text-sm text-gray-600">
             Sections grouped by name, grade level, and track across all classes.
+            Click a row to see the students enrolled in it.
           </p>
         </div>
         <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
@@ -52,7 +72,7 @@ export default function AdminSectionsView({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search section, track, teacher…"
+            placeholder="Search section, track, teacher, student…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
           />
         </div>
@@ -96,6 +116,7 @@ export default function AdminSectionsView({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <th className="w-8 px-2 py-2.5" aria-label="Expand" />
                   <th className="px-4 py-2.5">Section</th>
                   <th className="px-4 py-2.5">Grade level</th>
                   <th className="px-4 py-2.5">Track</th>
@@ -105,42 +126,17 @@ export default function AdminSectionsView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((s) => (
-                  <tr key={s.key} className="hover:bg-gray-50/60">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">
-                      {s.section ?? (
-                        <span className="italic text-gray-400">
-                          No section name
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {s.gradeLevel ? (
-                        <span className="text-gray-700">{s.gradeLevel}</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {s.track ? (
-                        <TrackPill track={s.track} />
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-600">
-                      {s.teacherNames.length > 0
-                        ? s.teacherNames.join(', ')
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                      {s.classCount}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                      {s.studentCount}
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((s) => {
+                  const isOpen = expanded.has(s.key);
+                  return (
+                    <SectionRow
+                      key={s.key}
+                      section={s}
+                      isOpen={isOpen}
+                      onToggle={() => toggle(s.key)}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -150,21 +146,136 @@ export default function AdminSectionsView({
   );
 }
 
-function TrackPill({ track }: { track: string }) {
-  const color: Record<string, string> = {
-    ABM: 'bg-amber-100 text-amber-800',
-    HUMSS: 'bg-sky-100 text-sky-800',
-    'H.E': 'bg-rose-100 text-rose-800',
-    ICT: 'bg-violet-100 text-violet-800',
-  };
+function SectionRow({
+  section,
+  isOpen,
+  onToggle,
+}: {
+  section: AdminSectionRow;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <span
-      className={cn(
-        'inline-flex rounded-full px-2 py-0.5 text-xs font-semibold',
-        color[track] ?? 'bg-gray-100 text-gray-700',
+    <>
+      <tr
+        className="cursor-pointer hover:bg-gray-50/60"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+      >
+        <td className="px-2 py-2.5 text-center">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+            className="rounded p-1 text-gray-500 hover:bg-gray-100"
+            aria-label={isOpen ? 'Collapse section' : 'Expand section'}
+          >
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+        </td>
+        <td className="px-4 py-2.5 font-medium text-gray-900">
+          {section.section ?? (
+            <span className="italic text-gray-400">No section name</span>
+          )}
+        </td>
+        <td className="px-4 py-2.5">
+          {section.gradeLevel ? (
+            <span className="text-gray-700">{section.gradeLevel}</span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </td>
+        <td className="px-4 py-2.5">
+          {section.track ? (
+            <TrackPill track={section.track} />
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </td>
+        <td className="px-4 py-2.5 text-gray-600">
+          {section.teacherNames.length > 0
+            ? section.teacherNames.join(', ')
+            : '—'}
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+          {section.classCount}
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+          {section.studentCount}
+        </td>
+      </tr>
+
+      {isOpen && (
+        <tr className="bg-gray-50/40">
+          <td colSpan={7} className="px-4 py-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <Users className="h-3.5 w-3.5" />
+                Students in this section ({section.studentCount})
+              </div>
+              {section.students.length === 0 ? (
+                <p className="text-sm italic text-gray-400">
+                  No students enrolled yet.
+                </p>
+              ) : (
+                <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {section.students.map((st) => (
+                    <li
+                      key={st.id}
+                      className="flex items-center gap-2.5 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2"
+                    >
+                      <StudentAvatar
+                        url={st.avatarUrl}
+                        name={st.fullName ?? st.email}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-gray-900">
+                          {st.fullName ?? (
+                            <span className="italic text-gray-400">
+                              No name
+                            </span>
+                          )}
+                        </div>
+                        <div className="truncate text-xs text-gray-500">
+                          {st.email}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </td>
+        </tr>
       )}
-    >
-      {track}
+    </>
+  );
+}
+
+function StudentAvatar({
+  url,
+  name,
+}: {
+  url: string | null;
+  name: string;
+}) {
+  if (url) {
+    return (
+      <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-gray-200">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={name} className="h-full w-full object-cover" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-700">
+      {getInitials(name)}
     </span>
   );
 }

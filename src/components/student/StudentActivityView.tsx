@@ -13,16 +13,23 @@ import {
   Download,
   AlertCircle,
   CheckCircle2,
+  Save,
+  Trash2,
+  RefreshCw,
+  FileEdit,
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
+import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import {
   submitActivity,
+  discardDraft,
   getSignedSubmissionAttachmentUrl,
 } from '@/lib/actions/activities';
 import {
   type ActivityWithStudentState,
   type ActivityAttachment,
+  type ActivitySubmission,
   type SubmissionAttachmentInput,
   SUBMISSION_TYPE_LABELS,
 } from '@/lib/types/activities';
@@ -62,18 +69,52 @@ export default function StudentActivityView({
   const submission = activity.submission;
   const grade = activity.grade;
 
-  const canEdit =
-    !submission || // no prior submission yet
-    !grade || // submitted but not graded yet
-    activity.allowResubmission; // graded but resubmission allowed
+  // ----- New lifecycle logic -----
+  //
+  // Three states the student can be in:
+  //
+  //   1. NO ROW: never touched the activity. Show empty composer.
+  //   2. DRAFT (submission.isDraft=true): in-progress, owner-only. Show
+  //      composer pre-filled, with "Save draft" + "Submit" buttons and
+  //      a "Discard draft" option.
+  //   3. FINAL (submission.isDraft=false): locked. Show read-only view.
+  //      If attempts remain (attemptNumber < maxAttempts), show a
+  //      "Start new attempt" button that opens a fresh composer for
+  //      the next attempt (will replace the prior as the canonical
+  //      submission once submitted).
+  //
+  // The old "edit until graded" model is gone. Once submitted = locked.
+  //
+  // canStartNewAttempt: submission is final AND attempts remain.
 
-  const [editing, setEditing] = useState(!submission);
+  const isDraft = submission?.isDraft === true;
+  const isFinalSubmission = submission !== null && !isDraft;
 
-  const [textBody, setTextBody] = useState(submission?.textBody ?? '');
+  const attemptsUsed = isFinalSubmission ? submission!.attemptNumber : 0;
+  const attemptsRemaining = Math.max(0, activity.maxAttempts - attemptsUsed);
+  const canStartNewAttempt = isFinalSubmission && attemptsRemaining > 0;
+
+  // composing: the student has the composer open (whether for a fresh
+  // first submission, a draft they're editing, or a new attempt).
+  const [composing, setComposing] = useState(!submission || isDraft);
+
+  // Track whether the current composer session is for a NEW attempt
+  // (i.e. there's already a final submission, but the student clicked
+  // "Start new attempt"). This affects copy + which button labels show.
+  const [composingNewAttempt, setComposingNewAttempt] = useState(false);
+
+  // Pre-fill text body from existing draft if any. New attempts start blank.
+  const [textBody, setTextBody] = useState(
+    isDraft ? (submission!.textBody ?? '') : '',
+  );
+
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmNewAttempt, setConfirmNewAttempt] = useState(false);
 
   const showsTextField =
     activity.submissionType === 'text' || activity.submissionType === 'both';
@@ -85,6 +126,13 @@ export default function StudentActivityView({
   const dueAt = new Date(activity.dueAt).getTime();
   const isPastDue = now > dueAt;
   const blockedByDeadline = isPastDue && !activity.allowLate;
+
+  // Existing draft attachments — shown in the composer so student knows
+  // what's already attached. They can still add more or, on submit, the
+  // server-side will replace them with the new set (matches RPC logic).
+  const existingDraftAttachments = isDraft
+    ? (submission!.attachments ?? [])
+    : [];
 
   function handleAddFiles(files: FileList | null) {
     if (!files) return;
@@ -141,28 +189,75 @@ export default function StudentActivityView({
     return uploaded;
   }
 
-  function handleSubmit() {
-    setError(null);
-
+  // --- Validation shared by saveDraft + submit ---
+  function validateForSubmit(): string | null {
     if (blockedByDeadline) {
-      setError('The deadline has passed and late submissions are not allowed.');
-      return;
-    }
-
-    if (showsTextField && !textBody.trim() && !showsFileField) {
-      setError('Submission cannot be empty.');
-      return;
-    }
-    if (showsFileField && pendingFiles.length === 0 && !showsTextField) {
-      setError('Please attach at least one file.');
-      return;
+      return 'The deadline has passed and late submissions are not allowed.';
     }
     if (
       activity.submissionType === 'both' &&
       !textBody.trim() &&
-      pendingFiles.length === 0
+      pendingFiles.length === 0 &&
+      existingDraftAttachments.length === 0
     ) {
-      setError('Please provide a text response or attach a file.');
+      return 'Please provide a text response or attach a file.';
+    }
+    if (showsTextField && !textBody.trim() && !showsFileField) {
+      return 'Submission cannot be empty.';
+    }
+    if (
+      showsFileField &&
+      !showsTextField &&
+      pendingFiles.length === 0 &&
+      existingDraftAttachments.length === 0
+    ) {
+      return 'Please attach at least one file.';
+    }
+    return null;
+  }
+
+  function handleSaveDraft() {
+    setError(null);
+    setNotice(null);
+
+    if (blockedByDeadline) {
+      setError(
+        'The deadline has passed and late submissions are not allowed.',
+      );
+      return;
+    }
+
+    // Drafts have no content requirement — student can save an empty one.
+    // The only thing we block is past-due+!allowLate, since otherwise
+    // they'd be stuck with a draft they can never convert.
+
+    startTransition(async () => {
+      try {
+        const uploaded = showsFileField ? await uploadFilesToStorage() : [];
+        await submitActivity(
+          activity.id,
+          showsTextField ? textBody : '',
+          uploaded,
+          { isDraft: true },
+        );
+
+        setPendingFiles([]);
+        setNotice('Draft saved. You can come back and finish it later.');
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to save draft.');
+        setUploadProgress(null);
+      }
+    });
+  }
+
+  function handleSubmit() {
+    setError(null);
+    setNotice(null);
+
+    const validationErr = validateForSubmit();
+    if (validationErr) {
+      setError(validationErr);
       return;
     }
 
@@ -173,15 +268,21 @@ export default function StudentActivityView({
           activity.id,
           showsTextField ? textBody : '',
           uploaded,
+          { isDraft: false },
         );
 
         setPendingFiles([]);
-        setEditing(false);
+        setComposing(false);
+        setComposingNewAttempt(false);
 
         if (result.replacedGrade) {
-          setError(
+          setNotice(
             'Submitted. Your previous grade was cleared and the teacher will re-grade.',
           );
+        } else if (result.isLate) {
+          setNotice('Submitted as a late submission.');
+        } else {
+          setNotice('Submitted.');
         }
         router.refresh();
       } catch (e) {
@@ -191,19 +292,60 @@ export default function StudentActivityView({
     });
   }
 
-  function handleStartEdit() {
+  function handleStartNewAttempt() {
+    // Opens a fresh composer for the next attempt. Doesn't write to the
+    // server yet — the new draft/submission row is created when the
+    // student saves draft or submits.
     setError(null);
-    setTextBody(submission?.textBody ?? '');
+    setNotice(null);
+    setTextBody('');
     setPendingFiles([]);
-    setEditing(true);
+    setComposing(true);
+    setComposingNewAttempt(true);
+    setConfirmNewAttempt(false);
   }
 
-  function handleCancelEdit() {
-    setTextBody(submission?.textBody ?? '');
-    setPendingFiles([]);
+  function handleCancelComposing() {
     setError(null);
-    setEditing(false);
+    setNotice(null);
+    setPendingFiles([]);
+    if (isDraft) {
+      // Reset draft text to what's saved on server.
+      setTextBody(submission!.textBody ?? '');
+    } else {
+      setTextBody('');
+    }
+    // Only close the composer if there's something to fall back to
+    // (either a draft or a final submission). Otherwise the composer
+    // is the only thing to show.
+    if (submission) {
+      setComposing(false);
+      setComposingNewAttempt(false);
+    }
   }
+
+  async function handleConfirmDiscard() {
+    setError(null);
+    setNotice(null);
+    try {
+      await discardDraft(activity.id);
+      setTextBody('');
+      setPendingFiles([]);
+      setConfirmDiscard(false);
+      // After discarding, there might still be a prior final submission
+      // (if this was a "new attempt" draft). Or there might be nothing.
+      // Let router.refresh() resolve which state we end up in.
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to discard draft.');
+    }
+  }
+
+  // What's the headline state shown to the student right now?
+  // Determines which panels render below.
+  const showComposer = composing || (!submission && !isNoSubmission);
+  const showFinalSubmissionView =
+    isFinalSubmission && !composing && !composingNewAttempt;
 
   return (
     <div className="space-y-6">
@@ -223,8 +365,11 @@ export default function StudentActivityView({
           {activity.allowLate && (
             <span className="text-amber-600">Late submissions accepted</span>
           )}
-          {activity.allowResubmission && (
-            <span className="text-blue-600">Resubmission allowed</span>
+          {activity.maxAttempts > 1 && (
+            <span className="inline-flex items-center gap-1 text-blue-700">
+              <RefreshCw className="h-3 w-3" />
+              Up to {activity.maxAttempts} attempts
+            </span>
           )}
         </div>
       </div>
@@ -233,6 +378,13 @@ export default function StudentActivityView({
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {notice && (
+        <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{notice}</span>
         </div>
       )}
 
@@ -261,8 +413,10 @@ export default function StudentActivityView({
         <StudentActivityAttachmentsList attachments={attachments} />
       )}
 
-      {/* Grade (if returned) */}
-      {grade && grade.returnedAt && (
+      {/* Grade (if returned) — only shown if there's a final submission
+          with a released grade. New attempts don't show the prior grade
+          because the server clears it when the new attempt is submitted. */}
+      {showFinalSubmissionView && grade && grade.returnedAt && (
         <section className="rounded-xl border border-green-200 bg-green-50/40 p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-green-800">
@@ -299,16 +453,17 @@ export default function StudentActivityView({
             grade it directly.
           </p>
         </section>
-      ) : !editing && submission ? (
-        <ReadOnlySubmissionView
-          submission={submission}
-          canEdit={canEdit}
-          allowResubmission={activity.allowResubmission}
-          hasGrade={grade !== null}
-          onEdit={handleStartEdit}
+      ) : showFinalSubmissionView ? (
+        <FinalSubmissionView
+          submission={submission!}
+          activity={activity}
+          hasReleasedGrade={grade !== null && grade.returnedAt !== null}
+          attemptsRemaining={attemptsRemaining}
+          canStartNewAttempt={canStartNewAttempt}
+          onStartNewAttempt={() => setConfirmNewAttempt(true)}
           onDownload={handleDownloadAttachment}
         />
-      ) : (
+      ) : showComposer ? (
         <ComposerView
           showsTextField={showsTextField}
           showsFileField={showsFileField}
@@ -317,41 +472,79 @@ export default function StudentActivityView({
           pendingFiles={pendingFiles}
           onAddFiles={handleAddFiles}
           onRemoveFile={handleRemovePendingFile}
+          existingDraftAttachments={existingDraftAttachments}
+          onDownloadExisting={handleDownloadAttachment}
           isPending={isPending}
           uploadProgress={uploadProgress}
           blockedByDeadline={blockedByDeadline}
           isPastDue={isPastDue}
           allowLate={activity.allowLate}
-          hasExistingSubmission={submission !== null}
+          isDraft={isDraft}
+          composingNewAttempt={composingNewAttempt}
+          attemptNumber={
+            composingNewAttempt
+              ? attemptsUsed + 1
+              : isDraft
+                ? submission!.attemptNumber
+                : 1
+          }
+          maxAttempts={activity.maxAttempts}
+          onSaveDraft={handleSaveDraft}
           onSubmit={handleSubmit}
-          onCancel={submission ? handleCancelEdit : undefined}
+          onDiscardDraft={isDraft ? () => setConfirmDiscard(true) : undefined}
+          onCancel={
+            submission && (isDraft || composingNewAttempt)
+              ? handleCancelComposing
+              : undefined
+          }
         />
-      )}
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Discard draft?"
+        message="Your in-progress draft, including any uploaded files, will be permanently deleted. This cannot be undone."
+        confirmLabel="Discard"
+        destructive
+        onConfirm={handleConfirmDiscard}
+        onClose={() => setConfirmDiscard(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmNewAttempt}
+        title="Start a new attempt?"
+        message={`You'll be working on attempt ${attemptsUsed + 1} of ${activity.maxAttempts}. Your current submission stays in place until you submit the new one — but once you do, the new attempt replaces it as your graded submission.`}
+        confirmLabel="Start new attempt"
+        onConfirm={handleStartNewAttempt}
+        onClose={() => setConfirmNewAttempt(false)}
+      />
     </div>
   );
 }
 
 // ==========================================================================
-// Read-only submission view
+// Final (locked) submission view
 // ==========================================================================
 
-interface ReadOnlySubmissionProps {
-  submission: NonNullable<ActivityWithStudentState['submission']>;
-  canEdit: boolean;
-  allowResubmission: boolean;
-  hasGrade: boolean;
-  onEdit: () => void;
+interface FinalSubmissionViewProps {
+  submission: ActivitySubmission;
+  activity: ActivityWithStudentState;
+  hasReleasedGrade: boolean;
+  attemptsRemaining: number;
+  canStartNewAttempt: boolean;
+  onStartNewAttempt: () => void;
   onDownload: (attachmentId: string) => void;
 }
 
-function ReadOnlySubmissionView({
+function FinalSubmissionView({
   submission,
-  canEdit,
-  allowResubmission,
-  hasGrade,
-  onEdit,
+  activity,
+  hasReleasedGrade,
+  attemptsRemaining,
+  canStartNewAttempt,
+  onStartNewAttempt,
   onDownload,
-}: ReadOnlySubmissionProps) {
+}: FinalSubmissionViewProps) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
@@ -359,23 +552,31 @@ function ReadOnlySubmissionView({
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
             Your submission
           </h2>
-          <p className="mt-0.5 text-xs text-gray-500">
-            <CheckCircle2 className="mr-1 inline h-3 w-3 text-green-600" />
-            Submitted {new Date(submission.submittedAt).toLocaleString()}
+          <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            <CheckCircle2 className="h-3 w-3 text-green-600" />
+            <span>
+              Submitted {new Date(submission.submittedAt).toLocaleString()}
+            </span>
             {submission.isLate && (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
                 Late
+              </span>
+            )}
+            {activity.maxAttempts > 1 && (
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
+                Attempt {submission.attemptNumber} of {activity.maxAttempts}
               </span>
             )}
           </p>
         </div>
-        {canEdit && (
+        {canStartNewAttempt && (
           <button
             type="button"
-            onClick={onEdit}
-            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            onClick={onStartNewAttempt}
+            className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
           >
-            {hasGrade && allowResubmission ? 'Resubmit' : 'Edit'}
+            <RefreshCw className="h-3 w-3" />
+            Start new attempt ({attemptsRemaining} left)
           </button>
         )}
       </div>
@@ -421,18 +622,44 @@ function ReadOnlySubmissionView({
         </div>
       )}
 
-      {hasGrade && !allowResubmission && (
-        <p className="mt-3 text-xs italic text-gray-500">
-          This submission has been graded. Resubmission is not allowed for this
-          activity.
-        </p>
-      )}
+      {/* Status footer */}
+      <div className="mt-3 border-t border-gray-100 pt-3 text-xs">
+        {hasReleasedGrade ? (
+          canStartNewAttempt ? (
+            <p className="text-gray-600">
+              This attempt has been graded. You have {attemptsRemaining}{' '}
+              attempt{attemptsRemaining === 1 ? '' : 's'} remaining if you
+              want to revise — starting a new attempt will replace this one
+              as your graded submission.
+            </p>
+          ) : (
+            <p className="italic text-gray-500">
+              This submission has been graded.
+              {activity.maxAttempts > 1
+                ? " You've used all your attempts."
+                : ' Only one attempt is allowed for this activity.'}
+            </p>
+          )
+        ) : canStartNewAttempt ? (
+          <p className="text-gray-600">
+            Waiting for your teacher to grade this. You can also start a new
+            attempt — {attemptsRemaining} remaining.
+          </p>
+        ) : (
+          <p className="italic text-gray-500">
+            Waiting for your teacher to grade this.
+            {activity.maxAttempts > 1
+              ? " You've used all your attempts."
+              : ''}
+          </p>
+        )}
+      </div>
     </section>
   );
 }
 
 // ==========================================================================
-// Composer
+// Composer (handles fresh submission, draft editing, AND new attempts)
 // ==========================================================================
 
 interface ComposerProps {
@@ -443,13 +670,20 @@ interface ComposerProps {
   pendingFiles: File[];
   onAddFiles: (files: FileList | null) => void;
   onRemoveFile: (index: number) => void;
+  existingDraftAttachments: ActivitySubmission['attachments'];
+  onDownloadExisting: (attachmentId: string) => void;
   isPending: boolean;
   uploadProgress: string | null;
   blockedByDeadline: boolean;
   isPastDue: boolean;
   allowLate: boolean;
-  hasExistingSubmission: boolean;
+  isDraft: boolean;
+  composingNewAttempt: boolean;
+  attemptNumber: number;
+  maxAttempts: number;
+  onSaveDraft: () => void;
   onSubmit: () => void;
+  onDiscardDraft?: () => void;
   onCancel?: () => void;
 }
 
@@ -461,20 +695,52 @@ function ComposerView({
   pendingFiles,
   onAddFiles,
   onRemoveFile,
+  existingDraftAttachments,
+  onDownloadExisting,
   isPending,
   uploadProgress,
   blockedByDeadline,
   isPastDue,
   allowLate,
-  hasExistingSubmission,
+  isDraft,
+  composingNewAttempt,
+  attemptNumber,
+  maxAttempts,
+  onSaveDraft,
   onSubmit,
+  onDiscardDraft,
   onCancel,
 }: ComposerProps) {
+  let headline: string;
+  if (composingNewAttempt) {
+    headline = `Attempt ${attemptNumber} of ${maxAttempts}`;
+  } else if (isDraft) {
+    headline = 'Continue your draft';
+  } else {
+    headline =
+      maxAttempts > 1
+        ? `Your submission (attempt ${attemptNumber} of ${maxAttempts})`
+        : 'Your submission';
+  }
+
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-        {hasExistingSubmission ? 'Edit your submission' : 'Your submission'}
-      </h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+          {isDraft && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-800">
+              <FileEdit className="-mt-0.5 mr-1 inline h-3 w-3" />
+              Draft
+            </span>
+          )}
+          {headline}
+        </h2>
+        {isDraft && (
+          <span className="text-xs italic text-gray-500">
+            Only you can see this until you submit.
+          </span>
+        )}
+      </div>
 
       {blockedByDeadline ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -510,6 +776,48 @@ function ComposerView({
               <label className="mb-1 block text-xs font-medium text-gray-700">
                 Attachments
               </label>
+
+              {/* Existing draft attachments — show as a "already attached"
+                  list. Note: server-side, on next submit these get replaced
+                  by whatever's freshly uploaded. The student should know. */}
+              {existingDraftAttachments.length > 0 && (
+                <div className="mb-2">
+                  <p className="mb-1 text-xs text-gray-500">
+                    Already in your draft:
+                  </p>
+                  <ul className="space-y-1">
+                    {existingDraftAttachments.map((a) => (
+                      <li
+                        key={a.id}
+                        className="flex items-center gap-2 rounded-md border border-gray-100 bg-blue-50/40 px-3 py-1.5 text-sm"
+                      >
+                        <Paperclip className="h-3.5 w-3.5 text-gray-400" />
+                        <span className="flex-1 truncate text-gray-700">
+                          {a.fileName}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {(a.fileSize / 1024).toFixed(1)} KB
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onDownloadExisting(a.id)}
+                          className="rounded p-0.5 text-gray-500 hover:bg-white"
+                          aria-label={`Download ${a.fileName}`}
+                          title="Download"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {pendingFiles.length > 0 && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Note: when you save or submit, your draft&apos;s files
+                      will be replaced with the ones below.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {pendingFiles.length > 0 && (
                 <ul className="mb-2 space-y-1">
@@ -563,31 +871,65 @@ function ComposerView({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2">
-            {onCancel && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+            <div className="flex items-center gap-2">
+              {onDiscardDraft && (
+                <button
+                  type="button"
+                  onClick={onDiscardDraft}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Discard draft
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  disabled={isPending}
+                  className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={onSaveDraft}
                 disabled={isPending}
-                className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Cancel
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                Save draft
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={isPending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Send className="h-3.5 w-3.5" />
-              )}
-              {hasExistingSubmission ? 'Resubmit' : 'Submit'}
-            </button>
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={isPending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+                Submit
+              </button>
+            </div>
           </div>
+
+          <p className="mt-2 text-xs italic text-gray-500">
+            <strong>Save draft</strong> keeps your work in progress (only you
+            can see it). <strong>Submit</strong> sends it to your teacher and
+            locks this attempt.
+          </p>
         </>
       )}
     </section>

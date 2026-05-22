@@ -17,6 +17,9 @@ import {
   BookOpen,
   FileText,
   ClipboardList,
+  GraduationCap,   // ← new
+  Sparkles,        // ← new (for new accounts)
+  Layers,          // ← new (for class_created)
 } from 'lucide-react';
 
 export const NOTIFICATION_TYPES = [
@@ -36,6 +39,11 @@ export const NOTIFICATION_TYPES = [
   'module_new',               // teacher created module → enrolled students
   'lesson_published',         // teacher published lesson → enrolled students
   'activity_published',       // teacher published activity → enrolled students
+
+  // Admin watch
+  'account_new',       // new student/teacher signup → admins
+  'class_created',     // teacher created a class → admins
+  'enrollment_new',    // student enrolled → admins + teacher
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -102,4 +110,23 @@ export const NOTIFICATION_DISPLAY: Record<NotificationType, NotificationDisplayM
     icon: ClipboardList,
     iconClassName: 'text-rose-600 bg-rose-50',
   },
+
+  activity_published: {
+    icon: ClipboardList,
+    iconClassName: 'text-rose-600 bg-rose-50',
+  },
+  // Admin watch
+  account_new: {
+    icon: Sparkles,
+    iconClassName: 'text-indigo-600 bg-indigo-50',
+  },
+  class_created: {
+    icon: Layers,
+    iconClassName: 'text-indigo-600 bg-indigo-50',
+  },
+  enrollment_new: {
+    icon: GraduationCap,
+    iconClassName: 'text-indigo-600 bg-indigo-50',
+  },
+
 };

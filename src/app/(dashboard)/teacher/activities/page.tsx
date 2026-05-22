@@ -51,6 +51,25 @@ export default async function TeacherActivitiesPage({ searchParams }: PageProps)
   const totalCount = allActiveClasses.length;
   const matchedCount = aggregated.length;
 
+  // Per-class default filter: if any class in the matched set has
+  // ungraded work and the URL doesn't pin a filter, default that class
+  // to `has_ungraded`. ActivitiesTab is per-class, so we compute the
+  // default for each class individually. Teachers see "the grading is
+  // here" on first land; clicking the "All" pill expands back to
+  // everything. We don't push this into the URL — keeps the address
+  // bar clean and means the next visit re-evaluates against fresh data.
+  const initialFilterByClass = new Map <
+    string,
+    'all' | 'has_ungraded' | 'fully_graded'
+  >();
+  for (const { class: c, activities } of aggregated) {
+    const hasUngraded = activities.some(
+      (a) =>
+        a.published && a.submissions.some((s) => s.grade === null),
+    );
+    initialFilterByClass.set(c.id, hasUngraded ? 'has_ungraded' : 'all');
+  }
+
   return (
     <div className="space-y-4 p-6">
       <PageHeader />
@@ -113,6 +132,7 @@ export default async function TeacherActivitiesPage({ searchParams }: PageProps)
                   classId={c.id}
                   activities={activities}
                   roster={roster}
+                  initialFilter={initialFilterByClass.get(c.id) ?? 'all'}
                 />
               </div>
             </section>

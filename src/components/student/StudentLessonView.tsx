@@ -9,9 +9,10 @@ import {
   X,
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
+import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 import {
   type LessonDetail,
-  getSignedAttachmentUrl,
+  getAttachmentDownloadData,
 } from '@/lib/actions/modules';
 
 interface StudentLessonViewProps {
@@ -34,8 +35,17 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
     setPendingId(attachmentId);
     startTransition(async () => {
       try {
-        const url = await getSignedAttachmentUrl(attachmentId);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        const { dataUrl, fileName } = await getAttachmentDownloadData(
+          attachmentId,
+        );
+        // Create a temporary <a> with download attribute — this triggers
+        // the browser's native "save as" flow for the data URL.
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Download failed.');
       } finally {
@@ -78,13 +88,13 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
             <Paperclip className="h-3.5 w-3.5" />
             Attachments
           </h2>
-          <ul className="space-y-1">
+          <ul className="space-y-2">
             {lesson.attachments.map((a) => {
               const isPending = pendingId === a.id;
               return (
                 <li
                   key={a.id}
-                  className="flex items-center gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2"
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2"
                 >
                   <FileText className="h-4 w-4 shrink-0 text-gray-400" />
                   <div className="min-w-0 flex-1">
@@ -95,6 +105,13 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
                       {formatFileSize(a.file_size)}
                     </p>
                   </div>
+
+                  <LessonAttachmentPreview
+                    attachmentId={a.id}
+                    fileName={a.file_name}
+                    mimeType={a.mime_type ?? null}
+                  />
+
                   <button
                     type="button"
                     onClick={() => handleDownload(a.id)}

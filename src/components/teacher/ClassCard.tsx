@@ -16,6 +16,7 @@ import type { TeacherClassListItem, ClassAvatarInfo } from '@/types/class';
 import { cn } from '@/lib/utils/cn';
 import { getInitials } from '@/lib/utils/getInitials';
 import ClassCover from '@/components/dashboard/ClassCover';
+import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
 
 interface ClassCardProps {
   cls: TeacherClassListItem;
@@ -149,9 +150,16 @@ export function ClassCard({
         href={`/teacher/classes/${cls.id}`}
         className="flex flex-1 flex-col gap-3 p-4"
       >
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-          {cls.semester}
-        </p>
+        {/* Meta badges: grade level + track + semester. Section is already
+            in the cover overlay, so hide it here to avoid duplication. */}
+        <ClassMetaBadges
+          gradeLevel={cls.grade_level}
+          track={cls.track}
+          semester={cls.semester}
+          variant="on-light"
+          size="sm"
+          hideSection
+        />
 
         <div className="flex items-center gap-1.5 text-sm text-gray-600">
           <Users className="h-4 w-4" />
@@ -219,7 +227,6 @@ function Avatar({ info }: { info: ClassAvatarInfo }) {
     );
   }
 
-  // Deterministic pastel from id (so the same student gets a consistent color)
   const palette = ['bg-rose-200 text-rose-800', 'bg-amber-200 text-amber-800', 'bg-emerald-200 text-emerald-800', 'bg-sky-200 text-sky-800', 'bg-violet-200 text-violet-800', 'bg-pink-200 text-pink-800'];
   const idx = hashStr(info.id) % palette.length;
 

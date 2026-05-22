@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, User } from 'lucide-react';
 import { getStudentClassById } from '@/lib/actions/enrollments';
 import LeaveClassButton from '@/components/student/LeaveClassButton';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
@@ -17,6 +17,7 @@ import { getStudentGradebookView } from '@/lib/actions/gradebook';
 import { getClassPeople } from '@/lib/actions/classPeople';
 import { createClient } from '@/lib/supabase/server';
 import ClassCover from '@/components/dashboard/ClassCover';
+import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,8 @@ export default async function StudentClassDetailPage({
   if (!klass) {
     redirect('/student/classes');
   }
+
+ 
 
   let announcements: Awaited<ReturnType<typeof listAnnouncements>> = [];
   let currentUserId = '';
@@ -103,28 +106,39 @@ export default async function StudentClassDetailPage({
       <ClassCover
         url={klass.cover_photo_url}
         color={klass.color}
-        className="rounded-xl px-6 py-5 text-white shadow-sm"
+        className="rounded-xl px-6 py-6 text-white shadow-sm"
       >
         <div className="absolute right-4 top-4 z-10">
           <LeaveClassButton classId={klass.id} className={klass.name} />
         </div>
         <div className="relative">
-          <h1 className="text-2xl font-bold drop-shadow-sm">{klass.name}</h1>
-          {klass.section && (
-            <p className="mt-1 text-base font-medium text-white/90 drop-shadow-sm">
-              {klass.section}
+          {/* Title — anchors the banner with the most visual weight */}
+          <h1 className="text-3xl font-bold leading-tight drop-shadow-sm">
+            {klass.name}
+          </h1>
+
+          {/* Metadata badges: section, grade level, track, semester */}
+          <div className="mt-3">
+            <ClassMetaBadges
+              section={klass.section}
+              gradeLevel={klass.grade_level}
+              track={klass.track}
+              semester={klass.semester}
+            />
+          </div>
+
+          {/* Teacher attribution. Kept separate from the metadata badges
+              because it's contextual info (who teaches), not structural
+              info (what kind of class). Reads naturally as a subtitle. */}
+          {klass.teacher_name && (
+            <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-white/90 drop-shadow-sm">
+              <User className="h-3.5 w-3.5 opacity-80" />
+              <span>
+                Teacher:{' '}
+                <span className="font-semibold">{klass.teacher_name}</span>
+              </span>
             </p>
           )}
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/90">
-            <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
-              {klass.semester}
-            </span>
-            {klass.teacher_name && (
-              <span className="text-sm text-white/90">
-                Teacher: <span className="font-medium">{klass.teacher_name}</span>
-              </span>
-            )}
-          </div>
         </div>
       </ClassCover>
 

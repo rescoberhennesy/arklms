@@ -627,14 +627,14 @@ export async function deleteAttachment(attachmentId: string): Promise<void> {
   }
 }
 
-export async function getSignedAttachmentUrl(
+export async function getAttachmentDownloadData(
   attachmentId: string,
-): Promise<string> {
+): Promise<{ dataUrl: string; fileName: string; mimeType: string | null }> {
   const { supabase } = await requireAuth();
 
   const { data: row, error: rowErr } = await supabase
     .from('lesson_attachments')
-    .select('file_path')
+    .select('file_path, file_name, mime_type')
     .eq('id', attachmentId)
     .single();
 
@@ -642,10 +642,22 @@ export async function getSignedAttachmentUrl(
 
   const { data, error } = await supabase.storage
     .from('lesson-attachments')
-    .createSignedUrl(row.file_path, 3600);
+    .download(row.file_path);
 
-  if (error) throw new Error(`Failed to sign URL: ${error.message}`);
-  return data.signedUrl;
+  if (error) throw new Error(`Failed to download attachment: ${error.message}`);
+
+  // Convert Blob to base64 data URL so the browser can render/save it
+  // without needing a separate signed-URL round-trip.
+  const arrayBuffer = await data.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString('base64');
+  const mimeType = row.mime_type ?? 'application/octet-stream';
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+
+  return {
+    dataUrl,
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+  };
 }
 
 export async function getModuleForStudent(

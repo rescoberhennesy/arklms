@@ -15,6 +15,7 @@ import {
   Award,
   CheckCheck,
   Paperclip,
+  RefreshCw,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
@@ -75,13 +76,13 @@ function activitySignature(a: ActivityWithAllSubmissions): string {
     a.startAt,
     a.dueAt,
     a.allowLate ? 1 : 0,
-    a.allowResubmission ? 1 : 0,
+    String(a.maxAttempts),
     a.submissionType,
     a.published ? 1 : 0,
     a.submissions
       .map(
         (s) =>
-          `${s.id}:${s.studentId}:${s.isLate ? 1 : 0}:${
+          `${s.id}:${s.studentId}:${s.isLate ? 1 : 0}:${s.attemptNumber}:${
             s.grade
               ? `${s.grade.score}:${s.grade.returnedAt ?? ''}`
               : 'none'
@@ -125,8 +126,17 @@ export default function ActivityEditor({
   const [savedSubmissionType, setSavedSubmissionType] = useState<SubmissionType>(activity.submissionType);
   const [allowLate, setAllowLate] = useState(activity.allowLate);
   const [savedAllowLate, setSavedAllowLate] = useState(activity.allowLate);
-  const [allowResubmission, setAllowResubmission] = useState(activity.allowResubmission);
-  const [savedAllowResubmission, setSavedAllowResubmission] = useState(activity.allowResubmission);
+
+  // NEW: bounded attempts. allowResubmission is now a UI-only checkbox
+  // that controls whether maxAttempts > 1 is allowed.
+  const [allowResubmission, setAllowResubmission] = useState(activity.maxAttempts > 1);
+  const [savedAllowResubmission, setSavedAllowResubmission] = useState(activity.maxAttempts > 1);
+  const [maxAttempts, setMaxAttempts] = useState(
+    String(activity.maxAttempts > 1 ? activity.maxAttempts : 3),
+  );
+  const [savedMaxAttempts, setSavedMaxAttempts] = useState(
+    String(activity.maxAttempts > 1 ? activity.maxAttempts : 3),
+  );
 
   const isSettingsDirty =
     maxPoints !== savedMaxPoints ||
@@ -134,7 +144,8 @@ export default function ActivityEditor({
     dueLocal !== savedDueLocal ||
     submissionType !== savedSubmissionType ||
     allowLate !== savedAllowLate ||
-    allowResubmission !== savedAllowResubmission;
+    allowResubmission !== savedAllowResubmission ||
+    (allowResubmission && maxAttempts !== savedMaxAttempts);
 
   const [isPending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -176,14 +187,20 @@ export default function ActivityEditor({
     setSavedDueLocal(isoToLocal(activity.dueAt));
     setSavedSubmissionType(activity.submissionType);
     setSavedAllowLate(activity.allowLate);
-    setSavedAllowResubmission(activity.allowResubmission);
+    setSavedAllowResubmission(activity.maxAttempts > 1);
+    setSavedMaxAttempts(
+      String(activity.maxAttempts > 1 ? activity.maxAttempts : 3),
+    );
     if (!isSettingsDirtyRef.current) {
       setMaxPoints(String(activity.maxPoints));
       setStartLocal(isoToLocal(activity.startAt));
       setDueLocal(isoToLocal(activity.dueAt));
       setSubmissionType(activity.submissionType);
       setAllowLate(activity.allowLate);
-      setAllowResubmission(activity.allowResubmission);
+      setAllowResubmission(activity.maxAttempts > 1);
+      setMaxAttempts(
+        String(activity.maxAttempts > 1 ? activity.maxAttempts : 3),
+      );
     }
   }, [sig, activity]);
 
@@ -278,6 +295,16 @@ export default function ActivityEditor({
       return;
     }
 
+    let attemptsToSend = 1;
+    if (allowResubmission) {
+      const n = Number(maxAttempts);
+      if (!Number.isInteger(n) || n < 2 || n > 10) {
+        setError('Max attempts must be a whole number between 2 and 10.');
+        return;
+      }
+      attemptsToSend = n;
+    }
+
     startTransition(async () => {
       try {
         await updateActivity(activity.id, {
@@ -286,12 +313,15 @@ export default function ActivityEditor({
           dueAt: dueIso,
           submissionType,
           allowLate,
+          maxAttempts: attemptsToSend,
         });
         setSavedMaxPoints(maxPoints);
         setSavedStartLocal(startLocal);
         setSavedDueLocal(dueLocal);
         setSavedSubmissionType(submissionType);
         setSavedAllowLate(allowLate);
+        setSavedAllowResubmission(allowResubmission);
+        setSavedMaxAttempts(maxAttempts);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to save settings.');
@@ -305,6 +335,8 @@ export default function ActivityEditor({
     setDueLocal(savedDueLocal);
     setSubmissionType(savedSubmissionType);
     setAllowLate(savedAllowLate);
+    setAllowResubmission(savedAllowResubmission);
+    setMaxAttempts(savedMaxAttempts);
   }
 
   function handleTogglePublish() {
@@ -463,6 +495,12 @@ export default function ActivityEditor({
           {SUBMISSION_TYPE_LABELS[activity.submissionType]}
           {activity.allowLate && ' · late ok'}
         </span>
+        {activity.maxAttempts > 1 && (
+          <span className="inline-flex items-center gap-1 text-blue-700">
+            <RefreshCw className="h-3 w-3" />
+            Up to {activity.maxAttempts} attempts
+          </span>
+        )}
       </div>
 
       {/* ============================== TWO-COLUMN UPPER ============================== */}
@@ -470,7 +508,7 @@ export default function ActivityEditor({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* LEFT: Instructions, Prompt, Attachments */}
         <div className="space-y-6 lg:col-span-2">
-          {/* Instructions — click anywhere to edit (no pencil) */}
+          {/* Instructions */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <div>
@@ -535,7 +573,7 @@ export default function ActivityEditor({
             )}
           </section>
 
-          {/* Question / prompt — click anywhere to edit (no pencil) */}
+          {/* Question / prompt */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <div>
@@ -681,7 +719,43 @@ export default function ActivityEditor({
                 Allow late submissions
               </label>
 
-              {/* Inline Save / Cancel at bottom — only when dirty */}
+              {/* NEW: bounded attempts */}
+              <div className="rounded-md border border-gray-200 bg-gray-50/50 p-3">
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={allowResubmission}
+                    onChange={(e) => setAllowResubmission(e.target.checked)}
+                    disabled={isPending}
+                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <RefreshCw className="h-3.5 w-3.5 text-gray-500" />
+                  Allow resubmission
+                </label>
+
+                {allowResubmission ? (
+                  <div className="mt-2 ml-6 flex items-center gap-2">
+                    <label className="text-xs text-gray-600">
+                      Max attempts
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max="10"
+                      step="1"
+                      value={maxAttempts}
+                      onChange={(e) => setMaxAttempts(e.target.value)}
+                      disabled={isPending}
+                      className="w-20 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                    />
+                  </div>
+                ) : (
+                  <p className="ml-6 mt-1 text-xs text-gray-500">
+                    Students get one attempt by default.
+                  </p>
+                )}
+              </div>
+
               {isSettingsDirty && (
                 <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
                   <button
@@ -708,13 +782,8 @@ export default function ActivityEditor({
         </aside>
       </div>
 
-      {/* ============================== DIVIDER ============================== */}
-
       <div className="border-t border-gray-200" aria-hidden />
 
-      {/* ============================== FULL-WIDTH LOWER ============================== */}
-
-      {/* Submissions panel (full-width) */}
       <SubmissionsPanel
         activity={activity}
         classId={classId}
@@ -725,7 +794,6 @@ export default function ActivityEditor({
         isPending={isPending}
       />
 
-      {/* Danger zone (full-width) */}
       <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">
         <h2 className="text-sm font-semibold text-red-900">Danger zone</h2>
         <p className="mt-1 text-xs text-red-700">
@@ -740,8 +808,6 @@ export default function ActivityEditor({
           Delete activity
         </button>
       </section>
-
-      {/* ============================== DIALOGS ============================== */}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -766,7 +832,7 @@ export default function ActivityEditor({
 }
 
 // ============================================================================
-// Submissions panel — unchanged from the original
+// Submissions panel
 // ============================================================================
 
 interface SubmissionsPanelProps {
@@ -855,6 +921,11 @@ function SubmissionRow({ submission, activity, classId }: SubmissionRowProps) {
         </Link>
         <div className="mt-0.5 flex items-center gap-3 text-xs text-gray-500">
           <span>{new Date(submission.submittedAt).toLocaleString()}</span>
+          {activity.maxAttempts > 1 && (
+            <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+              Attempt {submission.attemptNumber} / {activity.maxAttempts}
+            </span>
+          )}
           {attachmentCount > 0 && (
             <span className="inline-flex items-center gap-1">
               <Paperclip className="h-3 w-3" />

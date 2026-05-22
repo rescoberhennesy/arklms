@@ -1,19 +1,18 @@
 // src/components/dashboard/RichClassCard.tsx
 //
 // Card used in the "Your Classes" left column of both dashboards.
-// Visual: cover image with class name overlay, body with semester +
-// member-count, active/draft (archived) badge in the corner.
+// Visual: cover image with class name overlay, body with meta badges
+// (grade level + track + semester) + member-count / teacher name,
+// active/archived badge in the corner.
 //
 // Two variants for teachers vs students because the underlying types
 // differ (TeacherClassListItem has enrolled_count + is_archived;
 // StudentClassListItem has teacher_name).
-//
-// No progress bar this session — defining "class progress" is a design
-// conversation deferred to Phase 9+.
 
 import Link from 'next/link';
 import { Users } from 'lucide-react';
 import ClassCover from '@/components/dashboard/ClassCover';
+import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
 import type {
   TeacherClassListItem,
   StudentClassListItem,
@@ -70,10 +69,19 @@ function TeacherCard({ cls }: { cls: TeacherClassListItem }) {
           )}
         </div>
       </ClassCover>
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          {cls.semester}
-        </p>
+
+      {/* Meta badges (compact) + student count.
+          Stacked vertically so the badges wrap cleanly on narrow widths
+          without forcing the count below the fold. */}
+      <div className="space-y-2 px-3 py-2.5">
+        <ClassMetaBadges
+          gradeLevel={cls.grade_level}
+          track={cls.track}
+          semester={cls.semester}
+          variant="on-light"
+          size="sm"
+          hideSection
+        />
         <div className="flex items-center gap-1 text-xs font-medium text-slate-600">
           <Users className="h-3.5 w-3.5" />
           <span>
@@ -116,10 +124,16 @@ function StudentCard({ cls }: { cls: StudentClassListItem }) {
           )}
         </div>
       </ClassCover>
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          {cls.semester}
-        </p>
+
+      <div className="space-y-2 px-3 py-2.5">
+        <ClassMetaBadges
+          gradeLevel={cls.grade_level}
+          track={cls.track}
+          semester={cls.semester}
+          variant="on-light"
+          size="sm"
+          hideSection
+        />
         {cls.teacher_name && (
           <p className="truncate text-xs text-slate-600">
             {cls.teacher_name}

@@ -25,8 +25,6 @@ interface AddActivityBarProps {
   classId: string;
   onOptimisticAdd: (activity: ActivityWithAllSubmissions) => void;
   onError: (msg: string | null) => void;
-  // When true, the bar mounts in its expanded form. Used by the parent
-  // tab to honor a dashboard ?create=1 deep-link.
   defaultOpen?: boolean;
 }
 
@@ -60,7 +58,12 @@ export default function AddActivityBar({
   const [submissionType, setSubmissionType] =
     useState<SubmissionType>('text');
   const [allowLate, setAllowLate] = useState(false);
+
+  // NEW: bounded attempts. Default 1 = single submission (current behavior).
+  // Teacher checks "Allow resubmission" to bump it; the number field then
+  // controls how many attempts are permitted.
   const [allowResubmission, setAllowResubmission] = useState(false);
+  const [maxAttempts, setMaxAttempts] = useState('3');
 
   const isQuiz = kind === 'quiz';
 
@@ -73,6 +76,7 @@ export default function AddActivityBar({
     setSubmissionType('text');
     setAllowLate(false);
     setAllowResubmission(false);
+    setMaxAttempts('3');
   }
 
   function handleClose() {
@@ -100,11 +104,27 @@ export default function AddActivityBar({
     }
 
     let points = 0;
+    let attemptsToSend = 1;
     if (!isQuiz) {
       points = Number(maxPoints);
       if (!Number.isFinite(points) || points <= 0) {
         onError('Max points must be a positive number.');
         return;
+      }
+
+      if (allowResubmission) {
+        const n = Number(maxAttempts);
+        if (
+          !Number.isInteger(n) ||
+          n < 2 ||
+          n > 10
+        ) {
+          onError('Max attempts must be a whole number between 2 and 10.');
+          return;
+        }
+        attemptsToSend = n;
+      } else {
+        attemptsToSend = 1;
       }
     }
 
@@ -113,6 +133,7 @@ export default function AddActivityBar({
         let activityId: string;
         let optimisticPoints: number;
         let optimisticSubmissionType: SubmissionType;
+        let optimisticMaxAttempts: number;
 
         if (isQuiz) {
           const res = await createQuizActivity({
@@ -120,10 +141,12 @@ export default function AddActivityBar({
             term,
             title: trimmedTitle,
             dueAt: dueAtIso,
+            allowLate,
           });
           activityId = res.activityId;
           optimisticPoints = 0;
           optimisticSubmissionType = 'none';
+          optimisticMaxAttempts = 1; // quizzes are single-attempt by design
         } else {
           const res = await createActivity({
             classId,
@@ -133,11 +156,12 @@ export default function AddActivityBar({
             dueAt: dueAtIso,
             submissionType,
             allowLate,
-            allowResubmission,
+            maxAttempts: attemptsToSend,
           });
           activityId = res.activityId;
           optimisticPoints = points;
           optimisticSubmissionType = submissionType;
+          optimisticMaxAttempts = attemptsToSend;
         }
 
         onOptimisticAdd({
@@ -151,8 +175,9 @@ export default function AddActivityBar({
           maxPoints: optimisticPoints,
           startAt: new Date().toISOString(),
           dueAt: dueAtIso,
-          allowLate: isQuiz ? false : allowLate,
-          allowResubmission: isQuiz ? false : allowResubmission,
+          allowLate,
+          allowResubmission: false, // deprecated; never set true going forward
+          maxAttempts: optimisticMaxAttempts,
           submissionType: optimisticSubmissionType,
           published: false,
           displayOrder: Number.MAX_SAFE_INTEGER,
@@ -310,7 +335,7 @@ export default function AddActivityBar({
               </select>
             </div>
 
-            <div className="md:col-span-2 flex flex-wrap gap-4 pt-1">
+            <div className="md:col-span-2 space-y-2 pt-1">
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -321,18 +346,65 @@ export default function AddActivityBar({
                 />
                 Allow late submissions
               </label>
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={allowResubmission}
-                  onChange={(e) => setAllowResubmission(e.target.checked)}
-                  disabled={isPending}
-                  className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                />
-                Allow resubmission after grading
-              </label>
+
+              <div>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={allowResubmission}
+                    onChange={(e) => setAllowResubmission(e.target.checked)}
+                    disabled={isPending}
+                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  Allow resubmission
+                </label>
+                {allowResubmission && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-sm text-gray-600">
+                      Max attempts
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max="10"
+                      step="1"
+                      value={maxAttempts}
+                      onChange={(e) => setMaxAttempts(e.target.value)}
+                      disabled={isPending}
+                      className="w-20 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                    />
+                    <span className="text-xs text-gray-500">
+                      Students can submit up to this many times.
+                    </span>
+                  </div>
+                )}
+                {!allowResubmission && (
+                  <p className="ml-6 text-xs text-gray-500">
+                    Students get one attempt by default.
+                  </p>
+                )}
+              </div>
             </div>
           </>
+        )}
+
+        {isQuiz && (
+          <div className="md:col-span-2 pt-1">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={allowLate}
+                onChange={(e) => setAllowLate(e.target.checked)}
+                disabled={isPending}
+                className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+              />
+              Allow late submissions
+            </label>
+            <p className="ml-6 text-xs text-gray-500">
+              Students can start and submit after the due date. Late attempts
+              are flagged.
+            </p>
+          </div>
         )}
       </div>
 

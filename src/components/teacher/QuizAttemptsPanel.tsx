@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useTransition, useCallback } from 'react';
@@ -25,18 +24,18 @@ interface QuizAttemptsPanelProps {
 }
 
 function attemptsSignature(rows: QuizAttemptListItem[]): string {
-  // Cheap signature: id + submitted_at + needsManualReview + grade state.
-  // Drives signature-based prop-sync via useServerSyncedState when the
-  // parent re-fetches.
+  // Cheap signature: id + submitted_at + needsManualReview + grade state +
+  // isLate. Drives signature-based prop-sync via useServerSyncedState when
+  // the parent re-fetches.
   return rows
     .map(
       (r) =>
-        `${r.id}:${r.submittedAt ?? '-'}:${r.needsManualReview ? 1 : 0}:${r.hasGrade ? 1 : 0}:${r.gradeReleasedAt ?? '-'}:${r.displayScore ?? '-'}`,
+        `${r.id}:${r.submittedAt ?? '-'}:${r.needsManualReview ? 1 : 0}:${r.hasGrade ? 1 : 0}:${r.gradeReleasedAt ?? '-'}:${r.displayScore ?? '-'}:${r.isLate ? 1 : 0}`,
     )
     .join('|');
 }
 
-type Filter = 'all' | 'needs_review' | 'in_progress' | 'graded';
+type Filter = 'all' | 'needs_review' | 'in_progress' | 'graded' | 'late';
 
 function statusPillFor(row: QuizAttemptListItem): {
   className: string;
@@ -109,6 +108,8 @@ export default function QuizAttemptsPanel({
         return attempts.filter((a) => !a.submittedAt);
       case 'graded':
         return attempts.filter((a) => a.hasGrade);
+      case 'late':
+        return attempts.filter((a) => a.isLate);
       case 'all':
       default:
         return attempts;
@@ -121,8 +122,14 @@ export default function QuizAttemptsPanel({
       needs_review: attempts.filter((a) => a.needsManualReview).length,
       in_progress: attempts.filter((a) => !a.submittedAt).length,
       graded: attempts.filter((a) => a.hasGrade).length,
+      late: attempts.filter((a) => a.isLate).length,
     };
   }, [attempts]);
+
+  // Only surface the "Late" filter pill when there's at least one late
+  // attempt — keeps the filter row uncluttered for quizzes that don't
+  // allow late submissions or simply haven't had any.
+  const showLateFilter = counts.late > 0;
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -172,6 +179,9 @@ export default function QuizAttemptsPanel({
                 ['needs_review', 'Needs review', counts.needs_review],
                 ['in_progress', 'In progress', counts.in_progress],
                 ['graded', 'Graded', counts.graded],
+                ...(showLateFilter
+                  ? ([['late', 'Late', counts.late]] as const)
+                  : ([] as const)),
               ] as const
             ).map(([key, label, count]) => (
               <button
@@ -208,10 +218,19 @@ export default function QuizAttemptsPanel({
                       className="flex items-center gap-3 py-3 hover:bg-gray-50"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="truncate text-sm font-medium text-gray-900">
                             {row.studentName || 'Unknown student'}
                           </span>
+                          {row.isLate && (
+                            <span
+                              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                              title="Submitted after the due date"
+                            >
+                              <Clock className="h-2.5 w-2.5" />
+                              Late
+                            </span>
+                          )}
                           {row.needsManualReview && (
                             <span
                               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"

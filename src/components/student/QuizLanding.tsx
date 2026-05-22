@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Play, Calendar, Award, Timer, AlertCircle } from 'lucide-react';
+import { Loader2, Play, Calendar, Award, AlertCircle, Clock } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import type { ActivityWithStudentState } from '@/lib/types/activities';
 
@@ -22,7 +22,7 @@ export default function QuizLanding({
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
             Quiz
           </span>
@@ -32,14 +32,13 @@ export default function QuizLanding({
             </span>
           )}
           {isPastDue && activity.allowLate && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              <Clock className="h-3 w-3" />
               Late submission
             </span>
           )}
         </div>
-
         <h1 className="text-2xl font-bold text-gray-900">{activity.title}</h1>
-
         <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-gray-600">
           <span className="inline-flex items-center gap-1">
             <Calendar className="h-4 w-4" />
@@ -49,17 +48,43 @@ export default function QuizLanding({
             <Award className="h-4 w-4" />
             {activity.maxPoints} pt{activity.maxPoints === 1 ? '' : 's'}
           </span>
+          {activity.allowLate && !isPastDue && (
+            <span className="inline-flex items-center gap-1 text-amber-700">
+              <Clock className="h-4 w-4" />
+              Late submissions allowed
+            </span>
+          )}
         </div>
 
         {activity.instructions.trim() && (
-  <div className="mt-4 rounded-md border border-gray-100 bg-gray-50 p-3">
-    <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-      Instructions
-    </h2>
-    <MarkdownContent body={activity.instructions}/>
-  </div>
-)
-}
+          <div className="mt-4 rounded-md border border-gray-100 bg-gray-50 p-3">
+            <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Instructions
+            </h2>
+            <MarkdownContent body={activity.instructions} />
+          </div>
+        )}
+      </div>
+
+      {/* Late-submission notice. Shown only when the deadline has passed
+          AND late submissions are allowed — gives the student a clear
+          heads-up before they commit to starting. */}
+      {isPastDue && activity.allowLate && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <Clock className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold">
+                The due date has passed
+              </p>
+              <p className="mt-0.5 text-amber-800">
+                Your teacher is still accepting late submissions. If you start
+                now, your attempt will be flagged as late when you submit.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <div className="flex items-start gap-3">
@@ -102,7 +127,6 @@ export default function QuizLanding({
           Start quiz
         </button>
       </div>
-    </div>
     </div>
   );
 }

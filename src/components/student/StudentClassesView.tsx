@@ -9,6 +9,7 @@ import {
   LogOut,
   Users,
   Search,
+  User as UserIcon,
 } from 'lucide-react';
 import {
   cancelMyJoinRequest,
@@ -20,6 +21,7 @@ import type { StudentClassListItem, ClassAvatarInfo } from '@/types/class';
 import { cn } from '@/lib/utils/cn';
 import { getInitials } from '@/lib/utils/getInitials';
 import ClassCover from '@/components/dashboard/ClassCover';
+import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
 import SortableClassGrid from '@/components/dashboard/SortableClassGrid';
 import SortableItem from '@/components/dashboard/SortableItem';
 import JoinClassModal from './JoinClassModal';
@@ -231,7 +233,7 @@ export default function StudentClassesView({
         </section>
       )}
 
-      {/* Toolbar: search + filter pills (grouped on the left) */}
+      {/* Toolbar */}
       {classes.length > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="relative w-full sm:max-w-sm">
@@ -447,15 +449,25 @@ function StudentClassCard({
 
       <Link
         href={`/student/classes/${klass.id}`}
-        className="flex flex-1 flex-col gap-2 p-4"
+        className="flex flex-1 flex-col gap-2.5 p-4"
       >
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-          {klass.semester}
-        </p>
+        {/* Meta badges (grade, track, semester) */}
+        <ClassMetaBadges
+          gradeLevel={klass.grade_level}
+          track={klass.track}
+          semester={klass.semester}
+          variant="on-light"
+          size="sm"
+          hideSection
+        />
 
-        <p className="truncate text-sm font-medium text-gray-700">
-          {klass.teacher_name ?? 'Teacher'}
-        </p>
+        {/* Teacher attribution row */}
+        {klass.teacher_name && (
+          <p className="inline-flex items-center gap-1.5 truncate text-sm text-gray-700">
+            <UserIcon className="h-3.5 w-3.5 text-gray-400" />
+            <span className="truncate">{klass.teacher_name}</span>
+          </p>
+        )}
 
         {!klass.is_archived && classmateCount > 0 && (
           <div className="flex items-center gap-1.5 text-sm text-gray-600">

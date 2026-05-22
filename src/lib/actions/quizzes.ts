@@ -48,6 +48,7 @@ interface AttemptRow {
   manual_score_override: string | number | null;
   submission_id: string | null;
   feedback: string | null;
+  is_late: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +75,8 @@ interface ActivityQuizRow {
   auto_release_grade: boolean;
   show_correct_answers: boolean;
   quiz_total_points: string | number | null;
+  allow_late: boolean;
+  due_at: string;
 }
 
 // --- Mappers --------------------------------------------------------------
@@ -104,6 +107,7 @@ function mapAttempt(r: AttemptRow): QuizAttempt {
     manualScoreOverride: r.manual_score_override === null ? null : Number(r.manual_score_override),
     submissionId: r.submission_id,
     feedback: r.feedback ?? '',
+    isLate: r.is_late,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -132,13 +136,10 @@ function mapActivityToQuizConfig(r: ActivityQuizRow): QuizConfig {
     showCorrectAnswers: r.show_correct_answers,
     quizTotalPoints:
       r.quiz_total_points === null ? null : Number(r.quiz_total_points),
+    allowLate: r.allow_late,
   };
 }
 
-// Strip correct-answer fields from a question's config for student-facing
-// reads. Per Session 9 design: students NEVER see correct values during
-// the attempt. After submission with show_correct_answers=true, full
-// (unsanitized) config is delivered through a different action.
 function sanitizeConfig(
   kind: QuestionKind,
   config: QuestionConfig,
@@ -175,8 +176,6 @@ function sanitizeQuestion(q: QuizQuestion): StudentQuestionView {
   };
 }
 
-// --- Cache invalidation helpers ------------------------------------------
-
 function revalidateQuizPaths(classId: string, activityId: string) {
   revalidatePath(`/teacher/classes/${classId}`);
   revalidatePath(`/teacher/classes/${classId}/activities/${activityId}`);
@@ -195,8 +194,6 @@ async function getActivityClassId(activityId: string): Promise<string> {
   return (data as { class_id: string }).class_id;
 }
 
-// Recomputes activities.quiz_total_points after question CRUD. Cached value
-// avoids a SUM(points) join on every gradebook view.
 async function recomputeQuizTotalPoints(activityId: string): Promise<void> {
   const supabase = await createClient();
 
@@ -212,10 +209,6 @@ async function recomputeQuizTotalPoints(activityId: string): Promise<void> {
       0,
     ) || 0;
 
-  // Also mirror to activities.max_points so the existing gradebook code
-  // (which reads max_points) shows correct totals without quiz-specific
-  // logic. Same semantics: "what is the total possible score on this
-  // activity".
   const { error: updErr } = await supabase
     .from('activities')
     .update({ quiz_total_points: total, max_points: total })
@@ -223,8 +216,6 @@ async function recomputeQuizTotalPoints(activityId: string): Promise<void> {
   if (updErr) throw new Error(updErr.message);
 }
 
-// Pulls attempt count for the lock check. Used by listQuizQuestionsForTeacher
-// + write-path guards.
 async function countAttempts(activityId: string): Promise<number> {
   const supabase = await createClient();
   const { count, error } = await supabase
@@ -287,12 +278,13 @@ export async function createQuizActivity(input: {
       activity_kind: 'quiz',
       title: input.title.trim(),
       instructions: input.description ?? '',
-      prompt: '', // quizzes don't use the assignment 2-field model
-      max_points: 0, // updated as questions are added via recomputeQuizTotalPoints
+      prompt: '',
+      max_points: 0,
       start_at: input.startAt ?? new Date().toISOString(),
       due_at: input.dueAt,
       allow_late: input.allowLate ?? false,
-      allow_resubmission: false, // single-attempt model in 8b
+      allow_resubmission: false,
+      max_attempts: 1, // quizzes always single-attempt
       submission_type: submissionType,
       display_order: nextOrder,
       published: false,
@@ -325,6 +317,7 @@ export async function updateQuizConfig(
     dbPatch.auto_release_grade = patch.autoReleaseGrade;
   if (patch.showCorrectAnswers !== undefined)
     dbPatch.show_correct_answers = patch.showCorrectAnswers;
+  if (patch.allowLate !== undefined) dbPatch.allow_late = patch.allowLate;
 
   if (Object.keys(dbPatch).length === 0) return;
 
@@ -351,7 +344,7 @@ export async function getTeacherQuizView(
   const { data: actData, error: actErr } = await supabase
     .from('activities')
     .select(
-      'id, class_id, activity_kind, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points',
+      'id, class_id, activity_kind, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points, allow_late, due_at',
     )
     .eq('id', activityId)
     .single();
@@ -517,13 +510,8 @@ export async function reorderQuizQuestions(
 
   const supabase = await createClient();
 
-  // Two-pass write to avoid colliding with the UNIQUE (activity_id, display_order)
-  // index: first push everything to negative orders, then assign final values.
-  // (Same pattern as reorder_activities — done client-side here because we
-  // didn't add a SQL helper for quiz_questions ordering.)
   if (questionIds.length === 0) return;
 
-  // Pass 1: temp negative orders.
   for (let i = 0; i < questionIds.length; i++) {
     const { error } = await supabase
       .from('quiz_questions')
@@ -533,7 +521,6 @@ export async function reorderQuizQuestions(
     if (error) throw new Error(error.message);
   }
 
-  // Pass 2: final orders.
   for (let i = 0; i < questionIds.length; i++) {
     const { error } = await supabase
       .from('quiz_questions')
@@ -586,18 +573,16 @@ export async function getStudentAttemptView(
   if (userErr) throw new Error(userErr.message);
   if (!user) throw new Error('Not authenticated');
 
-  // Activity quiz config.
   const { data: actData, error: actErr } = await supabase
     .from('activities')
     .select(
-      'id, class_id, activity_kind, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points',
+      'id, class_id, activity_kind, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points, allow_late, due_at',
     )
     .eq('id', activityId)
     .single();
   if (actErr) throw new Error(actErr.message);
   const actRow = actData as ActivityQuizRow;
 
-  // Existing attempt for this user, if any.
   const { data: attemptData, error: attemptErr } = await supabase
     .from('quiz_attempts')
     .select('*')
@@ -609,8 +594,6 @@ export async function getStudentAttemptView(
 
   const attempt = mapAttempt(attemptData as AttemptRow);
 
-  // Questions. RLS only returns rows when the student has an in-progress
-  // attempt or show_correct_answers is true post-submit.
   const { data: questionRows, error: qErr } = await supabase
     .from('quiz_questions')
     .select('*')
@@ -621,7 +604,6 @@ export async function getStudentAttemptView(
     sanitizeQuestion(mapQuestion(r as QuestionRow)),
   );
 
-  // Responses for the attempt.
   const { data: responseRows, error: rErr } = await supabase
     .from('quiz_responses')
     .select('*')
@@ -629,7 +611,6 @@ export async function getStudentAttemptView(
   if (rErr) throw new Error(rErr.message);
   const responses = (responseRows ?? []).map((r) => mapResponse(r as ResponseRow));
 
-  // Compute deadline if time-limited.
   let deadlineAt: string | null = null;
   if (actRow.time_limit_minutes != null) {
     const startMs = new Date(attempt.startedAt).getTime();
@@ -646,8 +627,6 @@ export async function getStudentAttemptView(
   };
 }
 
-// Upsert a single response. Idempotent — used by save-as-you-go in the
-// student attempt UI. RLS enforces own-attempt + not-yet-submitted.
 export async function upsertQuizResponse(input: {
   attemptId: string;
   questionId: string;
@@ -664,8 +643,6 @@ export async function upsertQuizResponse(input: {
     { onConflict: 'attempt_id,question_id' },
   );
   if (error) throw new Error(error.message);
-  // No revalidation: this fires on every keystroke / option click.
-  // Server reads of the attempt re-pull responses fresh.
 }
 
 export async function submitQuizAttempt(attemptId: string): Promise<{
@@ -685,7 +662,6 @@ export async function submitQuizAttempt(attemptId: string): Promise<{
     out_submission_id: string;
   }>)[0];
 
-  // Look up classId/activityId for revalidate; cheap because attempt is small.
   const { data: attemptData } = await supabase
     .from('quiz_attempts')
     .select('activity_id')
@@ -707,20 +683,6 @@ export async function submitQuizAttempt(attemptId: string): Promise<{
 // TEACHER: grading views
 // ==========================================================================
 
-// Returns one row per attempt for this quiz, augmented with the fields the
-// attempts-panel UI needs for at-a-glance triage:
-//   - studentName / studentEmail from profiles
-//   - needsManualReview: at least one essay or short_answer response on
-//     this attempt has manual_points = null AND the attempt is submitted
-//   - hasGrade: an activity_grades row exists for this attempt's submission
-//   - gradeReleasedAt: when that grade was released, null if unreleased
-//   - displayScore: what the student would see right now (manual override
-//     if set, else auto_score, else null)
-//
-// Strategy: fetch attempts → batch-fetch profiles, all essay/short-answer
-// question ids for this quiz, all responses for these attempt ids, all
-// grades for these submission ids. Then derive per-attempt fields in
-// memory. Three round trips total (plus the initial attempts query).
 export async function listQuizAttemptsForQuiz(
   activityId: string,
 ): Promise<QuizAttemptListItem[]> {
@@ -742,7 +704,6 @@ export async function listQuizAttemptsForQuiz(
     .map((a) => a.submissionId)
     .filter((s): s is string => s !== null);
 
-  // Manual-review-eligible question kinds for this quiz.
   const { data: manualQuestionRows, error: mqErr } = await supabase
     .from('quiz_questions')
     .select('id')
@@ -753,14 +714,13 @@ export async function listQuizAttemptsForQuiz(
     (manualQuestionRows ?? []).map((r) => (r as { id: string }).id),
   );
 
-  // Profiles for student name/email.
   const { data: profileRows, error: pErr } = await supabase
     .from('profiles')
     .select('id, full_name, email')
     .in('id', studentIds);
   if (pErr) throw new Error(pErr.message);
 
-  const profileById = new Map<
+  const profileById = new Map <
     string,
     { full_name: string | null; email: string | null }
   >();
@@ -772,13 +732,9 @@ export async function listQuizAttemptsForQuiz(
     profileById.set(p.id, { full_name: p.full_name, email: p.email });
   }
 
-  // Responses for all attempts (only the columns we need for derivation).
-  // If there are no manual-graded question kinds in the quiz at all,
-  // skip this fetch — needsManualReview will be false for every attempt.
   type DerivedFlags = { needsManualReview: boolean };
   const derivedByAttempt = new Map<string, DerivedFlags>();
   for (const a of attempts) {
-    // Pre-submit attempts are not in "needs review" — they're in progress.
     derivedByAttempt.set(a.id, { needsManualReview: false });
   }
 
@@ -800,8 +756,6 @@ export async function listQuizAttemptsForQuiz(
       const flags = derivedByAttempt.get(r.attempt_id);
       if (flags) flags.needsManualReview = true;
     }
-    // Suppress needsManualReview for in-progress attempts — only submitted
-    // attempts are in the grading queue.
     for (const a of attempts) {
       if (!a.submittedAt) {
         const flags = derivedByAttempt.get(a.id);
@@ -810,7 +764,6 @@ export async function listQuizAttemptsForQuiz(
     }
   }
 
-  // Grades for the submission ids.
   type GradeRow = {
     submission_id: string;
     returned_at: string | null;
@@ -865,7 +818,6 @@ export async function getAttemptForGrading(
 
   const attempt = mapAttempt(attemptData as AttemptRow);
 
-  // Pull the activity-level fields the grader UI needs.
   const { data: actData, error: actErr } = await supabase
     .from('activities')
     .select(
@@ -914,7 +866,6 @@ export async function getAttemptForGrading(
     email: string | null;
   };
 
-  // Grade row (for gradeReleasedAt).
   let gradeReleasedAt: string | null = null;
   if (attempt.submissionId) {
     const { data: gradeRow, error: gErr } = await supabase
@@ -969,7 +920,6 @@ export async function setManualResponseGrade(input: {
     .update(dbPatch)
     .eq('id', input.responseId);
   if (error) throw new Error(error.message);
-  // Revalidation deferred to the caller's recomputeQuizScore call.
 }
 
 export async function recomputeQuizScore(
@@ -981,7 +931,6 @@ export async function recomputeQuizScore(
   });
   if (error) throw new Error(error.message);
 
-  // Look up classId/activityId for revalidate.
   const { data: attemptData } = await supabase
     .from('quiz_attempts')
     .select('activity_id')
@@ -995,12 +944,6 @@ export async function recomputeQuizScore(
   return { score: Number(data) || 0 };
 }
 
-// Attempt-level feedback (the overall note that appears alongside the score
-// after release). Per-question feedback lives on quiz_responses.feedback.
-// We keep this as a tiny standalone action so the grader can call it in
-// parallel with setManualResponseGrade writes without churning the per-row
-// update path. No revalidation here — the grader's recomputeQuizScore call
-// handles it for the whole attempt.
 export async function setAttemptFeedback(
   attemptId: string,
   feedback: string,
@@ -1014,7 +957,7 @@ export async function setAttemptFeedback(
 }
 
 // ==========================================================================
-// STUDENT: post-submit review (C4)
+// STUDENT: post-submit review
 // ==========================================================================
 
 export interface StudentReviewView {
@@ -1041,7 +984,7 @@ export async function getStudentReviewView(
   const { data: actData, error: actErr } = await supabase
     .from('activities')
     .select(
-      'id, class_id, activity_kind, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points',
+      'id, class_id, activity_kind, time_limit_minutes, shuffle_questions, auto_release_grade, show_correct_answers, quiz_total_points, allow_late, due_at',
     )
     .eq('id', activityId)
     .single();

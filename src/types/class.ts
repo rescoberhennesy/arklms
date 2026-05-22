@@ -97,6 +97,8 @@ export interface StudentClassListItem {
   name: string;
   section: string | null;
   semester: Semester;
+  grade_level: GradeLevel | null;
+  track: Track | null;
   color: string | null;
   cover_photo_url: string | null;
   teacher_name: string | null;

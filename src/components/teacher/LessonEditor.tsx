@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import AIReviewerModal from '@/components/teacher/ai/AIReviewerModal';
 import AIQualityPanel from '@/components/teacher/ai/AIQualityPanel';
 import FlashcardDeckPanel from '@/components/teacher/ai/FlashcardDeckPanel';
+import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import {
@@ -31,7 +32,7 @@ import {
   deleteLesson,
   recordAttachment,
   deleteAttachment,
-  getSignedAttachmentUrl,
+  getAttachmentDownloadData,
 } from '@/lib/actions/modules';
 
 interface LessonEditorProps {
@@ -418,10 +419,16 @@ function AttachmentsSection({
   function handleDownload(attachmentId: string) {
     startTransition(async () => {
       try {
-        const url = await getSignedAttachmentUrl(attachmentId);
-        // Opening in a new tab triggers download for non-inline types,
-        // and lets the user view inline-able types in browser.
-        window.open(url, '_blank', 'noopener,noreferrer');
+        const { dataUrl, fileName } = await getAttachmentDownloadData(
+          attachmentId,
+        );
+        // Trigger the browser's save-as flow via a synthetic <a> click.
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } catch (err) {
         setUploadError(err instanceof Error ? err.message : 'Download failed.');
       }
@@ -485,7 +492,7 @@ function AttachmentsSection({
           {attachments.map((a) => (
             <li
               key={a.id}
-              className="flex items-center gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2"
             >
               <FileText className="h-4 w-4 shrink-0 text-gray-400" />
               <div className="min-w-0 flex-1">
@@ -494,6 +501,16 @@ function AttachmentsSection({
                   {formatFileSize(a.file_size)}
                 </p>
               </div>
+
+              {/* Preview lets teacher confirm they uploaded the right file
+                  before publishing. Hidden by the component for unsupported
+                  types so the row stays tidy. */}
+              <LessonAttachmentPreview
+                attachmentId={a.id}
+                fileName={a.file_name}
+                mimeType={a.mime_type ?? null}
+              />
+
               <button
                 type="button"
                 onClick={() => handleDownload(a.id)}

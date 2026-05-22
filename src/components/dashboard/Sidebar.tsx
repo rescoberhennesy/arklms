@@ -12,9 +12,14 @@ import './Sidebar.css'
 
 interface SidebarProps {
   role: UserRole
+  /** Map of badgeKey → count. Items in navigationConfig whose
+   *  `badgeKey` matches an entry here render a count badge.
+   *  Counts of 0 render no badge. Counts > 99 render as "99+".
+   *  Defaults to empty (no badges) — safe omission. */
+  badgeCounts?: Record<string, number>
 }
 
-export default function Sidebar({ role }: SidebarProps) {
+export default function Sidebar({ role, badgeCounts = {} }: SidebarProps) {
   const { isCollapsed } = useSidebar()
   const pathname = usePathname()
   const router = useRouter()
@@ -79,6 +84,10 @@ export default function Sidebar({ role }: SidebarProps) {
                   pathname === item.href ||
                   pathname.startsWith(item.href + '/')
 
+                const badgeValue =
+                  item.badgeKey ? badgeCounts[item.badgeKey] ?? 0 : 0
+                const showBadge = badgeValue > 0
+
                 return (
                   <li key={item.href}>
                     <Link
@@ -93,13 +102,36 @@ export default function Sidebar({ role }: SidebarProps) {
                       )}
                       title={isCollapsed ? item.label : undefined}
                     >
-                      <Icon
-                        size={22}
-                        className={cn(
-                          'nav-icon flex-shrink-0 transition-transform group-hover:scale-110',
-                          isActive ? 'text-white' : 'text-slate-400',
+                      <div className="relative flex-shrink-0">
+                        <Icon
+                          size={22}
+                          className={cn(
+                            'nav-icon transition-transform group-hover:scale-110',
+                            isActive ? 'text-white' : 'text-slate-400',
+                          )}
+                        />
+                        {/* Badge: rendered when this nav item has a badgeKey
+                            AND the matching count is > 0. Anchored to the
+                            icon so it works in both expanded and collapsed
+                            sidebar states. When the nav item is active (red
+                            background), we flip the badge to white-on-red so
+                            it remains visible. */}
+                        {showBadge && (
+                          <span
+                            className={cn(
+                              'absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1',
+                              'flex items-center justify-center rounded-full',
+                              'text-[10px] font-bold ring-2',
+                              isActive
+                                ? 'bg-white text-red-600 ring-red-600'
+                                : 'bg-red-600 text-white ring-[#0c0c0c]',
+                            )}
+                            aria-label={`${badgeValue} pending`}
+                          >
+                            {badgeValue > 99 ? '99+' : badgeValue}
+                          </span>
                         )}
-                      />
+                      </div>
                       {!isCollapsed && (
                         <span className="nav-label text-[14px] font-semibold tracking-wide">
                           {item.label}
