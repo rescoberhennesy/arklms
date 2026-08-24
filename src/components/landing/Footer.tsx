@@ -3,7 +3,9 @@ import { Mail, Phone, MapPin, Info, MessageSquare } from 'lucide-react'
 export default function Footer() {
   return (
     <footer className="footer-area">
+       {/*
       <div className="footer-inner">
+       
         <div className="footer-col brand">
           <h3>ARK Technological Institute Education System Inc.</h3>
           <p>
@@ -12,6 +14,7 @@ export default function Footer() {
             Learning Management System with AI Instructional Support.
           </p>
         </div>
+
 
         <div className="footer-col">
           <h4>QUICK LINKS</h4>
@@ -22,6 +25,7 @@ export default function Footer() {
             <MessageSquare size={16} /> Contact
           </a>
         </div>
+     
 
         <div className="footer-col">
           <h4>CONTACT US</h4>
@@ -37,6 +41,8 @@ export default function Footer() {
           </p>
         </div>
       </div>
+         */}
+
       <div className="footer-bottom">
         © 2015 ARK Technological Institute Education System Inc. All rights
         reserved.

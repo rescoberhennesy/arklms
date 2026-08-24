@@ -15,11 +15,6 @@ export default function HeroSection() {
       title: 'WELCOME TO A-LMS',
       text: 'This is your central hub for everything related to class announcements, course materials, and assignments. Please check this page regularly to stay informed about deadlines and new resources.',
     },
-    {
-      image: '/2.png',
-      title: 'Admission for SY 2026–2027 is now open!!',
-      text: 'Apply now and secure your future with ARK Technological Institute. Limited slots available.',
-    },
   ]
 
   const [active, setActive] = useState(0)
@@ -49,21 +44,6 @@ export default function HeroSection() {
               <p>{slides[active].text}</p>
             </div>
           </div>
-        </div>
-        <button className="hero-arrow left" onClick={prevSlide} aria-label="Previous slide">
-          ‹
-        </button>
-        <button className="hero-arrow right" onClick={nextSlide} aria-label="Next slide">
-          ›
-        </button>
-        <div className="hero-dots">
-          {slides.map((_, index) => (
-            <span
-              key={index}
-              className={`hero-dot ${active === index ? 'active' : ''}`}
-              onClick={() => goToSlide(index)}
-            />
-          ))}
         </div>
       </div>
     </section>

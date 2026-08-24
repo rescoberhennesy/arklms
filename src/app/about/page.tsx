@@ -18,26 +18,37 @@ export default function AboutPage() {
 
         {/* The school */}
         <section className="about-section">
-          <div className="about-section-inner">
-            <div className="about-eyebrow">
-              <GraduationCap size={18} />
-              <span>The Institution</span>
+          <div className="about-section-inner about-institution-grid">
+            <div className="about-institution-text">
+              <div className="about-eyebrow">
+                <GraduationCap size={18} />
+                <span>The Institution</span>
+              </div>
+              <h2>ARK Technological Institute Education System Inc.</h2>
+              <p>
+                ARK Technological Institute is an educational institution based in
+                Lucena, Philippines, offering Senior High School and TESDA
+                technical-vocational programs. The school provides Senior High
+                School strands in Accountancy, Business and Management (ABM),
+                Humanities and Social Sciences (HUMSS), Home Economics (H.E), and
+                Information and Communications Technology (I.C.T), preparing
+                students for both higher education and the workforce.
+              </p>
+              <p>
+                Since 2015, ARK has been committed to making quality education
+                accessible to its community, combining academic instruction with
+                practical, skills-based training.
+              </p>
             </div>
-            <h2>ARK Technological Institute Education System Inc.</h2>
-            <p>
-              ARK Technological Institute is an educational institution based in
-              Lucena, Philippines, offering Senior High School and TESDA
-              technical-vocational programs. The school provides Senior High
-              School strands in Accountancy, Business and Management (ABM),
-              Humanities and Social Sciences (HUMSS), Home Economics (H.E), and
-              Information and Communications Technology (I.C.T), preparing
-              students for both higher education and the workforce.
-            </p>
-            <p>
-              Since 2015, ARK has been committed to making quality education
-              accessible to its community, combining academic instruction with
-              practical, skills-based training.
-            </p>
+
+            <div className="about-institution-photo-wrap">
+              <div className="about-institution-photo-accent" />
+              <img
+                src="/lastt.jpg"
+                alt="ARK Technological Institute"
+                className="about-institution-photo"
+              />
+            </div>
           </div>
         </section>
 
@@ -55,11 +66,6 @@ export default function AboutPage() {
               Institute. The platform brings classes, modules, activities,
               quizzes, and grading into one place, while keeping teachers in
               control of how their lessons are designed and delivered.
-            </p>
-            <p>
-              Our goal is to make day-to-day teaching faster and more focused,
-              and to give students a clear, organized space to learn — without
-              replacing the human judgment that makes good teaching work.
             </p>
 
             <div className="about-features">

@@ -67,7 +67,6 @@ export default function AIReviewerModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [teacherNote, setTeacherNote] = useState('');
-  const [includePractice, setIncludePractice] = useState(true);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -79,7 +78,6 @@ export default function AIReviewerModal({
   function resetAll() {
     setFiles([]);
     setTeacherNote('');
-    setIncludePractice(true);
     setError(null);
     setDraft(null);
     setIsDragging(false);
@@ -173,8 +171,7 @@ export default function AIReviewerModal({
     try {
       const fd = new FormData();
       for (const f of files) fd.append('files', f);
-      fd.append('teacherNote', teacherNote);
-      fd.append('includePractice', String(includePractice));
+        fd.append('teacherNote', teacherNote);
       if (classId) fd.append('classId', classId);
 
       const res = await fetch('/api/ai/reviewer', {
@@ -235,8 +232,6 @@ export default function AIReviewerModal({
               files={files}
               teacherNote={teacherNote}
               setTeacherNote={setTeacherNote}
-              includePractice={includePractice}
-              setIncludePractice={setIncludePractice}
               isDragging={isDragging}
               isGenerating={isGenerating}
               error={error}
@@ -325,8 +320,6 @@ interface ConfigStageProps {
   files: File[];
   teacherNote: string;
   setTeacherNote: (v: string) => void;
-  includePractice: boolean;
-  setIncludePractice: (v: boolean) => void;
   isDragging: boolean;
   isGenerating: boolean;
   error: string | null;
@@ -343,8 +336,6 @@ function ConfigStage(props: ConfigStageProps) {
     files,
     teacherNote,
     setTeacherNote,
-    includePractice,
-    setIncludePractice,
     isDragging,
     isGenerating,
     error,
@@ -360,10 +351,9 @@ function ConfigStage(props: ConfigStageProps) {
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
         Upload lecture PDFs or notes (DOCX) and the AI will draft a study
-        reviewer with a summary, key concepts, and optional practice
-        questions. You can edit everything before publishing.
+        reviewer with a summary and key concepts. You can edit everything
+        before publishing.
       </p>
-
       {/* Drop zone */}
       <div
         onDrop={onDrop}
@@ -435,17 +425,7 @@ function ConfigStage(props: ConfigStageProps) {
         />
       </div>
 
-      {/* Options */}
-      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-        <input
-          type="checkbox"
-          checked={includePractice}
-          onChange={(e) => setIncludePractice(e.target.checked)}
-          disabled={isGenerating}
-          className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-        />
-        Include practice questions with reveal-on-click answers
-      </label>
+      
 
       {error && (
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">

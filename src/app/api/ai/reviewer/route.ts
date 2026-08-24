@@ -102,9 +102,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
 
-  const teacherNote = (form.get('teacherNote') as string | null)?.trim() ?? '';
-  const includePractice =
-    (form.get('includePractice') as string | null) === 'true';
+   const teacherNote = (form.get('teacherNote') as string | null)?.trim() ?? '';
+  const includePractice = false;
   const classId = (form.get('classId') as string | null) || null;
 
   const files = form.getAll('files').filter((f): f is File => f instanceof File);

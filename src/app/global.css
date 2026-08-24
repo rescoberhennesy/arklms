@@ -360,7 +360,7 @@ html, body {
 .footer-area {
   background: #0b0b0b;
   color: #ffffff;
-  padding-top: 70px;
+
   margin-top: 0px;
 }
 .footer-inner {
@@ -494,6 +494,171 @@ html, body {
   }
 }
 
+@layer components {
+  /* Stats strip */
+  .home-stats {
+    background: #fafafa;
+    padding: 50px 0;
+    border-bottom: 1px solid #eee;
+  }
+  .home-stats-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 24px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    text-align: center;
+  }
+  .home-stat h3 {
+    font-size: 34px;
+    color: #e02424;
+    margin: 0 0 6px;
+  }
+  .home-stat p {
+    font-size: 14px;
+    color: #555;
+    margin: 0;
+  }
+
+  /* Strands showcase */
+  .home-strands {
+    background: #ffffff;
+    padding: 70px 0;
+  }
+  .home-strands-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 24px;
+    text-align: center;
+  }
+  .home-strands-inner h2 {
+    font-size: 30px;
+    color: #1a1a1a;
+    margin: 0 0 40px;
+  }
+  .strand-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+  .strand-card {
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: 28px 18px;
+    transition: 0.3s ease;
+  }
+  .strand-card:hover {
+    border-color: #e02424;
+    transform: translateY(-3px);
+  }
+  .strand-card h3 {
+    font-size: 22px;
+    color: #e02424;
+    margin: 0 0 8px;
+  }
+  .strand-card p {
+    font-size: 13px;
+    color: #555;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* CTA banner */
+  .home-cta {
+    background: linear-gradient(135deg, #950205 0%, #c81e1e 100%);
+    padding: 60px 0;
+    text-align: center;
+    color: #fff;
+  }
+  .home-cta-inner h2 {
+    font-size: 28px;
+    margin: 0 0 10px;
+  }
+  .home-cta-inner p {
+    font-size: 15px;
+    opacity: 0.9;
+    margin: 0 0 24px;
+  }
+  .home-cta-btn {
+    display: inline-block;
+    background: #fff;
+    color: #c81e1e;
+    font-weight: 700;
+    padding: 12px 32px;
+    border-radius: 30px;
+    text-decoration: none;
+    transition: 0.3s ease;
+  }
+  .home-cta-btn:hover {
+    background: #f5f5f5;
+    transform: translateY(-2px);
+  }
+
+    /* How it works */
+  .home-steps {
+    background: #fafafa;
+    padding: 70px 0;
+    text-align: center;
+  }
+  .home-steps-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  .home-steps-inner h2 {
+    font-size: 30px;
+    color: #1a1a1a;
+    margin: 0 0 40px;
+  }
+  .step-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .step-card {
+    background: #ffffff;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: 32px 24px;
+    text-align: left;
+    position: relative;
+  }
+  .step-number {
+    width: 36px;
+    height: 36px;
+    background: #e02424;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 16px;
+  }
+  .step-card h3 {
+    font-size: 17px;
+    color: #1a1a1a;
+    margin: 0 0 8px;
+    font-weight: 700;
+  }
+  .step-card p {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  @media (max-width: 800px) {
+    .home-stats-inner,
+    .strand-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+  }
+}
+
 /* ============================================================
    ABOUT + CONTACT PAGES
    ============================================================ */
@@ -511,7 +676,7 @@ html, body {
   .contact-hero {
     background: linear-gradient(135deg, #950205 0%, #c81e1e 100%);
     color: #fff;
-    padding: 80px 0 60px;
+    padding: 40px 0 30px;
   }
   .about-hero-inner,
   .contact-hero-inner {
@@ -521,7 +686,8 @@ html, body {
   }
   .about-hero h1,
   .contact-hero h1 {
-    font-size: 42px;
+    font-size: 30px;
+    font-weight: 500;
     letter-spacing: 3px;
     margin: 0 0 12px;
   }
@@ -573,6 +739,57 @@ html, body {
     margin: 0 0 16px;
   }
 
+  /* Institution section — text + photo grid */
+  .about-institution-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+
+  .about-institution-photo-wrap {
+    position: relative;
+    width: 100%;
+    height: 420px;
+  }
+
+  .about-institution-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    clip-path: polygon(15% 0, 100% 0, 100% 100%, 0% 100%);
+    position: relative;
+    z-index: 2;
+  }
+
+  .about-institution-photo-accent {
+    position: absolute;
+    top: 20px;
+    left: -20px;
+    width: 100%;
+    height: 100%;
+    background: #e02424;
+    clip-path: polygon(15% 0, 100% 0, 100% 100%, 0% 100%);
+    z-index: 1;
+  }
+
+  @media (max-width: 900px) {
+    .about-institution-grid {
+      grid-template-columns: 1fr;
+    }
+    .about-institution-photo-wrap {
+      height: 300px;
+      margin-top: 30px;
+    }
+    .about-institution-photo-accent {
+      display: none;
+    }
+    .about-institution-photo {
+      clip-path: none;
+      border-radius: 12px;
+    }
+  }
+
   /* Feature cards */
   .about-features {
     display: grid;
@@ -608,6 +825,8 @@ html, body {
     color: #555;
     margin: 0;
   }
+
+
 
   /* Contact section */
   .contact-section {

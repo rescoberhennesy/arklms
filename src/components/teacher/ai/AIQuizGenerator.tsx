@@ -7,12 +7,6 @@ import { useEffect, useState, useTransition } from 'react';
 import { X, Upload, Sparkles, Loader2, AlertCircle, BookOpen, FileText } from 'lucide-react';
 import type { AIGeneratableKind, QuestionMix } from '@/lib/ai/prompts/quizGenerator';
 
-interface LessonOption {
-  id: string;
-  title: string;
-  moduleTitle: string;
-}
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -43,12 +37,9 @@ export default function AIQuizGenerator({
   open,
   onClose,
   activityId,
-  classId,
+  classId: _classId,
   onGenerated,
 }: Props) {
-  const [lessons, setLessons] = useState<LessonOption[]>([]);
-  const [lessonsLoading, setLessonsLoading] = useState(false);
-  const [sourceLessonId, setSourceLessonId] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [mix, setMix] = useState<QuestionMix>({
     mc_single: 5,
@@ -64,25 +55,9 @@ export default function AIQuizGenerator({
   } | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // Fetch class lessons when modal opens
-  useEffect(() => {
-    if (!open) return;
-    setLessonsLoading(true);
-    fetch(`/api/ai/quiz/lessons?classId=${encodeURIComponent(classId)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.lessons)) setLessons(data.lessons);
-      })
-      .catch(() => {
-        // Non-fatal — teacher can still upload a file
-      })
-      .finally(() => setLessonsLoading(false));
-  }, [open, classId]);
-
   // Reset state when closed
   useEffect(() => {
     if (!open) {
-      setSourceLessonId('');
       setFiles([]);
       setMix({ mc_single: 5, true_false: 3 });
       setError(null);
@@ -116,7 +91,7 @@ export default function AIQuizGenerator({
   const canSubmit =
     totalRequested > 0 &&
     totalRequested <= 25 &&
-    (sourceLessonId !== '' || files.length > 0) &&
+    files.length > 0 &&
     !pending;
 
   function handleSubmit() {
@@ -128,7 +103,6 @@ export default function AIQuizGenerator({
       try {
         const fd = new FormData();
         fd.set('activityId', activityId);
-        if (sourceLessonId) fd.set('sourceLessonId', sourceLessonId);
         fd.set('mix', JSON.stringify(mix));
         for (const f of files) fd.append('files', f);
 
@@ -186,57 +160,36 @@ export default function AIQuizGenerator({
           ) : (
             <>
               <p className="text-sm text-gray-600">
-                Pick a source lesson or upload a file. AI will draft questions
-                you can review and edit before publishing.
+                Upload a file as the source. AI will draft questions you can
+                review and edit before publishing.
               </p>
 
               <Section title="Source content" icon={<BookOpen className="h-4 w-4" />}>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
-                  From an existing lesson
+                  Upload a file (PDF, DOCX, TXT, MD — max 3 files, 10 MB each)
                 </label>
-                <select
-                  value={sourceLessonId}
-                  onChange={(e) => setSourceLessonId(e.target.value)}
-                  disabled={pending || lessonsLoading}
-                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-                >
-                  <option value="">
-                    {lessonsLoading ? 'Loading lessons…' : '— Select a lesson (optional) —'}
-                  </option>
-                  {lessons.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.moduleTitle} → {l.title}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="mt-3">
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Or upload a file (PDF, DOCX, TXT, MD — max 3 files, 10 MB each)
-                  </label>
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                    <Upload className="h-4 w-4" />
-                    Choose files
-                    <input
-                      type="file"
-                      multiple
-                      accept={ACCEPTED_EXT}
-                      onChange={handleFileChange}
-                      disabled={pending}
-                      className="hidden"
-                    />
-                  </label>
-                  {files.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {files.map((f) => (
-                        <li key={f.name} className="flex items-center gap-2 text-xs text-gray-600">
-                          <FileText className="h-3 w-3" />
-                          {f.name} ({Math.round(f.size / 1024)} KB)
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  <Upload className="h-4 w-4" />
+                  Choose files
+                  <input
+                    type="file"
+                    multiple
+                    accept={ACCEPTED_EXT}
+                    onChange={handleFileChange}
+                    disabled={pending}
+                    className="hidden"
+                  />
+                </label>
+                {files.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {files.map((f) => (
+                      <li key={f.name} className="flex items-center gap-2 text-xs text-gray-600">
+                        <FileText className="h-3 w-3" />
+                        {f.name} ({Math.round(f.size / 1024)} KB)
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </Section>
 
               <Section title="Question mix" icon={<Sparkles className="h-4 w-4" />}>
