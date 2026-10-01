@@ -29,6 +29,8 @@ COMMENT ON FUNCTION submission_has_grade(uuid) IS
   'SECURITY DEFINER helper to check grade existence without triggering activity_grades RLS. Used by activity_submissions UPDATE policy to avoid recursion.';
 
 -- Re-create the UPDATE policy using the helper
+DROP POLICY IF EXISTS activity_submissions_student_update ON activity_submissions;
+
 CREATE POLICY activity_submissions_student_update ON activity_submissions
   FOR UPDATE
   USING (
