@@ -73,7 +73,7 @@ export default function ContactPage() {
               </a>
 
               {/* Phone */}
-              <a href="tel:+639070829390" className="contact-card">
+              <a href="tel:+639070829390" className="contact-card contact-card-static">
                 <div className="contact-card-icon">
                   <Phone size={26} />
                 </div>
@@ -83,7 +83,7 @@ export default function ContactPage() {
               </a>
 
               {/* Email */}
-              <a href="mailto:ark.lucena@gmail.com" className="contact-card">
+              <a href="mailto:ark.lucena@gmail.com" className="contact-card contact-card-static">
                 <div className="contact-card-icon">
                   <Mail size={26} />
                 </div>

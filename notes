@@ -780,7 +780,7 @@ Current Project Folder and File Structure (u might need this)
 / - folder
 * - file
 
-(project foler name) arkadian_lms:
+(project folder name) arkadian_lms:
 
 /next
 /node_modules
@@ -797,6 +797,7 @@ Current Project Folder and File Structure (u might need this)
      *page.tsx
     /teachers
      *page.tsx
+    *layout.tsx
    /join
     /[code]
      *page.tsx
@@ -820,8 +821,18 @@ Current Project Folder and File Structure (u might need this)
       /modules
        /[moduleId]
         *page.tsx
+      *page.tsx
      *page.tsx
     /dashboard
+     *page.tsx
+    /locker
+     *page.tsx
+    /practice
+     /[sessionId]
+      /attempt
+       /[attemptId]
+        *page.tsx
+      *page.tsx
      *page.tsx
    /teacher
     /activities
@@ -835,7 +846,7 @@ Current Project Folder and File Structure (u might need this)
       /activities
        /[activityId]
         /attempts
-         /[attempId]
+         /[attemptId]
           *page.tsx
         /submissions
          /[submissionId]
@@ -849,12 +860,13 @@ Current Project Folder and File Structure (u might need this)
         *page.tsx
       /settings
        *page.tsx
+      *page.tsx
      *page.tsx
     /dashboard
      *page.tsx
     /gradebook
      *page.tsx
-    /grade
+    /grades
      *page.tsx
     /modules
      *page.tsx
@@ -877,7 +889,7 @@ Current Project Folder and File Structure (u might need this)
       *route.ts
      /class
       *route.ts
-    /anouncement
+    /announcement
      *route.ts
     /feedback
      /quiz
@@ -892,6 +904,9 @@ Current Project Folder and File Structure (u might need this)
       *route.ts
     /ping
      *route.ts
+    /practice
+     /generate
+      *route.ts
     /quiz
      /export
       *route.ts
@@ -916,11 +931,16 @@ Current Project Folder and File Structure (u might need this)
   *global.css
   *layout.tsx
   *page.tsx
+ /assets
+  *Geist-Regular.ttf
  /components
   /admin
-   *AdmiSectionsView.tsx
+   *AdminDashboardCharts.tsx
+   *AdminDashboardView.tsx
+   *AdminSectionsView.tsx
    *AdminStudentsView.tsx
    *AdminTeachersView.tsx
+   *TrackPill.tsx
   /auth
    *login-modal.tsx
   /dashboard
@@ -929,29 +949,36 @@ Current Project Folder and File Structure (u might need this)
    *CalendarWidget.tsx
    *ClassCover.tsx
    *ClassDeadlinesWidget.tsx
+   *ClassMetaBadges.tsx
    *DashboardBanner.tsx
+   *DeadlinesModal.tsx
    *FullCalendarView.tsx
+   *LessonAttachmentPreview.tsx
    *MarkdownContent.tsx
    *MarkdownEditor.tsx
-   *nav-configs.ts
+   *nav-config.ts
    *NotificationBell.tsx
    *NotificationBellClient.tsx
+   *PendingTasksModal.tsx
    *PersonalTasksPanel.tsx
-   *ProfileDropDown.tsx
+   *ProfileDropdown.tsx
    *ProfileForm.tsx
    *ProgressBar.tsx
    *QuickActionsRow.tsx
    *RichClassCard.tsx
    *SecurityPanel.tsx
    *SetPageTitle.tsx
-   *SettingsTab.tsx
+   *SettingsTabs.tsx
    *Sidebar.css
    *Sidebar.tsx
    *SortableClassGrid.tsx
    *SortableItem.tsx
+   *StatCardModal.tsx
    *StatCardsRow.tsx
    *StreamView.tsx
+   *StudentStatCardsClient.tsx
    *StudentTodoWidget.tsx
+   *TeacherStatCardsClient.tsx
    *TeacherTodoWidget.tsx
    *TodoRow.tsx
    *TopNavbar.css
@@ -973,6 +1000,11 @@ Current Project Folder and File Structure (u might need this)
    *JoinClassModal.tsx
    *JoinConfirmCard.tsx
    *LeaveClassButton.tsx
+   *PracticeAttemptView.tsx
+   *PracticeGenerateModal.tsx
+   *PracticeLandingView.tsx
+   *PracticeResultsView.tsx
+   *PracticeSessionDetailView.tsx
    *QuizAttempt.tsx
    *QuizLanding.tsx
    *QuizPostSubmit.tsx
@@ -983,17 +1015,18 @@ Current Project Folder and File Structure (u might need this)
    *StudentDashboardView.tsx
    *StudentGradebookView.tsx
    *StudentLessonView.tsx
+   *StudentLockerView.tsx
    *StudentModulesView.tsx
    *StudentPeopleTab.tsx
    *StudentProgressStrip.tsx
    *StudentQuizFlow.tsx
   /teacher
    /ai
-    *AIDraftPanel.tsx
+    *AIDraftPanel.stx
     *AIQualityPanel.tsx
-    *AIQuizGenerator
+    *AIQuizGenerator.tsx
     *AIReviewerModal.tsx
-    *AISuggesFeedback.tsx
+    *AISuggestFeedback.tsx
     *FlashcardDeckPanel.tsx
    /question-editors
     *EssayEditor.tsx
@@ -1046,10 +1079,10 @@ Current Project Folder and File Structure (u might need this)
   /actions
    *activities.ts
    *admin.ts
-   *aiGenerations.ts
+   *aiGeneration.ts
    *analytics.ts
    *announcements.ts
-   *calendarTokens.ts
+   *calendarToken.ts
    *classAvatars.ts
    *classes.ts
    *classPeople.ts
@@ -1058,16 +1091,17 @@ Current Project Folder and File Structure (u might need this)
    *flashcards.ts
    *gradebook.ts
    *joinPreview.ts
-   *modules.ts
-   *notifications.ts
+   *module.ts
+   *notification.ts
    *personalTasks.ts
+   *practice.ts
    *profile.ts
    *progress.ts
    *quizzes.ts
   /ai
    /prompts
     *analytics.ts
-    *announcement.ts
+    *announcements.ts
     *feedback.ts
     *flashcardGenerator.ts
     *lessonAnalyzer.ts
@@ -1077,8 +1111,8 @@ Current Project Folder and File Structure (u might need this)
    *errors.ts
    *log.ts
    *quizExport.ts
-   *rate-limits.ts
-   *readability.ts
+   *rate-limit.ts
+   *readibility.ts
    *types.ts
    *uploadFile.ts
   /hooks
@@ -1092,6 +1126,7 @@ Current Project Folder and File Structure (u might need this)
    *dashboard.ts
    *modules.ts
    *notifications.ts
+   *practice.ts
    *quizzes.ts
   /utils
    *calendar.ts
@@ -1102,15 +1137,25 @@ Current Project Folder and File Structure (u might need this)
   *class.ts
   *database.ts
   *user.ts
- *proxy.ts
+ *proxy.tsx
 /supabase
- /branches
+ /.branches
  /.temp
  /migrations
  /smoke-tests
  /snippets
  *config.toml
-...(rest of the files)
-
-
-
+*.env.example
+*.env.local
+*.gitignore
+*AGENTS.md
+*CLAUDE.md
+*eslint.config.mjs
+*next-env.d.ts
+*next.config.ts
+*package.json
+*pnpm-lock.yaml
+*pnpm-workspace.yaml
+*postcss.config.mjs
+*README.md
+*tsconfig.json

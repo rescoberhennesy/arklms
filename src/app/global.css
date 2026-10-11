@@ -855,7 +855,7 @@ html, body {
     color: inherit;
     transition: 0.3s ease;
   }
-  .contact-card:hover {
+  .contact-card:not(.contact-card-static):hover {
     border-color: #e02424;
     transform: translateY(-3px);
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
@@ -935,6 +935,91 @@ html, body {
     line-height: 1.6;
     margin: 0;
   }
+}
+
+/* ---- Strand popover ---- */
+.strand-item {
+  position: relative;
+}
+.strand-item > .strand-card {
+  height: 100%;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.strand-card.is-active,
+.strand-card:focus-visible {
+  border-color: #dc2626;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  outline: none;
+}
+
+.strand-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  text-align: left;
+  animation: strand-pop 0.15s ease-out;
+}
+/* invisible bridge so the mouse can move from card to popover without closing it */
+.strand-popover::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 0;
+  right: 0;
+  height: 12px;
+}
+
+.strand-popover-desc {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+.strand-popover-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #dc2626;
+}
+.strand-popover-list {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+.strand-popover-list li + li {
+  margin-top: 0.25rem;
+}
+.strand-popover-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.strand-popover-tags span {
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.75rem;
+}
+
+@keyframes strand-pop {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* Media queries must stay OUTSIDE @layer in Tailwind v4 */

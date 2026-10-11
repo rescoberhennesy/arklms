@@ -1,6 +1,7 @@
 import LandingNavbar from '@/components/landing/LandingNavbar'
 import HeroSection from '@/components/landing/HeroSection'
 import Footer from '@/components/landing/Footer'
+import ProgramCards from '@/components/landing/ProgramCards'
 import { GraduationCap, Sparkles } from 'lucide-react'
 
 export default function HomePage() {
@@ -31,7 +32,7 @@ export default function HomePage() {
         </div>
       </section> */}
 
-      {/* Strands showcase */}
+            {/* Strands showcase */}
       <section className="home-strands">
         <div className="home-strands-inner">
           <div className="about-eyebrow">
@@ -40,24 +41,7 @@ export default function HomePage() {
           </div>
           <h2>Programs Offered</h2>
 
-          <div className="strand-grid">
-            <div className="strand-card">
-              <h3>ABM</h3>
-              <p>Accountancy, Business and Management</p>
-            </div>
-            <div className="strand-card">
-              <h3>HUMSS</h3>
-              <p>Humanities and Social Sciences</p>
-            </div>
-            <div className="strand-card">
-              <h3>H.E</h3>
-              <p>Home Economics</p>
-            </div>
-            <div className="strand-card">
-              <h3>I.C.T</h3>
-              <p>Information and Communications Technology</p>
-            </div>
-          </div>
+          <ProgramCards />
         </div>
       </section>
 
