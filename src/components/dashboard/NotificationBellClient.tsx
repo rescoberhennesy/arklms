@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { stripMarkdown } from '@/lib/utils/stripMarkdown';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 import {
   markNotificationRead,
@@ -216,7 +217,7 @@ export default function NotificationBellClient({ initialData }: Props) {
                         </div>
                         {n.body && (
                           <p className="mt-0.5 line-clamp-2 text-xs text-gray-600">
-                            {n.body}
+                            {stripMarkdown(n.body)}
                           </p>
                         )}
                         <p className="mt-1 text-[11px] text-gray-400">
