@@ -14,12 +14,9 @@ import {
   createComment,
   deleteComment,
 } from '@/lib/actions/announcements';
-import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
 import MarkdownContent from './MarkdownContent';
 import MarkdownEditor from './MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
-import { Sparkles } from 'lucide-react';
-import AIDraftPanel from '@/components/teacher/ai/AIDraftPanel';
 
 
 interface StreamViewProps {
@@ -102,43 +99,24 @@ function Composer({ classId }: { classId: string }) {
   const [body, setBody] = useState('');
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [aiMode, setAiMode] = useState(false);
-  const [pendingGenerationId, setPendingGenerationId] = useState<string | null>(null);
   // Collapsed by default — the composer expands only when the teacher
   // chooses to post. Keeps the Stream tab from being dominated by a large
   // always-open editor box.
   const [expanded, setExpanded] = useState(false);
 
-  function handleAiAccept(combinedBody: string, generationId: string | null) {
-    setBody(combinedBody);
-    setPendingGenerationId(generationId);
-    setAiMode(false);
-  }
-
   function collapse() {
     setExpanded(false);
-    setAiMode(false);
     setBody('');
     setError(null);
-    setPendingGenerationId(null);
   }
 
   function handleSubmit() {
     if (!body.trim() || isPending) return;
     setError(null);
-    const generationId = pendingGenerationId;
     startTransition(async () => {
       try {
         await createAnnouncement(classId, body);
-        if (generationId) {
-          // Best-effort: tag the generation as published with the final body.
-          await markAiGenerationPublished(generationId, {
-            title: '',
-            body,
-          });
-        }
         setBody('');
-        setPendingGenerationId(null);
         setExpanded(false);
         router.refresh();
       } catch (err) {
@@ -163,67 +141,47 @@ function Composer({ classId }: { classId: string }) {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
-      {aiMode ? (
-        <AIDraftPanel
-          classId={classId}
-          onAccept={handleAiAccept}
-          onCancel={() => setAiMode(false)}
-        />
-      ) : (
-        <>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">New announcement</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setAiMode(true)}
-                className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                AI Draft
-              </button>
-              <button
-                type="button"
-                onClick={collapse}
-                disabled={isPending}
-                className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
-                aria-label="Close composer"
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700">New announcement</span>
+        <button
+          type="button"
+          onClick={collapse}
+          disabled={isPending}
+          className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+          aria-label="Close composer"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
 
-          <MarkdownEditor
-            value={body}
-            onChange={setBody}
-            placeholder="Share an announcement with your class..."
-            disabled={isPending}
-          />
+      <MarkdownEditor
+        value={body}
+        onChange={setBody}
+        placeholder="Share an announcement with your class..."
+        disabled={isPending}
+      />
 
-          {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
 
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={collapse}
-              disabled={isPending}
-              className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!body.trim() || isPending}
-              className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {isPending ? 'Posting...' : 'Post'}
-            </button>
-          </div>
-        </>
-      )}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={collapse}
+          disabled={isPending}
+          className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!body.trim() || isPending}
+          className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          {isPending ? 'Posting...' : 'Post'}
+        </button>
+      </div>
     </div>
   );
 }

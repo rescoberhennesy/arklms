@@ -1,6 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect } from 'react';
+import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { Placeholder } from '@tiptap/extensions';
+import { Markdown } from 'tiptap-markdown';
 import {
   Bold,
   Italic,
@@ -12,11 +16,8 @@ import {
   Quote,
   Code,
   Link as LinkIcon,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import MarkdownContent from './MarkdownContent';
 
 interface MarkdownEditorProps {
   value: string;
@@ -25,369 +26,223 @@ interface MarkdownEditorProps {
   rows?: number;
   /** Optional helper text shown below the editor (e.g. submit hints). */
   helper?: React.ReactNode;
-  /** When true, both textarea and tabs are disabled (e.g. while submitting). */
+  /** When true, the editor and toolbar are disabled (e.g. while submitting). */
   disabled?: boolean;
   className?: string;
-  /** Hide the live-preview pane by default. Users can still toggle it on
-   *  via the eye icon. Set this for tight inline contexts (comments, etc).
-   *  Defaults to false — preview pane is shown. */
+  /** Kept for compatibility with existing callers. The editor no longer has
+   *  a preview pane, so this has no effect. */
   livePreviewDefaultHidden?: boolean;
 }
 
-type Mode = 'write' | 'preview';
-
 /**
- * Markdown editor with a formatting toolbar and a live side-by-side
- * preview pane. Controlled component — parent owns `value`.
+ * Rich-text editor: what you see is what you get. Teachers click B / I /
+ * lists etc. and the text is formatted in place — no markdown symbols.
  *
- * The two-pane Write mode is the main UX win: as soon as a user types
- * **bold**, they see "bold" appear bold on the right. No more mystery
- * asterisks. The dedicated "Preview" tab still exists for users who
- * want the rendered output full-width.
- *
- * The toolbar manipulates the textarea's current selection / cursor:
- *  - Inline marks (bold, italic, strike, code, link) wrap the selection
- *    or insert a placeholder.
- *  - Block marks (headings, lists, quote) prepend the affected lines.
+ * Content is still SAVED as Markdown (via tiptap-markdown), so everything
+ * already in the database and every <MarkdownContent> renderer keeps
+ * working unchanged. Controlled component — the parent owns `value`.
  */
 export default function MarkdownEditor({
   value,
   onChange,
-  placeholder = 'Type your message... markdown supported.',
+  placeholder = 'Type your message...',
   rows = 5,
   helper,
   disabled = false,
   className,
-  livePreviewDefaultHidden = false,
 }: MarkdownEditorProps) {
-  const [mode, setMode] = useState<Mode>('write');
-  const [showLivePreview, setShowLivePreview] = useState(
-    !livePreviewDefaultHidden,
-  );
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editor = useEditor({
+    // Required with Next.js server rendering to avoid hydration mismatches.
+    immediatelyRender: false,
+    editable: !disabled,
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [2, 3] },
+        codeBlock: false,
+        horizontalRule: false,
+        link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
+      }),
+      Placeholder.configure({ placeholder }),
+      Markdown.configure({
+        html: false,
+        transformPastedText: true,
+        transformCopiedText: true,
+      }),
+    ],
+    content: value,
+    editorProps: {
+      attributes: {
+        class: 'rte-content focus:outline-none',
+        style: `min-height: ${rows * 24}px`,
+      },
+    },
+    onUpdate: ({ editor }) => {
+      onChange(getMarkdown(editor));
+    },
+  });
 
-  // --- Edit primitives --------------------------------------------------
-  //
-  // All toolbar buttons go through one of these two helpers so the
-  // cursor / selection behavior stays consistent. After mutating the
-  // value we schedule focus + selection restore via requestAnimationFrame
-  // because React hasn't flushed the new value to the DOM yet on the
-  // same tick.
+  // Keep the editor in sync when the parent changes `value` from outside
+  // (e.g. clears it after posting, or resets it when an edit is cancelled).
+  useEffect(() => {
+    if (!editor) return;
+    if (value !== getMarkdown(editor)) {
+      editor.commands.setContent(value, { emitUpdate: false });
+    }
+  }, [value, editor]);
 
-  function wrapSelection(
-    before: string,
-    after: string = before,
-    placeholder = 'text',
-  ) {
-    const ta = textareaRef.current;
-    if (!ta) return;
+  useEffect(() => {
+    editor?.setEditable(!disabled);
+  }, [disabled, editor]);
 
-    const { selectionStart: start, selectionEnd: end } = ta;
-    const selected = value.slice(start, end);
-    const hasSelection = start !== end;
+  // Which formats are active at the cursor, so toolbar buttons can light up.
+  const active = useEditorState({
+    editor,
+    selector: ({ editor: e }) =>
+      e
+        ? {
+            bold: e.isActive('bold'),
+            italic: e.isActive('italic'),
+            strike: e.isActive('strike'),
+            h2: e.isActive('heading', { level: 2 }),
+            h3: e.isActive('heading', { level: 3 }),
+            bullet: e.isActive('bulletList'),
+            ordered: e.isActive('orderedList'),
+            quote: e.isActive('blockquote'),
+            code: e.isActive('code'),
+            link: e.isActive('link'),
+          }
+        : null,
+  });
 
-    const inner = hasSelection ? selected : placeholder;
-    const next =
-      value.slice(0, start) + before + inner + after + value.slice(end);
-
-    onChange(next);
-
-    requestAnimationFrame(() => {
-      const t = textareaRef.current;
-      if (!t) return;
-      t.focus();
-      const innerStart = start + before.length;
-      const innerEnd = innerStart + inner.length;
-      t.setSelectionRange(innerStart, innerEnd);
-    });
-  }
-
-  function prefixLines(prefix: string, numbered = false) {
-    const ta = textareaRef.current;
-    if (!ta) return;
-
-    const { selectionStart: start, selectionEnd: end } = ta;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = (() => {
-      const nextNl = value.indexOf('\n', end);
-      return nextNl === -1 ? value.length : nextNl;
-    })();
-
-    const block = value.slice(lineStart, lineEnd);
-    const lines = block.split('\n');
-
-    const newBlock = lines
-      .map((line, i) => {
-        const actualPrefix = numbered ? `${i + 1}. ` : prefix;
-        if (!numbered && line.startsWith(actualPrefix)) {
-          return line.slice(actualPrefix.length);
-        }
-        return actualPrefix + line;
-      })
-      .join('\n');
-
-    const next = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
-    onChange(next);
-
-    requestAnimationFrame(() => {
-      const t = textareaRef.current;
-      if (!t) return;
-      t.focus();
-      t.setSelectionRange(lineStart, lineStart + newBlock.length);
-    });
-  }
-
-  // --- Toolbar action handlers -----------------------------------------
-
-  function handleBold() {
-    wrapSelection('**', '**', 'bold text');
-  }
-  function handleItalic() {
-    wrapSelection('*', '*', 'italic text');
-  }
-  function handleStrike() {
-    wrapSelection('~~', '~~', 'strikethrough');
-  }
-  function handleCode() {
-    wrapSelection('`', '`', 'code');
-  }
   function handleLink() {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const { selectionStart: start, selectionEnd: end } = ta;
-    const selected = value.slice(start, end);
-    const text = selected || 'link text';
-    const insert = `[${text}](url)`;
-    const next = value.slice(0, start) + insert + value.slice(end);
-    onChange(next);
+    if (!editor) return;
+    if (editor.isActive('link')) {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      return;
+    }
+    const url = window.prompt('Paste the link (URL):', 'https://');
+    if (!url || url === 'https://') return;
+    if (editor.state.selection.empty) {
+      // No text selected: insert the URL itself as a link.
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] })
+        .run();
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
+  }
 
-    requestAnimationFrame(() => {
-      const t = textareaRef.current;
-      if (!t) return;
-      t.focus();
-      const urlStart = start + 1 + text.length + 2; // "[" + text + "]("
-      const urlEnd = urlStart + 3; // "url"
-      t.setSelectionRange(urlStart, urlEnd);
-    });
-  }
-  function handleH2() {
-    prefixLines('## ');
-  }
-  function handleH3() {
-    prefixLines('### ');
-  }
-  function handleBulletList() {
-    prefixLines('- ');
-  }
-  function handleNumberedList() {
-    prefixLines('', true);
-  }
-  function handleQuote() {
-    prefixLines('> ');
-  }
+  const off = disabled || !editor;
 
   return (
     <div className={cn('rounded-lg border border-gray-300 bg-white', className)}>
-      {/* Header: tabs on left, toolbar + live-preview toggle on right */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-2 py-1">
-        <div className="flex items-center gap-1">
-          <TabButton
-            active={mode === 'write'}
-            disabled={disabled}
-            onClick={() => setMode('write')}
-          >
-            Write
-          </TabButton>
-          <TabButton
-            active={mode === 'preview'}
-            disabled={disabled}
-            onClick={() => setMode('preview')}
-          >
-            Preview
-          </TabButton>
-        </div>
+      <div
+        className="flex flex-wrap items-center gap-0.5 border-b border-gray-200 px-2 py-1"
+        role="toolbar"
+        aria-label="Formatting"
+      >
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleBold().run()}
+          active={active?.bold}
+          disabled={off}
+          title="Bold (Ctrl+B)"
+        >
+          <Bold className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleItalic().run()}
+          active={active?.italic}
+          disabled={off}
+          title="Italic (Ctrl+I)"
+        >
+          <Italic className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleStrike().run()}
+          active={active?.strike}
+          disabled={off}
+          title="Strikethrough"
+        >
+          <Strikethrough className="h-3.5 w-3.5" />
+        </ToolbarButton>
 
-        {mode === 'write' && (
-          <div
-            className="flex flex-wrap items-center gap-0.5"
-            role="toolbar"
-            aria-label="Formatting"
-          >
-            <ToolbarButton
-              onClick={handleBold}
-              disabled={disabled}
-              title="Bold  ( **text** )"
-              ariaLabel="Bold"
-            >
-              <Bold className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={handleItalic}
-              disabled={disabled}
-              title="Italic  ( *text* )"
-              ariaLabel="Italic"
-            >
-              <Italic className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={handleStrike}
-              disabled={disabled}
-              title="Strikethrough  ( ~~text~~ )"
-              ariaLabel="Strikethrough"
-            >
-              <Strikethrough className="h-3.5 w-3.5" />
-            </ToolbarButton>
+        <ToolbarDivider />
 
-            <ToolbarDivider />
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
+          active={active?.h2}
+          disabled={off}
+          title="Heading"
+        >
+          <Heading2 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
+          active={active?.h3}
+          disabled={off}
+          title="Subheading"
+        >
+          <Heading3 className="h-3.5 w-3.5" />
+        </ToolbarButton>
 
-            <ToolbarButton
-              onClick={handleH2}
-              disabled={disabled}
-              title="Heading 2  ( ## )"
-              ariaLabel="Heading 2"
-            >
-              <Heading2 className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={handleH3}
-              disabled={disabled}
-              title="Heading 3  ( ### )"
-              ariaLabel="Heading 3"
-            >
-              <Heading3 className="h-3.5 w-3.5" />
-            </ToolbarButton>
+        <ToolbarDivider />
 
-            <ToolbarDivider />
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          active={active?.bullet}
+          disabled={off}
+          title="Bullet list"
+        >
+          <List className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          active={active?.ordered}
+          disabled={off}
+          title="Numbered list"
+        >
+          <ListOrdered className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+          active={active?.quote}
+          disabled={off}
+          title="Quote"
+        >
+          <Quote className="h-3.5 w-3.5" />
+        </ToolbarButton>
 
-            <ToolbarButton
-              onClick={handleBulletList}
-              disabled={disabled}
-              title="Bullet list  ( - item )"
-              ariaLabel="Bullet list"
-            >
-              <List className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={handleNumberedList}
-              disabled={disabled}
-              title="Numbered list  ( 1. item )"
-              ariaLabel="Numbered list"
-            >
-              <ListOrdered className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={handleQuote}
-              disabled={disabled}
-              title="Quote  ( > )"
-              ariaLabel="Quote"
-            >
-              <Quote className="h-3.5 w-3.5" />
-            </ToolbarButton>
+        <ToolbarDivider />
 
-            <ToolbarDivider />
-
-            <ToolbarButton
-              onClick={handleCode}
-              disabled={disabled}
-              title="Inline code  ( `code` )"
-              ariaLabel="Inline code"
-            >
-              <Code className="h-3.5 w-3.5" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={handleLink}
-              disabled={disabled}
-              title="Link  ( [text](url) )"
-              ariaLabel="Link"
-            >
-              <LinkIcon className="h-3.5 w-3.5" />
-            </ToolbarButton>
-
-            <ToolbarDivider />
-
-            {/* Live preview pane toggle. Hidden in Preview mode since the
-                full pane already shows the rendered output. */}
-            <ToolbarButton
-              onClick={() => setShowLivePreview((v) => !v)}
-              disabled={disabled}
-              title={
-                showLivePreview ? 'Hide live preview' : 'Show live preview'
-              }
-              ariaLabel={
-                showLivePreview ? 'Hide live preview' : 'Show live preview'
-              }
-            >
-              {showLivePreview ? (
-                <EyeOff className="h-3.5 w-3.5" />
-              ) : (
-                <Eye className="h-3.5 w-3.5" />
-              )}
-            </ToolbarButton>
-          </div>
-        )}
+        <ToolbarButton
+          onClick={() => editor?.chain().focus().toggleCode().run()}
+          active={active?.code}
+          disabled={off}
+          title="Inline code"
+        >
+          <Code className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={handleLink}
+          active={active?.link}
+          disabled={off}
+          title={active?.link ? 'Remove link' : 'Add link'}
+        >
+          <LinkIcon className="h-3.5 w-3.5" />
+        </ToolbarButton>
       </div>
 
-      {/* Main body */}
-      {mode === 'write' ? (
-        <div
-          className={cn(
-            'flex',
-            // Stack vertically on narrow viewports so the textarea doesn't
-            // get squashed. Two columns from md (768px) up.
-            showLivePreview ? 'flex-col md:flex-row' : 'flex-col',
-          )}
-        >
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            rows={rows}
-            disabled={disabled}
-            className={cn(
-              'resize-y border-0 bg-transparent px-3 py-2 text-sm text-gray-800',
-              'placeholder:text-gray-400 focus:outline-none focus:ring-0 disabled:opacity-60',
-              showLivePreview
-                ? 'w-full md:w-1/2 md:border-r md:border-gray-200'
-                : 'w-full rounded-b-lg',
-            )}
-          />
-          {showLivePreview && (
-            <div
-              className={cn(
-                'w-full md:w-1/2 overflow-y-auto bg-gray-50/50 px-3 py-2',
-                // Match approximate height to textarea rows. Each row ~24px
-                // + 16px vertical padding to align with the textarea.
-                'min-h-[' + (rows * 24 + 16) + 'px]',
-                // Border above on small screens (stacked); none on md+ where
-                // it sits beside the textarea (left border handled above).
-                'border-t border-gray-200 md:border-t-0',
-              )}
-              aria-label="Live preview"
-            >
-              {value.trim() ? (
-                <MarkdownContent body={value} />
-              ) : (
-                <p className="text-sm italic text-gray-400">
-                  Preview appears here as you type.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="px-3 py-2">
-          {value.trim() ? (
-            <MarkdownContent body={value} />
-          ) : (
-            <p className="py-2 text-sm italic text-gray-400">
-              Nothing to preview.
-            </p>
-          )}
-        </div>
-      )}
+      <EditorContent
+        editor={editor}
+        className={cn(
+          'px-3 py-2 text-sm text-gray-800',
+          disabled && 'opacity-60',
+          !helper && 'rounded-b-lg',
+        )}
+      />
 
-      {/* Footer: optional parent-supplied helper (submit hints, etc.) */}
       {helper && (
         <div className="border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500">
           {helper}
@@ -397,66 +252,42 @@ export default function MarkdownEditor({
   );
 }
 
-function TabButton({
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'rounded px-2.5 py-1 text-xs font-medium transition',
-        active
-          ? 'bg-gray-100 text-gray-900'
-          : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      {children}
-    </button>
-  );
+function getMarkdown(editor: Editor): string {
+  // tiptap-markdown stores its serializer on editor.storage.markdown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((editor.storage as any).markdown.getMarkdown() as string) ?? '';
 }
 
 function ToolbarButton({
   onClick,
+  active,
   disabled,
   title,
-  ariaLabel,
   children,
 }: {
   onClick: () => void;
+  active?: boolean;
   disabled?: boolean;
   title: string;
-  ariaLabel: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      // onMouseDown + preventDefault keeps the textarea focused so
-      // selectionStart/selectionEnd stay valid when the action runs.
-      // Without this, clicking the button steals focus and the
-      // selection collapses before we can read it.
+      // Keep focus (and the text selection) inside the editor when clicking.
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       disabled={disabled}
       title={title}
-      aria-label={ariaLabel}
+      aria-label={title}
+      aria-pressed={active}
       className={cn(
-        'flex h-7 w-7 items-center justify-center rounded text-gray-500 transition',
-        'hover:bg-gray-100 hover:text-gray-800',
+        'flex h-7 w-7 items-center justify-center rounded transition',
+        active
+          ? 'bg-red-50 text-red-600'
+          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800',
         'focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500',
-        disabled &&
-          'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-gray-500',
+        disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-gray-500',
       )}
     >
       {children}
@@ -465,7 +296,5 @@ function ToolbarButton({
 }
 
 function ToolbarDivider() {
-  return (
-    <span className="mx-0.5 h-4 w-px bg-gray-200" aria-hidden="true" />
-  );
+  return <span className="mx-0.5 h-4 w-px bg-gray-200" aria-hidden="true" />;
 }

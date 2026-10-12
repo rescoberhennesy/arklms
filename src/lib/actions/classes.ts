@@ -32,7 +32,7 @@ async function requireAuthUserId() {
 
 function validateSemester(value: unknown): Semester {
   if (value === '1st Semester' || value === '2nd Semester') return value;
-  throw new Error('Semester must be either "1st Semester" or "2nd Semester"');
+  throw new Error('Please choose a semester.');
 }
 function validateTrack(value: unknown): import('@/types/class').Track | null {
   if (value == null) return null;
@@ -46,6 +46,19 @@ function validateGradeLevel(value: unknown): import('@/types/class').GradeLevel 
   if (value == null) return null;
   if (value === 'Grade 11' || value === 'Grade 12') return value;
   throw new Error('Invalid grade level');
+}
+
+// Required fields for creating/editing a class. The asterisks in the form
+// are only visual, so the server must enforce them. Throws a friendly
+// message that the form shows in its red error box.
+function requireClassFields(input: ClassFormInput): { name: string; section: string } {
+  const name = input.name?.trim() ?? '';
+  const section = input.section?.trim() ?? '';
+  if (!name) throw new Error('Class name is required.');
+  if (!section) throw new Error('Section is required.');
+  if (!input.grade_level) throw new Error('Please choose a grade level.');
+  if (!input.track) throw new Error('Please choose a track.');
+  return { name, section };
 }
 
 // --------------------------------------------------------------------------
@@ -133,6 +146,7 @@ export async function listMyClassNameSuggestions(): Promise<ActionResult<string[
 export async function createClass(input: ClassFormInput): Promise<ActionResult<ClassRow>> {
   try {
     const { supabase, userId } = await requireAuthUserId();
+    const { name, section } = requireClassFields(input);
     const semester = validateSemester(input.semester);
 
     const { data: codeData, error: codeError } = await supabase.rpc('generate_invite_code');
@@ -153,8 +167,8 @@ export async function createClass(input: ClassFormInput): Promise<ActionResult<C
       .from('classes')
       .insert({
         teacher_id: userId,
-        name: input.name.trim(),
-        section: input.section?.trim() || null,
+        name,
+        section,
         semester,
         track: validateTrack(input.track),
         grade_level: validateGradeLevel(input.grade_level),
@@ -205,13 +219,14 @@ export async function createClass(input: ClassFormInput): Promise<ActionResult<C
 export async function updateClass(id: string, input: ClassFormInput): Promise<ActionResult<ClassRow>> {
   try {
     const { supabase } = await requireAuthUserId();
+    const { name, section } = requireClassFields(input);
     const semester = validateSemester(input.semester);
 
     const { data, error } = await supabase
       .from('classes')
       .update({
-        name: input.name.trim(),
-        section: input.section?.trim() || null,
+        name,
+        section,
         semester,
         track: validateTrack(input.track),
         grade_level: validateGradeLevel(input.grade_level),

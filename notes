@@ -988,6 +988,7 @@ Current Project Folder and File Structure (u might need this)
    *Footer.tsx
    *HeroSection.tsx
    *LandingNavbar.tsx
+   *ProgramCards.tsx
   /student
    /quiz-questions
     *EssayQuestion.tsx

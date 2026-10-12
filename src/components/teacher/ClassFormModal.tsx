@@ -149,6 +149,7 @@ export function ClassFormModal({
 
           <AutocompleteField
             label="Section"
+            required
             value={section}
             onChange={setSection}
             suggestions={sectionSuggestions}

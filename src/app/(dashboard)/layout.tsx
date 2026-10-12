@@ -17,12 +17,13 @@ export default async function DashboardLayout({
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/')
 
-  const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single<Profile>()
 
+  if (profileError) console.error('[layout] profile fetch failed:', profileError)
   if (!profile) redirect('/unauthorized')
 
   // Fetch sidebar badge counts per role. Best-effort: any failure here
