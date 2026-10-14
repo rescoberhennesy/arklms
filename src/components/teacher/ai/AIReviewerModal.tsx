@@ -3,13 +3,14 @@
 // src/components/teacher/ai/AIReviewerModal.tsx
 // Modal for the AI Reviewer Generator (Feature 2).
 //
-// Flow: select files -> set options -> generate -> preview -> accept/discard.
-// On accept, calls onAccept(markdown, generationId) which the parent
-// uses to fill a lesson body.
+// Flow: select files -> generate (with live progress) -> edit + name -> add.
+// On accept, calls onAccept(markdown, generationId, title). The parent ADDS
+// it to the end of the lesson under a "Reviewer: <title>" heading.
 
 import {
   useState,
   useRef,
+  useEffect,
   type ChangeEvent,
   type DragEvent,
 } from 'react';
@@ -19,15 +20,17 @@ import {
   Sparkles,
   FileText,
   Loader2,
-  Check,
+  Plus,
   AlertCircle,
   Trash2,
+  Check,
 } from 'lucide-react';
-import MarkdownContent from '@/components/dashboard/MarkdownContent';
+import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
-const ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const ACCEPT =
+  '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function isAcceptedFile(file: File): boolean {
   const name = file.name.toLowerCase();
@@ -45,6 +48,17 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// "InfoAssurance_handout.pdf" -> "InfoAssurance handout"
+function nameFromFile(file: File | undefined): string {
+  if (!file) return '';
+  return file.name
+    .replace(/\.[^.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
 type ReviewerResponse = {
   generationId?: string;
   markdown: string;
@@ -55,7 +69,7 @@ interface AIReviewerModalProps {
   open: boolean;
   classId: string | null;
   onClose: () => void;
-  onAccept: (markdown: string, generationId: string | null) => void;
+  onAccept: (markdown: string, generationId: string | null, title: string) => void;
 }
 
 export default function AIReviewerModal({
@@ -65,13 +79,30 @@ export default function AIReviewerModal({
   onAccept,
 }: AIReviewerModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [teacherNote, setTeacherNote] = useState('');
 
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Result (editable)
   const [draft, setDraft] = useState<ReviewerResponse | null>(null);
+  const [editedMarkdown, setEditedMarkdown] = useState('');
+  const [title, setTitle] = useState('');
+
+  // Seconds counter while generating, so the user can see it's still working.
+  useEffect(() => {
+    if (!isGenerating) return;
+    setElapsed(0);
+    const started = Date.now();
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - started) / 1000));
+    }, 500);
+    return () => clearInterval(id);
+  }, [isGenerating]);
 
   if (!open) return null;
 
@@ -80,6 +111,8 @@ export default function AIReviewerModal({
     setTeacherNote('');
     setError(null);
     setDraft(null);
+    setEditedMarkdown('');
+    setTitle('');
     setIsDragging(false);
     setIsGenerating(false);
   }
@@ -88,6 +121,10 @@ export default function AIReviewerModal({
     if (isGenerating) return;
     resetAll();
     onClose();
+  }
+
+  function handleCancelGenerating() {
+    abortRef.current?.abort();
   }
 
   function addFiles(incoming: File[]) {
@@ -105,8 +142,7 @@ export default function AIReviewerModal({
         continue;
       }
       if (files.find((x) => x.name === f.name && x.size === f.size)) {
-        // skip duplicates silently
-        continue;
+        continue; // skip duplicates silently
       }
       accepted.push(f);
     }
@@ -119,12 +155,8 @@ export default function AIReviewerModal({
       accepted.splice(room);
     }
 
-    if (accepted.length > 0) {
-      setFiles((prev) => [...prev, ...accepted]);
-    }
-    if (errors.length > 0) {
-      setError(errors.join(' '));
-    }
+    if (accepted.length > 0) setFiles((prev) => [...prev, ...accepted]);
+    if (errors.length > 0) setError(errors.join(' '));
   }
 
   function handlePickFiles(e: ChangeEvent<HTMLInputElement>) {
@@ -168,39 +200,64 @@ export default function AIReviewerModal({
     setIsGenerating(true);
     setDraft(null);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const fd = new FormData();
       for (const f of files) fd.append('files', f);
-        fd.append('teacherNote', teacherNote);
+      fd.append('teacherNote', teacherNote);
       if (classId) fd.append('classId', classId);
 
       const res = await fetch('/api/ai/reviewer', {
         method: 'POST',
         body: fd,
+        signal: controller.signal,
       });
-      const json = await res.json();
+
+      // A crashed/timed-out server may not send JSON back.
+      let json: Record<string, unknown> = {};
+      try {
+        json = await res.json();
+      } catch {
+        json = {};
+      }
 
       if (!res.ok) {
-        setError(json.error ?? 'Failed to generate reviewer.');
-        setIsGenerating(false);
+        setError(
+          (json.error as string) ??
+            'The AI took too long or is busy right now. Please try again in a minute.',
+        );
         return;
       }
 
+      const markdown = (json.markdown as string) ?? '';
       setDraft({
-        generationId: json.generationId,
-        markdown: json.markdown,
-        warning: json.warning,
+        generationId: json.generationId as string | undefined,
+        markdown,
+        warning: json.warning as string | undefined,
       });
+      setEditedMarkdown(markdown);
+      setTitle((prev) => prev || nameFromFile(files[0]));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Generation cancelled.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Network error.');
+      }
     } finally {
+      abortRef.current = null;
       setIsGenerating(false);
     }
   }
 
   function handleAccept() {
-    if (!draft) return;
-    onAccept(draft.markdown, draft.generationId ?? null);
+    if (!draft || !editedMarkdown.trim()) return;
+    onAccept(
+      editedMarkdown,
+      draft.generationId ?? null,
+      title.trim() || 'Reviewer',
+    );
     resetAll();
     onClose();
   }
@@ -212,7 +269,7 @@ export default function AIReviewerModal({
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h2 className="inline-flex items-center gap-2 text-base font-semibold text-gray-900">
             <Sparkles className="h-4 w-4 text-red-600" />
-            Generate Reviewer from Files
+            {draft ? 'Review and edit' : 'Generate Reviewer from Files'}
           </h2>
           <button
             type="button"
@@ -227,13 +284,14 @@ export default function AIReviewerModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {!draft ? (
+          {isGenerating ? (
+            <GeneratingStage elapsed={elapsed} files={files} />
+          ) : !draft ? (
             <ConfigStage
               files={files}
               teacherNote={teacherNote}
               setTeacherNote={setTeacherNote}
               isDragging={isDragging}
-              isGenerating={isGenerating}
               error={error}
               fileInputRef={fileInputRef}
               onPickFiles={handlePickFiles}
@@ -243,39 +301,43 @@ export default function AIReviewerModal({
               onRemoveFile={removeFile}
             />
           ) : (
-            <PreviewStage draft={draft} />
+            <PreviewStage
+              warning={draft.warning}
+              title={title}
+              setTitle={setTitle}
+              markdown={editedMarkdown}
+              setMarkdown={setEditedMarkdown}
+            />
           )}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
-          {!draft ? (
+          {isGenerating ? (
+            <button
+              type="button"
+              onClick={handleCancelGenerating}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          ) : !draft ? (
             <>
               <button
                 type="button"
                 onClick={handleClose}
-                disabled={isGenerating}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={isGenerating || files.length === 0}
+                disabled={files.length === 0}
                 className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Generating…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Generate
-                  </>
-                )}
+                <Sparkles className="h-3.5 w-3.5" />
+                Generate
               </button>
             </>
           ) : (
@@ -284,8 +346,9 @@ export default function AIReviewerModal({
                 type="button"
                 onClick={() => {
                   setDraft(null);
+                  setEditedMarkdown('');
                 }}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="mr-auto rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
               >
                 Try again
               </button>
@@ -299,15 +362,98 @@ export default function AIReviewerModal({
               <button
                 type="button"
                 onClick={handleAccept}
-                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+                disabled={!editedMarkdown.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Check className="h-3.5 w-3.5" />
-                Use this
+                <Plus className="h-3.5 w-3.5" />
+                Add to lesson
               </button>
             </>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Generating stage — moving progress bar + steps + timer
+// ============================================================
+
+const STEPS = [
+  { at: 0, label: 'Uploading your files' },
+  { at: 4, label: 'Reading your files' },
+  { at: 15, label: 'Finding the key ideas' },
+  { at: 35, label: 'Writing your reviewer' },
+];
+
+function GeneratingStage({ elapsed, files }: { elapsed: number; files: File[] }) {
+  // The AI doesn't report real progress, so the bar eases toward 95% and
+  // only completes when the result arrives. It never looks frozen.
+  const percent = Math.min(95, Math.round(95 * (1 - Math.exp(-elapsed / 30))));
+  const currentIndex = STEPS.reduce((acc, s, i) => (elapsed >= s.at ? i : acc), 0);
+
+  return (
+    <div className="mx-auto max-w-md py-6">
+      <div className="mb-5 flex flex-col items-center text-center">
+        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+          <Sparkles className="h-6 w-6 animate-pulse text-red-600" />
+        </div>
+        <p className="text-base font-semibold text-gray-900">
+          {STEPS[currentIndex].label}…
+        </p>
+        <p className="mt-1 text-xs text-gray-500">
+          {files.length === 1 ? files[0].name : `${files.length} files`} ·{' '}
+          {elapsed}s
+        </p>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+        <div
+          className="h-full rounded-full bg-red-600 transition-[width] duration-500 ease-out"
+          style={{ width: `${Math.max(4, percent)}%` }}
+        />
+      </div>
+      <p className="mt-1.5 text-right text-xs text-gray-400">{percent}%</p>
+
+      {/* Steps */}
+      <ul className="mt-4 space-y-2">
+        {STEPS.map((s, i) => {
+          const done = i < currentIndex;
+          const active = i === currentIndex;
+          return (
+            <li key={s.label} className="flex items-center gap-2.5 text-sm">
+              {done ? (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100">
+                  <Check className="h-3 w-3 text-green-700" />
+                </span>
+              ) : active ? (
+                <Loader2 className="h-5 w-5 animate-spin text-red-600" />
+              ) : (
+                <span className="h-5 w-5 rounded-full border-2 border-gray-200" />
+              )}
+              <span
+                className={
+                  done
+                    ? 'text-gray-500'
+                    : active
+                      ? 'font-medium text-gray-900'
+                      : 'text-gray-400'
+                }
+              >
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <p className="mt-5 text-center text-xs text-gray-500">
+        {elapsed < 45
+          ? 'This usually takes 20–60 seconds. Please keep this window open.'
+          : 'Bigger files take longer. Still working, hang tight…'}
+      </p>
     </div>
   );
 }
@@ -321,7 +467,6 @@ interface ConfigStageProps {
   teacherNote: string;
   setTeacherNote: (v: string) => void;
   isDragging: boolean;
-  isGenerating: boolean;
   error: string | null;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onPickFiles: (e: ChangeEvent<HTMLInputElement>) => void;
@@ -337,7 +482,6 @@ function ConfigStage(props: ConfigStageProps) {
     teacherNote,
     setTeacherNote,
     isDragging,
-    isGenerating,
     error,
     fileInputRef,
     onPickFiles,
@@ -351,9 +495,10 @@ function ConfigStage(props: ConfigStageProps) {
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
         Upload lecture PDFs or notes (DOCX) and the AI will draft a study
-        reviewer with a summary and key concepts. You can edit everything
-        before publishing.
+        reviewer with a summary and key concepts. You can edit and name it
+        before adding it to the lesson.
       </p>
+
       {/* Drop zone */}
       <div
         onDrop={onDrop}
@@ -399,8 +544,7 @@ function ConfigStage(props: ConfigStageProps) {
               <button
                 type="button"
                 onClick={() => onRemoveFile(i)}
-                disabled={isGenerating}
-                className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
                 aria-label="Remove file"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -413,19 +557,16 @@ function ConfigStage(props: ConfigStageProps) {
       {/* Teacher note */}
       <div>
         <label className="mb-1 block text-xs font-medium text-gray-700">
-          Optional steering (e.g. "focus on chapter 3", "for the midterm")
+          Optional steering (e.g. &quot;focus on chapter 3&quot;, &quot;for the midterm&quot;)
         </label>
         <textarea
           value={teacherNote}
           onChange={(e) => setTeacherNote(e.target.value)}
-          disabled={isGenerating}
           rows={2}
-          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
           placeholder="Anything specific you want the AI to focus on?"
         />
       </div>
-
-      
 
       {error && (
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
@@ -438,24 +579,69 @@ function ConfigStage(props: ConfigStageProps) {
 }
 
 // ============================================================
-// Preview stage — show generated markdown
+// Preview stage — name it + edit it before adding
 // ============================================================
 
-function PreviewStage({ draft }: { draft: ReviewerResponse }) {
+function PreviewStage({
+  warning,
+  title,
+  setTitle,
+  markdown,
+  setMarkdown,
+}: {
+  warning?: string;
+  title: string;
+  setTitle: (v: string) => void;
+  markdown: string;
+  setMarkdown: (v: string) => void;
+}) {
   return (
-    <div className="space-y-3">
-      {draft.warning && (
+    <div className="space-y-4">
+      {warning && (
         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{draft.warning}</span>
+          <span>{warning}</span>
         </div>
       )}
-      <div className="rounded-md border border-gray-200 bg-white p-4">
-        <MarkdownContent body={draft.markdown} />
+
+      {/* Name */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-700">
+          Reviewer name
+        </label>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={80}
+          placeholder="e.g. Midterm Reviewer, Chapter 3 Summary"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          Students will see it as{' '}
+          <span className="font-medium text-gray-700">
+            📝 Reviewer: {title.trim() || 'Reviewer'}
+          </span>
+        </p>
       </div>
+
+      {/* Editable content */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-700">
+          Content{' '}
+          <span className="font-normal text-gray-400">· click anywhere to edit</span>
+        </label>
+        <MarkdownEditor
+          value={markdown}
+          onChange={setMarkdown}
+          placeholder="The reviewer is empty."
+          rows={12}
+        />
+      </div>
+
       <p className="text-xs text-gray-500">
-        Accepting will replace this lesson&apos;s content with the draft
-        above. You can edit anything afterward.
+        This will be <span className="font-medium text-gray-700">added to the end</span>{' '}
+        of the lesson. Your current content stays. Click Save on the lesson to
+        make it final.
       </p>
     </div>
   );

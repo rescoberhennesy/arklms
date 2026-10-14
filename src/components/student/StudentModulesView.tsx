@@ -2,12 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import {
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  Tag,
-} from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, FolderOpen } from 'lucide-react';
 import { type ModuleWithLessons } from '@/lib/actions/modules';
 import {
   type ModuleTerm,
@@ -20,82 +15,102 @@ interface StudentModulesViewProps {
   modules: ModuleWithLessons[];
 }
 
-const TERM_ACCENTS: Record<ModuleTerm, string> = {
-  prelim: 'border-blue-200 text-blue-800 bg-blue-50',
-  midterm: 'border-purple-200 text-purple-800 bg-purple-50',
-  prefinal: 'border-amber-200 text-amber-800 bg-amber-50',
-  final: 'border-rose-200 text-rose-800 bg-rose-50',
-};
-
-function groupByTerm(
-  modules: ModuleWithLessons[],
-): Record<ModuleTerm, ModuleWithLessons[]> {
-  const groups: Record<ModuleTerm, ModuleWithLessons[]> = {
-    prelim: [],
-    midterm: [],
-    prefinal: [],
-    final: [],
-  };
-  for (const m of modules) groups[m.term].push(m);
-  for (const t of MODULE_TERMS) {
-    groups[t].sort((a, b) => a.display_order - b.display_order);
-  }
-  return groups;
+function modulesForTerm(modules: ModuleWithLessons[], term: ModuleTerm) {
+  return modules
+    .filter((m) => m.term === term)
+    .sort((a, b) => a.display_order - b.display_order);
 }
 
 export default function StudentModulesView({
   classId,
   modules,
 }: StudentModulesViewProps) {
-  // Hide modules with zero visible lessons (the teacher hasn't published
-  // anything yet). Per Phase 7 decision: students don't see empty buckets.
-  const visibleModules = modules.filter((m) => m.lessons.length > 0);
+  // Students only see visible modules and published lessons. The database
+  // already enforces this; filtering here too keeps the UI honest. Modules
+  // with no published lessons yet are left out entirely.
+  const visibleModules = modules
+    .filter((m) => !m.is_hidden)
+    .map((m) => ({ ...m, lessons: m.lessons.filter((l) => l.published) }))
+    .filter((m) => m.lessons.length > 0);
+
+  // Open on the first grading period that has something to show.
+  const [activeTerm, setActiveTerm] = useState<ModuleTerm>(
+    () => MODULE_TERMS.find((t) => visibleModules.some((m) => m.term === t)) ?? 'prelim',
+  );
 
   if (visibleModules.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
-        <p className="text-sm font-medium text-gray-700">No content yet</p>
-        <p className="mt-1 text-xs text-gray-500">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
+          <FolderOpen className="h-6 w-6" />
+        </div>
+        <h3 className="text-base font-semibold text-gray-900">No lessons yet</h3>
+        <p className="max-w-md text-sm text-gray-600">
           Your teacher hasn&apos;t published any lessons yet. Check back later.
         </p>
       </div>
     );
   }
 
-  const grouped = groupByTerm(visibleModules);
+  const termModules = modulesForTerm(visibleModules, activeTerm);
+  const termLabel = MODULE_TERM_LABELS[activeTerm];
 
   return (
-    <div className="space-y-6">
-      {MODULE_TERMS.map((term) => {
-        const termModules = grouped[term];
-        if (termModules.length === 0) return null;
-        return (
-          <section key={term}>
-            <header className="mb-3 flex items-center gap-2">
+    <div className="space-y-5">
+      {/* Grading-period tabs */}
+      <div
+        role="tablist"
+        aria-label="Grading period"
+        className="inline-flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1"
+      >
+        {MODULE_TERMS.map((term) => {
+          const active = term === activeTerm;
+          const count = visibleModules.filter((m) => m.term === term).length;
+          return (
+            <button
+              key={term}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTerm(term)}
+              className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-4 text-sm transition ${
+                active
+                  ? 'bg-red-600 font-semibold text-white'
+                  : 'font-medium text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {MODULE_TERM_LABELS[term]}
               <span
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${TERM_ACCENTS[term]}`}
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-600'
+                }`}
               >
-                <Tag className="h-3 w-3" />
-                {MODULE_TERM_LABELS[term]}
+                {count}
               </span>
-              <span className="text-xs text-gray-400">
-                {termModules.length}{' '}
-                {termModules.length === 1 ? 'module' : 'modules'}
-              </span>
-            </header>
+            </button>
+          );
+        })}
+      </div>
 
-            <div className="space-y-3">
-              {termModules.map((module) => (
-                <ModuleCard
-                  key={module.id}
-                  module={module}
-                  classId={classId}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {termModules.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-gray-500">
+            <FolderOpen className="h-6 w-6" />
+          </div>
+          <h3 className="text-base font-semibold text-gray-900">
+            No {termLabel} lessons yet
+          </h3>
+          <p className="max-w-md text-sm text-gray-600">
+            Your teacher hasn&apos;t posted anything for {termLabel} yet. Check back later.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {termModules.map((module) => (
+            <ModuleCard key={module.id} module={module} classId={classId} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -107,49 +122,45 @@ interface ModuleCardProps {
 
 function ModuleCard({ module, classId }: ModuleCardProps) {
   const [expanded, setExpanded] = useState(true);
+  const count = module.lessons.length;
 
   return (
-    <article className="rounded-xl border border-gray-200 bg-white shadow-sm">
-      <header className="flex items-center gap-2 px-3 py-2">
+    <article className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <header className="flex items-center gap-2 px-3 py-2.5">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          aria-label={expanded ? 'Collapse' : 'Expand'}
+          className="flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          aria-label={expanded ? 'Collapse module' : 'Expand module'}
+          aria-expanded={expanded}
         >
-          {expanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+          {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
         </button>
 
         <Link
           href={`/student/classes/${classId}/modules/${module.id}`}
-          className="flex-1 truncate text-sm font-semibold text-gray-900 hover:text-red-600"
+          className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 hover:text-red-600"
         >
           {module.title}
         </Link>
 
-        <span className="text-xs text-gray-400">
-          {module.lessons.length}{' '}
-          {module.lessons.length === 1 ? 'lesson' : 'lessons'}
+        <span className="whitespace-nowrap text-sm text-gray-500">
+          {count} {count === 1 ? 'lesson' : 'lessons'}
         </span>
       </header>
 
       {expanded && (
-        <div className="border-t border-gray-100 bg-gray-50/50 px-3 py-2">
-          <ul className="space-y-1">
+        <div className="border-t border-gray-100 px-3 pb-3 pt-2 sm:pl-14">
+          <ul className="space-y-0.5">
             {module.lessons.map((lesson) => (
               <li key={lesson.id}>
                 <Link
                   href={`/student/classes/${classId}/lessons/${lesson.id}`}
-                  className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 hover:bg-gray-50"
+                  className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-gray-800 hover:bg-gray-50 hover:text-red-600"
                 >
-                  <FileText className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  <span className="flex-1 truncate text-sm text-gray-800">
-                    {lesson.title}
-                  </span>
+                  <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{lesson.title}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
                 </Link>
               </li>
             ))}

@@ -18,25 +18,25 @@ interface GradeWeightsModalProps {
   onClose: () => void;
 }
 
+// ARK uses three grading periods (Prelim, Midterm, Final). Prefinal still
+// exists in the database but is always saved as 0 so it never counts.
 type WeightsForm = {
   prelimPct: string;
   midtermPct: string;
-  prefinalPct: string;
   finalPct: string;
 };
 
-const DEFAULT_FORM: WeightsForm = {
-  prelimPct: '25',
-  midtermPct: '25',
-  prefinalPct: '25',
-  finalPct: '25',
+// No default split: each teacher enters their school's own percentages.
+const EMPTY_FORM: WeightsForm = {
+  prelimPct: '',
+  midtermPct: '',
+  finalPct: '',
 };
 
 function weightsToForm(w: ClassGradeWeights): WeightsForm {
   return {
     prelimPct: String(w.prelimPct),
     midtermPct: String(w.midtermPct),
-    prefinalPct: String(w.prefinalPct),
     finalPct: String(w.finalPct),
   };
 }
@@ -58,17 +58,15 @@ export default function GradeWeightsModal({
 }: GradeWeightsModalProps) {
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<WeightsForm>(
-    weights ? weightsToForm(weights) : DEFAULT_FORM,
+    weights ? weightsToForm(weights) : EMPTY_FORM,
   );
   const [error, setError] = useState<string | null>(null);
 
-  // When modal opens (or when the weights prop changes between opens),
-  // reset the form to reflect the latest persisted weights. Using the
-  // prop-sync pattern instead of re-fetching keeps the modal cheap and
-  // ensures the parent's view of weights is the source of truth.
+  // When the modal opens (or the weights prop changes between opens),
+  // reset the form to the latest saved weights.
   useEffect(() => {
     if (!open) return;
-    setForm(weights ? weightsToForm(weights) : DEFAULT_FORM);
+    setForm(weights ? weightsToForm(weights) : EMPTY_FORM);
     setError(null);
   }, [open, weights]);
 
@@ -84,18 +82,15 @@ export default function GradeWeightsModal({
 
   if (!open) return null;
 
-  // Live sum for the helper text. Falls back to 0 for unparseable fields.
   const parsed = {
     prelimPct: parseField(form.prelimPct),
     midtermPct: parseField(form.midtermPct),
-    prefinalPct: parseField(form.prefinalPct),
     finalPct: parseField(form.finalPct),
   };
   const allValid = Object.values(parsed).every((v) => v !== null);
   const liveSum = allValid
     ? (parsed.prelimPct as number) +
       (parsed.midtermPct as number) +
-      (parsed.prefinalPct as number) +
       (parsed.finalPct as number)
     : null;
   const sumOk = liveSum !== null && Math.abs(liveSum - 100) < 0.01;
@@ -109,12 +104,12 @@ export default function GradeWeightsModal({
 
   function handleSave() {
     if (!allValid) {
-      setError('Each weight must be a number between 0 and 100.');
+      setError('Enter a number from 0 to 100 for each grading period.');
       return;
     }
     if (!sumOk) {
       setError(
-        `Weights must sum to 100. Currently ${(liveSum as number).toFixed(2)}.`,
+        `Weights must add up to 100. Currently ${(liveSum as number).toFixed(2)}.`,
       );
       return;
     }
@@ -122,7 +117,7 @@ export default function GradeWeightsModal({
     const payload = {
       prelimPct: parsed.prelimPct as number,
       midtermPct: parsed.midtermPct as number,
-      prefinalPct: parsed.prefinalPct as number,
+      prefinalPct: 0,
       finalPct: parsed.finalPct as number,
     };
     startTransition(async () => {
@@ -137,11 +132,6 @@ export default function GradeWeightsModal({
         setError(err instanceof Error ? err.message : 'Failed to save');
       }
     });
-  }
-
-  function handleResetEqual() {
-    setForm(DEFAULT_FORM);
-    setError(null);
   }
 
   // Color the sum badge based on validity
@@ -189,15 +179,15 @@ export default function GradeWeightsModal({
         {/* Body */}
         <div className="space-y-4 px-5 py-4">
           <p className="text-xs text-gray-600">
-            Weights determine each term&apos;s contribution to the final grade.
-            Values must sum to 100.
+            Enter how much each grading period counts toward the final grade,
+            following your school&apos;s grading system. The three values must
+            add up to 100.
             {!weightsExist && (
               <>
                 {' '}
                 <span className="font-medium text-gray-700">
-                  This class is currently unweighted.
-                </span>{' '}
-                Saving will create weights for this class.
+                  This class has no weights yet.
+                </span>
               </>
             )}
           </p>
@@ -216,12 +206,6 @@ export default function GradeWeightsModal({
               disabled={pending}
             />
             <WeightField
-              label={MODULE_TERM_LABELS.prefinal}
-              value={form.prefinalPct}
-              onChange={(v) => handleField('prefinalPct', v)}
-              disabled={pending}
-            />
-            <WeightField
               label={MODULE_TERM_LABELS.final}
               value={form.finalPct}
               onChange={(v) => handleField('finalPct', v)}
@@ -231,7 +215,7 @@ export default function GradeWeightsModal({
 
           {/* Live sum */}
           <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-            <span className="text-xs font-medium text-gray-700">Sum</span>
+            <span className="text-xs font-medium text-gray-700">Total</span>
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${sumBadgeClass}`}
             >
@@ -247,38 +231,28 @@ export default function GradeWeightsModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
           <button
             type="button"
-            onClick={handleResetEqual}
+            onClick={onClose}
             disabled={pending}
-            className="text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-60"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
           >
-            Reset to equal (25/25/25/25)
+            Cancel
           </button>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={pending}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={pending || !sumOk}
-              className="inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              {weightsExist ? 'Save' : 'Create weights'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={pending || !sumOk}
+            className="inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {weightsExist ? 'Save' : 'Create weights'}
+          </button>
         </div>
       </div>
     </div>
@@ -305,6 +279,7 @@ function WeightField({ label, value, onChange, disabled }: WeightFieldProps) {
           max={100}
           step="any"
           value={value}
+          placeholder="0"
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50"

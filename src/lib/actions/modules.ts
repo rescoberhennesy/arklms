@@ -724,4 +724,41 @@ export async function getMyClassModules(
     class: c,
     modules: moduleLists[i],
   }));
+
+}
+
+/**
+ * Short-lived signed link to an attachment, loaded by the browser straight
+ * from Supabase Storage. Works for large files (no 2 MB data-URL limit) and
+ * never passes the file through our server. Storage policies still decide
+ * who may get a link: teachers of the class, and students only for
+ * published lessons in modules they can see.
+ */
+export async function getAttachmentSignedUrl(
+  attachmentId: string,
+  options: { download?: boolean } = {},
+): Promise<{ url: string; fileName: string; mimeType: string | null }> {
+  const { supabase } = await requireAuth();
+
+  const { data: row, error: rowErr } = await supabase
+    .from('lesson_attachments')
+    .select('file_path, file_name, mime_type')
+    .eq('id', attachmentId)
+    .single();
+
+  if (rowErr) throw new Error(`Failed to load attachment: ${rowErr.message}`);
+
+  const { data, error } = await supabase.storage
+    .from('lesson-attachments')
+    .createSignedUrl(
+      row.file_path,
+      60 * 10, // valid for 10 minutes
+      options.download ? { download: row.file_name } : undefined,
+    );
+
+  if (error || !data) {
+    throw new Error(`Failed to open attachment: ${error?.message ?? 'unknown error'}`);
+  }
+
+  return { url: data.signedUrl, fileName: row.file_name, mimeType: row.mime_type };
 }

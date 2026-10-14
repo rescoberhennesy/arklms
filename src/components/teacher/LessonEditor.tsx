@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import {
   Pencil,
   Save,
+  Check,
   Loader2,
   Eye,
   EyeOff,
-  Upload,
   X,
   Trash2,
   Download,
@@ -32,7 +32,7 @@ import {
   deleteLesson,
   recordAttachment,
   deleteAttachment,
-  getAttachmentDownloadData,
+  getAttachmentSignedUrl,
 } from '@/lib/actions/modules';
 
 interface LessonEditorProps {
@@ -50,6 +50,14 @@ function formatFileSize(bytes: number): string {
 
 export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
   const router = useRouter();
+
+  // Attachments live inside the Lesson Content card (button in its header,
+  // file chips under the editor), so the upload logic is shared via a hook.
+  const att = useLessonAttachments({
+    lessonId: lesson.id,
+    classId,
+    moduleId: lesson.module_id,
+  });
 
   // Title state
   const [titleEditing, setTitleEditing] = useState(false);
@@ -70,10 +78,6 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
   // AI reviewer state
   const [aiReviewerOpen, setAiReviewerOpen] = useState(false);
   const [pendingAiGenerationId, setPendingAiGenerationId] = useState<string | null>(null);
-  const [confirmAiOverwrite, setConfirmAiOverwrite] = useState<{
-    markdown: string;
-    generationId: string | null;
-  } | null>(null);
 
   function handleSaveTitle() {
     const trimmed = titleDraft.trim();
@@ -117,18 +121,14 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
     });
   }
 
-  // Called by the reviewer modal on accept. If the lesson already has
-  // body content, prompt before clobbering; otherwise fill directly.
-  function handleAiAccept(markdown: string, generationId: string | null) {
-    if (body.trim().length > 0) {
-      setConfirmAiOverwrite({ markdown, generationId });
-      return;
-    }
-    applyAiDraft(markdown, generationId);
-  }
-
-  function applyAiDraft(markdown: string, generationId: string | null) {
-    setBody(markdown);
+  // Called by the reviewer modal on accept. Never overwrites: the reviewer
+  // is ADDED to the end of the lesson under its own named heading, so
+  // students can tell it apart from the lesson itself.
+  function handleAiAccept(markdown: string, generationId: string | null, title: string) {
+    // Demote the AI's own top headings so they sit under the "Reviewer" heading.
+    const content = markdown.trim().replace(/^#{1,2}\s+/gm, '### ');
+    const section = `## 📝 Reviewer: ${title.trim() || 'Reviewer'}\n\n${content}`;
+    setBody((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${section}` : section));
     setPendingAiGenerationId(generationId);
     setError(null);
   }
@@ -231,63 +231,104 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
         </div>
       </div>
 
-      {/* Body editor */}
+      {/* Body editor + attachments */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
             Lesson content
           </h2>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+            <input
+              ref={att.inputRef}
+              type="file"
+              multiple
+              onChange={att.handleFilesSelected}
+              className="hidden"
+            />
             <button
               type="button"
-              onClick={() => setAiReviewerOpen(true)}
-              disabled={isSaving}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-              title="Generate a study reviewer from PDFs/DOCX"
+              onClick={att.openPicker}
+              disabled={att.uploading}
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Attach PDFs, slides, documents or images to this lesson"
             >
-              <Sparkles className="h-3 w-3" />
-              Generate from files
+              {att.uploading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Paperclip className="h-3 w-3" />
+              )}
+              {att.uploading ? 'Uploading…' : 'Attach file'}
             </button>
-            {isDirty ? (
-              <span className="text-amber-600">Unsaved changes</span>
-            ) : (
-              <span className="text-gray-400">Saved</span>
-            )}
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={() => setAiReviewerOpen(true)}
+                disabled={isSaving}
+                aria-describedby="generate-from-files-tip"
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Sparkles className="h-3 w-3" />
+                Generate from files
+              </button>
+              <div
+                id="generate-from-files-tip"
+                role="tooltip"
+                className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 rounded-lg bg-gray-900 px-3 py-2.5 text-left text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+              >
+                <p className="font-semibold">Generate a reviewer or summary with AI</p>
+                <p className="mt-1 text-gray-300">
+                  Upload a PDF or Word file and AI will write it for you.
+                  You can edit it before saving.
+                </p>
+                <span className="absolute -top-1 right-6 h-2 w-2 rotate-45 bg-gray-900" />
+              </div>
+            </div>
             <button
               type="button"
               onClick={handleSaveBody}
               disabled={isSaving || !isDirty}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              title={isDirty ? 'Save your changes' : 'All changes saved'}
+              className={`inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                isSaving
+                  ? 'cursor-wait bg-red-600 text-white opacity-80'
+                  : isDirty
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'cursor-default border border-gray-200 bg-gray-50 text-gray-500'
+              }`}
             >
               {isSaving ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Saving…
+                </>
+              ) : isDirty ? (
+                <>
+                  <Save className="h-3 w-3" />
+                  Save
+                </>
               ) : (
-                <Save className="h-3 w-3" />
+                <>
+                  <Check className="h-3 w-3" />
+                  Saved
+                </>
               )}
-              Save
             </button>
           </div>
         </div>
         <MarkdownEditor
           value={body}
           onChange={setBody}
-          placeholder="Write your lesson content here. Markdown supported."
+          placeholder="Write your lesson content here."
           rows={12}
           disabled={isSaving}
         />
+
+        <AttachmentStrip attachments={lesson.attachments} att={att} />
       </section>
 
       {/* AI quality analysis — read-only diagnostic, never mutates the lesson */}
       <AIQualityPanel lessonId={lesson.id} />
       <FlashcardDeckPanel lessonId={lesson.id} />
-
-      {/* Attachments */}
-      <AttachmentsSection
-        lessonId={lesson.id}
-        classId={classId}
-        moduleId={lesson.module_id}
-        attachments={lesson.attachments}
-      />
 
       {/* Danger zone */}
       <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">
@@ -330,102 +371,87 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
         onClose={() => setAiReviewerOpen(false)}
         onAccept={handleAiAccept}
       />
-
-      <ConfirmDialog
-        open={confirmAiOverwrite !== null}
-        title="Replace existing lesson content?"
-        message="This lesson already has content. Accepting the AI draft will overwrite it. The change is not final until you click Save."
-        confirmLabel="Replace"
-        destructive
-        onConfirm={async () => {
-          if (confirmAiOverwrite) {
-            applyAiDraft(
-              confirmAiOverwrite.markdown,
-              confirmAiOverwrite.generationId,
-            );
-            setConfirmAiOverwrite(null);
-          }
-        }}
-        onClose={() => setConfirmAiOverwrite(null)}
-      />
     </div>
   );
 }
 
-interface AttachmentsSectionProps {
-  lessonId: string;
-  classId: string;
-  moduleId: string;
-  attachments: LessonAttachment[];
-}
+// ---------------------------------------------------------------------------
+// Attachments: upload logic (hook) + the file chips shown under the editor
+// ---------------------------------------------------------------------------
 
-function AttachmentsSection({
+function useLessonAttachments({
   lessonId,
   classId,
   moduleId,
-  attachments,
-}: AttachmentsSectionProps) {
+}: {
+  lessonId: string;
+  classId: string;
+  moduleId: string;
+}) {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = ''; // reset so the same file can be re-selected after error
+  function openPicker() {
+    inputRef.current?.click();
+  }
 
-    if (file.size > MAX_FILE_SIZE) {
-      setUploadError(`File too large (${formatFileSize(file.size)}). Max 25 MB.`);
-      return;
-    }
+  async function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // reset so the same file can be re-selected after an error
+    if (files.length === 0) return;
 
     setUploading(true);
     setUploadError(null);
+    const problems: string[] = [];
+    let uploadedAny = false;
 
     try {
       const supabase = createBrowserClient();
-      // Build path: <class_id>/<module_id>/<lesson_id>/<timestamp>-<safe_name>
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `${classId}/${moduleId}/${lessonId}/${Date.now()}-${safeName}`;
+      for (const file of files) {
+        if (file.size > MAX_FILE_SIZE) {
+          problems.push(`${file.name} is too large (${formatFileSize(file.size)}). Max 25 MB.`);
+          continue;
+        }
+        try {
+          // Path: <class_id>/<module_id>/<lesson_id>/<timestamp>-<safe_name>
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const filePath = `${classId}/${moduleId}/${lessonId}/${Date.now()}-${safeName}`;
 
-      const { error: uploadErr } = await supabase.storage
-        .from('lesson-attachments')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false,
-        });
+          const { error: uploadErr } = await supabase.storage
+            .from('lesson-attachments')
+            .upload(filePath, file, { cacheControl: '3600', upsert: false });
+          if (uploadErr) throw new Error(uploadErr.message);
 
-      if (uploadErr) throw new Error(uploadErr.message);
-
-      await recordAttachment({
-        lessonId,
-        filePath,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type || null,
-      });
-
-      router.refresh();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
+          await recordAttachment({
+            lessonId,
+            filePath,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type || null,
+          });
+          uploadedAny = true;
+        } catch (err) {
+          problems.push(`${file.name}: ${err instanceof Error ? err.message : 'upload failed.'}`);
+        }
+      }
     } finally {
       setUploading(false);
+      if (problems.length > 0) setUploadError(problems.join(' '));
+      if (uploadedAny) router.refresh();
     }
   }
 
   function handleDownload(attachmentId: string) {
     startTransition(async () => {
       try {
-        const { dataUrl, fileName } = await getAttachmentDownloadData(
-          attachmentId,
-        );
-        // Trigger the browser's save-as flow via a synthetic <a> click.
+        // Short-lived signed link straight to Supabase Storage. The server
+        // marks it as a download, so the browser saves it with its real name.
+        const { url } = await getAttachmentSignedUrl(attachmentId, { download: true });
         const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = fileName;
+        link.href = url;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -435,48 +461,44 @@ function AttachmentsSection({
     });
   }
 
-  async function doDelete(attachmentId: string) {
+  async function removeAttachment(attachmentId: string) {
     await deleteAttachment(attachmentId);
     router.refresh();
   }
 
+  return {
+    inputRef,
+    uploading,
+    uploadError,
+    clearError: () => setUploadError(null),
+    openPicker,
+    handleFilesSelected,
+    handleDownload,
+    removeAttachment,
+  };
+}
+
+type LessonAttachmentsApi = ReturnType<typeof useLessonAttachments>;
+
+function AttachmentStrip({
+  attachments,
+  att,
+}: {
+  attachments: LessonAttachment[];
+  att: LessonAttachmentsApi;
+}) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const targetForDelete = attachments.find((a) => a.id === confirmDeleteId);
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-gray-500">
-          <Paperclip className="h-3.5 w-3.5" />
-          Attachments
-        </h2>
-        <input
-          ref={fileInputRef}
-          type="file"
-          onChange={handleFileSelected}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-        >
-          {uploading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Upload className="h-3.5 w-3.5" />
-          )}
-          {uploading ? 'Uploading…' : 'Upload file'}
-        </button>
-      </div>
-
-      {uploadError && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+    <div className="mt-3 space-y-2">
+      {att.uploadError && (
+        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           <X className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">{uploadError}</span>
+          <span className="flex-1">{att.uploadError}</span>
           <button
             type="button"
-            onClick={() => setUploadError(null)}
+            onClick={att.clearError}
             className="text-red-400 hover:text-red-600"
             aria-label="Dismiss"
           >
@@ -486,69 +508,82 @@ function AttachmentsSection({
       )}
 
       {attachments.length === 0 ? (
-        <p className="text-xs text-gray-500">No attachments yet.</p>
+        <button
+          type="button"
+          onClick={att.openPicker}
+          disabled={att.uploading}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-500 transition hover:border-red-300 hover:text-red-600 disabled:opacity-60"
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+          No files attached. Click to attach PDFs, slides, documents or images for this lesson.
+        </button>
       ) : (
-        <ul className="space-y-1">
-          {attachments.map((a) => (
-            <li
-              key={a.id}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2"
-            >
-              <FileText className="h-4 w-4 shrink-0 text-gray-400" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-gray-800">{a.file_name}</p>
-                <p className="text-xs text-gray-500">
-                  {formatFileSize(a.file_size)}
-                </p>
-              </div>
-
-              {/* Preview lets teacher confirm they uploaded the right file
-                  before publishing. Hidden by the component for unsupported
-                  types so the row stays tidy. */}
-              <LessonAttachmentPreview
-                attachmentId={a.id}
-                fileName={a.file_name}
-                mimeType={a.mime_type ?? null}
-              />
-
-              <button
-                type="button"
-                onClick={() => handleDownload(a.id)}
-                className="rounded p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
-                aria-label="Download"
-                title="Download"
+        <div>
+          <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+            <Paperclip className="h-3.5 w-3.5" />
+            Attached files ({attachments.length})
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {attachments.map((a) => (
+              <li
+                key={a.id}
+                className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-3 pr-1.5"
               >
-                <Download className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteId(a.id)}
-                className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                aria-label="Delete"
-                title="Delete"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
+                <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-gray-800" title={a.file_name}>
+                    {a.file_name}
+                  </p>
+                  <p className="text-xs text-gray-500">{formatFileSize(a.file_size)}</p>
+                </div>
+
+                {/* Preview lets the teacher confirm the right file was uploaded.
+                    The component hides itself for unsupported types. */}
+                <LessonAttachmentPreview
+                  attachmentId={a.id}
+                  fileName={a.file_name}
+                  mimeType={a.mime_type ?? null}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => att.handleDownload(a.id)}
+                  className="rounded p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+                  aria-label={`Download ${a.file_name}`}
+                  title="Download"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(a.id)}
+                  className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                  aria-label={`Remove ${a.file_name}`}
+                  title="Remove"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <ConfirmDialog
         open={confirmDeleteId !== null}
-        title="Delete attachment?"
+        title="Remove attachment?"
         message={
           targetForDelete
             ? `"${targetForDelete.file_name}" will be permanently removed.`
             : ''
         }
-        confirmLabel="Delete"
+        confirmLabel="Remove"
         destructive
         onConfirm={async () => {
-          if (confirmDeleteId) await doDelete(confirmDeleteId);
+          if (confirmDeleteId) await att.removeAttachment(confirmDeleteId);
         }}
         onClose={() => setConfirmDeleteId(null)}
       />
-    </section>
+    </div>
   );
 }

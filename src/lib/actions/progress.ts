@@ -65,7 +65,7 @@ export interface TeacherClassProgress {
 // Internal helper — empty-state per-term shape so the UI always has 4 entries
 // ---------------------------------------------------------------------------
 
-const TERMS: ModuleTerm[] = ['prelim', 'midterm', 'prefinal', 'final'];
+const TERMS: ModuleTerm[] = ['prelim', 'midterm', 'final'];
 
 function emptyTermMap<T>(defaultVal: () => T): Record<ModuleTerm, T> {
   return {

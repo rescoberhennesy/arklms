@@ -5,45 +5,58 @@ import { BookOpen, Briefcase } from 'lucide-react'
 
 type Program = {
   id: string
+  track: 'Academic' | 'TechPro'
   code: string
   name: string
   description: string
-  subjects: string[]
+  focus: string[]
   careers: string[]
 }
 
+// Strengthened SHS Curriculum (DepEd): two tracks — Academic and
+// Technical-Professional (TechPro) — each with elective clusters.
+// Focus areas are descriptive, not official subject titles; confirm the
+// exact electives with the school's registrar.
 const PROGRAMS: Program[] = [
   {
-    id: 'abm',
-    code: 'ABM',
-    name: 'Accountancy, Business and Management',
-    description: 'For students who want to work in business, finance, or entrepreneurship.',
-    subjects: ['Fundamentals of Accountancy', 'Business Math', 'Applied Economics', 'Business Finance'],
-    careers: ['Accountant', 'Entrepreneur', 'Banker', 'Marketing Specialist'],
+    id: 'assh',
+    track: 'Academic',
+    code: 'ASSH',
+    name: 'Arts, Social Science, and Humanities',
+    description:
+      'For students interested in people, society, culture, and communication — a path toward college programs in the social sciences, education, and the humanities.',
+    focus: ['Social sciences', 'Humanities and the arts', 'Communication and media', 'Community and public service'],
+    careers: ['Teacher', 'Lawyer', 'Journalist', 'Psychologist', 'Social Worker'],
   },
   {
-    id: 'humss',
-    code: 'HUMSS',
-    name: 'Humanities and Social Sciences',
-    description: 'For students interested in people, society, communication, and public service.',
-    subjects: ['Creative Writing', 'Philippine Politics and Governance', 'Community Engagement', 'Introduction to World Religions'],
-    careers: ['Teacher', 'Lawyer', 'Journalist', 'Social Worker'],
+    id: 'be',
+    track: 'Academic',
+    code: 'BE',
+    name: 'Business and Entrepreneurship',
+    description:
+      'For students who want to start, manage, or grow a business — a path toward college programs in business, accountancy, and management.',
+    focus: ['Business fundamentals', 'Entrepreneurship', 'Accounting basics', 'Marketing and management'],
+    careers: ['Entrepreneur', 'Accountant', 'Marketing Specialist', 'Business Manager', 'Banker'],
   },
   {
-    id: 'he',
-    code: 'H.E',
-    name: 'Home Economics',
-    description: 'A TVL strand built on hands-on skills in hospitality, food, and services.',
-    subjects: ['Cookery', 'Bread and Pastry Production', 'Food and Beverage Services', 'Housekeeping'],
-    careers: ['Chef', 'Hotel Staff', 'Baker', 'Caterer'],
+    id: 'ht',
+    track: 'TechPro',
+    code: 'H&T',
+    name: 'Hospitality and Tourism',
+    description:
+      'A hands-on track for students who want to work in hotels, restaurants, travel, and events, with skills they can use right after graduation.',
+    focus: ['Food and beverage services', 'Front office and housekeeping', 'Tourism and travel services', 'Events management'],
+    careers: ['Chef', 'Hotel Staff', 'Tour Guide', 'Flight Attendant', 'Events Coordinator'],
   },
   {
     id: 'ict',
-    code: 'I.C.T',
-    name: 'Information and Communications Technology',
-    description: 'A TVL strand focused on computers, programming, and digital tools.',
-    subjects: ['Computer Systems Servicing', 'Programming', 'Animation', 'Technical Drafting'],
-    careers: ['Programmer', 'IT Support', 'Web Developer', 'Multimedia Artist'],
+    track: 'TechPro',
+    code: 'ICT',
+    name: 'ICT Support and Computer Programming',
+    description:
+      'A hands-on track for students who like computers and technology — from setting up and fixing systems to writing their own programs.',
+    focus: ['Computer systems servicing', 'Networking basics', 'Computer programming', 'Technical support'],
+    careers: ['Programmer', 'IT Support Specialist', 'Web Developer', 'Network Technician'],
   },
 ]
 
@@ -99,19 +112,21 @@ export default function ProgramCards() {
                 }
               }}
             >
+              
               <h3>{p.code}</h3>
               <p>{p.name}</p>
             </div>
 
             {open && (
               <div id={`strand-${p.id}`} className="strand-popover" role="dialog" aria-label={p.name}>
+                              <span className="strand-track">{p.track === 'TechPro' ? 'Tech-Pro Track' : 'Academic Track'}</span>
                 <p className="strand-popover-desc">{p.description}</p>
 
                 <p className="strand-popover-label">
-                  <BookOpen size={14} /> Sample subjects
+                  <BookOpen size={14} /> Focus areas
                 </p>
                 <ul className="strand-popover-list">
-                  {p.subjects.map((s) => <li key={s}>{s}</li>)}
+                  {p.focus.map((s) => <li key={s}>{s}</li>)}
                 </ul>
 
                 <p className="strand-popover-label">

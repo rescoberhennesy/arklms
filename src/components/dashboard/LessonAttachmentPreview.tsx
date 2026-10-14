@@ -9,7 +9,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
-import { getAttachmentDownloadData } from '@/lib/actions/modules';
+import { getAttachmentSignedUrl } from '@/lib/actions/modules';
 
 interface LessonAttachmentPreviewProps {
   attachmentId: string;
@@ -50,14 +50,17 @@ function detectPreviewKind(
   return 'unsupported';
 }
 
+// Signed links last 10 minutes on the server; refresh a bit before that.
+const URL_TTL_MS = 9 * 60 * 1000;
+
 /**
- * Inline preview component for a single lesson attachment.
+ * Inline preview for a single lesson attachment.
  * Used by both the teacher LessonEditor and the StudentLessonView.
  *
- * Collapsed by default; clicking "Preview" expands an inline viewer
- * appropriate to the file type. The file data is fetched lazily on
- * first expand and cached as a base64 data URL for the rest of the
- * session.
+ * Collapsed by default; clicking "Preview" asks the server for a short-lived
+ * signed link and the browser loads the file straight from Supabase Storage.
+ * (The old version sent the whole file through the server as a base64 data
+ * URL, which Chrome refuses above ~2 MB — large PDFs showed up blank.)
  *
  * For unsupported types (Word, Excel, PPT, archives, etc.) the preview
  * button is hidden and only the parent's Download button remains.
@@ -69,19 +72,19 @@ export default function LessonAttachmentPreview({
 }: LessonAttachmentPreviewProps) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [signed, setSigned] = useState<{ url: string; at: number } | null>(null);
   const [textBody, setTextBody] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const kind = detectPreviewKind(mimeType, fileName);
   const canPreview = kind !== 'unsupported';
 
-  async function ensureData(): Promise<string | null> {
-    if (dataUrl) return dataUrl;
+  async function ensureUrl(): Promise<string | null> {
+    if (signed && Date.now() - signed.at < URL_TTL_MS) return signed.url;
     try {
-      const result = await getAttachmentDownloadData(attachmentId);
-      setDataUrl(result.dataUrl);
-      return result.dataUrl;
+      const result = await getAttachmentSignedUrl(attachmentId);
+      setSigned({ url: result.url, at: Date.now() });
+      return result.url;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load preview.');
       return null;
@@ -97,36 +100,29 @@ export default function LessonAttachmentPreview({
     setLoading(true);
     setExpanded(true);
 
-    const url = await ensureData();
+    const url = await ensureUrl();
     if (!url) {
       setLoading(false);
       return;
     }
 
-    // For text-like files we decode the base64 once and render in a <pre>.
-    // For everything else, the data URL goes straight into an iframe /
-    // img / video tag, so no extra work is needed here.
+    // Text-like files are fetched once and shown in a <pre>; everything else
+    // loads directly from the signed link in an iframe / img / video tag.
     if (kind === 'text' && textBody === null) {
       try {
-        // Data URL is `data:<mime>;base64,<payload>` — decode the payload.
-        const base64 = url.split(',')[1] ?? '';
-        const body = atob(base64);
-        // Cap rendered text at ~200KB — anything bigger and we just
-        // show the first chunk with a note. Browsers can handle more,
-        // but a 5MB log file in a <pre> tanks the page.
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Could not load file (${res.status}).`);
+        const body = await res.text();
+        // Cap rendered text at ~200KB; a huge log file in a <pre> tanks the page.
         const MAX_TEXT_CHARS = 200_000;
-        if (body.length > MAX_TEXT_CHARS) {
-          setTextBody(
-            body.slice(0, MAX_TEXT_CHARS) +
-              '\n\n…\n[File truncated for preview — download to view in full]',
-          );
-        } else {
-          setTextBody(body);
-        }
-      } catch (e) {
-        setError(
-          e instanceof Error ? e.message : 'Could not decode file contents.',
+        setTextBody(
+          body.length > MAX_TEXT_CHARS
+            ? body.slice(0, MAX_TEXT_CHARS) +
+                '\n\n…\n[File truncated for preview — download to view in full]'
+            : body,
         );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not read file contents.');
       }
     }
 
@@ -155,13 +151,13 @@ export default function LessonAttachmentPreview({
       </button>
 
       {expanded && (
-        <div className="col-span-full mt-2 w-full overflow-hidden rounded-md border border-gray-200 bg-white">
+        <div className="col-span-full mt-2 w-full basis-full overflow-hidden rounded-md border border-gray-200 bg-white">
           {error ? (
             <div className="flex items-start gap-2 px-3 py-3 text-xs text-red-700">
               <X className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{error}</span>
             </div>
-          ) : loading || !dataUrl ? (
+          ) : loading || !signed ? (
             <div className="flex items-center gap-2 px-3 py-6 text-xs text-gray-500">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading preview…
@@ -169,7 +165,7 @@ export default function LessonAttachmentPreview({
           ) : (
             <PreviewBody
               kind={kind}
-              url={dataUrl}
+              url={signed.url}
               fileName={fileName}
               textBody={textBody}
             />

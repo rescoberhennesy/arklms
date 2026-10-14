@@ -26,13 +26,10 @@ export default function AboutPage() {
               </div>
               <h2>ARK Technological Institute Education System Inc.</h2>
               <p>
-                ARK Technological Institute is an educational institution based in
-                Lucena, Philippines, offering Senior High School and TESDA
-                technical-vocational programs. The school provides Senior High
-                School strands in Accountancy, Business and Management (ABM),
-                Humanities and Social Sciences (HUMSS), Home Economics (H.E), and
-                Information and Communications Technology (I.C.T), preparing
-                students for both higher education and the workforce.
+                ARK Technological Institute is an educational institution based in Lucena City, Quezon, Philippines, offering Senior High School and TESDA technical-vocational programs.
+                Under DepEd’s Strengthened Senior High School Curriculum, the school offers programs in two tracks: the Academic Track, with Arts, Social Science, and Humanities (ASSH) 
+                and Business and Entrepreneurship (BE), and the Technical-Professional (Tech-Pro) Track, with Hospitality and Tourism (H&T) 
+                and ICT Support and Computer Programming (ICT). These programs prepare students for both higher education and the workforce.
               </p>
               <p>
                 Since 2015, ARK has been committed to making quality education
