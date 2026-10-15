@@ -1133,6 +1133,8 @@ Current Project Folder and File Structure (u might need this)
    *calendar.ts
    *cn.ts
    *getInitials.ts
+   *stripMarkdown.ts
+   *markDowntoPdf.ts
   *utils.ts
  /types
   *class.ts

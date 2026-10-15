@@ -19,7 +19,6 @@ import {
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import AIReviewerModal, { type ReviewerFormat } from '@/components/teacher/ai/AIReviewerModal';
-import AIQualityPanel from '@/components/teacher/ai/AIQualityPanel';
 import FlashcardDeckPanel from '@/components/teacher/ai/FlashcardDeckPanel';
 import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
@@ -353,7 +352,6 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
       </section>
 
       {/* AI quality analysis — read-only diagnostic, never mutates the lesson */}
-      <AIQualityPanel lessonId={lesson.id} />
       <FlashcardDeckPanel lessonId={lesson.id} />
 
       {/* Danger zone */}
