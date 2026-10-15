@@ -18,11 +18,12 @@ import {
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
-import AIReviewerModal from '@/components/teacher/ai/AIReviewerModal';
+import AIReviewerModal, { type ReviewerFormat } from '@/components/teacher/ai/AIReviewerModal';
 import AIQualityPanel from '@/components/teacher/ai/AIQualityPanel';
 import FlashcardDeckPanel from '@/components/teacher/ai/FlashcardDeckPanel';
 import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
+import { markdownToPdfFile } from '@/lib/utils/markdownToPdf';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import {
   type LessonDetail,
@@ -121,16 +122,41 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
     });
   }
 
-  // Called by the reviewer modal on accept. Never overwrites: the reviewer
-  // is ADDED to the end of the lesson under its own named heading, so
-  // students can tell it apart from the lesson itself.
-  function handleAiAccept(markdown: string, generationId: string | null, title: string) {
-    // Demote the AI's own top headings so they sit under the "Reviewer" heading.
-    const content = markdown.trim().replace(/^#{1,2}\s+/gm, '### ');
-    const section = `## 📝 Reviewer: ${title.trim() || 'Reviewer'}\n\n${content}`;
-    setBody((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${section}` : section));
-    setPendingAiGenerationId(generationId);
+  // Called by the reviewer modal on accept. Never overwrites:
+  //  - 'pdf'  -> attached as a downloadable PDF named after the reviewer
+  //  - 'text' -> ADDED to the end of the lesson under its own named heading
+  //  - 'both' -> both of the above
+  async function handleAiAccept(
+    markdown: string,
+    generationId: string | null,
+    title: string,
+    format: ReviewerFormat,
+  ) {
     setError(null);
+    const name = title.trim() || 'Reviewer';
+
+    if (format !== 'pdf') {
+      // Demote the AI's own top headings so they sit under the "Reviewer" heading.
+      const content = markdown.trim().replace(/^#{1,2}\s+/gm, '### ');
+      const section = `## 📝 Reviewer: ${name}\n\n${content}`;
+      setBody((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${section}` : section));
+      setPendingAiGenerationId(generationId);
+    }
+
+    if (format !== 'text') {
+      try {
+        const file = await markdownToPdfFile(name, markdown);
+        const ok = await att.uploadFiles([file]);
+        if (ok && format === 'pdf' && generationId) {
+          // PDF-only never goes through Save, so log it as published now.
+          await markAiGenerationPublished(generationId, { body: markdown });
+        }
+      } catch (e) {
+        setError(
+          `Couldn't create the PDF: ${e instanceof Error ? e.message : 'unknown error'}`,
+        );
+      }
+    }
   }
 
   function handleTogglePublish() {
@@ -398,10 +424,12 @@ function useLessonAttachments({
     inputRef.current?.click();
   }
 
-  async function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ''; // reset so the same file can be re-selected after an error
-    if (files.length === 0) return;
+  // Uploads files to storage and records them on the lesson.
+  // Returns true if at least one file was uploaded.
+  async function uploadFiles(files: File[]): Promise<boolean> {
+    if (files.length === 0) return false;
+
+    setUploading(true);
 
     setUploading(true);
     setUploadError(null);
@@ -440,8 +468,15 @@ function useLessonAttachments({
     } finally {
       setUploading(false);
       if (problems.length > 0) setUploadError(problems.join(' '));
-      if (uploadedAny) router.refresh();
+           if (uploadedAny) router.refresh();
     }
+    return uploadedAny;
+  }
+
+  async function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // reset so the same file can be re-selected after an error
+    await uploadFiles(files);
   }
 
   function handleDownload(attachmentId: string) {
@@ -472,6 +507,7 @@ function useLessonAttachments({
     uploadError,
     clearError: () => setUploadError(null),
     openPicker,
+    uploadFiles, 
     handleFilesSelected,
     handleDownload,
     removeAttachment,

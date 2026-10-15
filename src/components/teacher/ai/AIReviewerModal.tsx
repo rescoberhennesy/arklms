@@ -4,8 +4,8 @@
 // Modal for the AI Reviewer Generator (Feature 2).
 //
 // Flow: select files -> generate (with live progress) -> edit + name -> add.
-// On accept, calls onAccept(markdown, generationId, title). The parent ADDS
-// it to the end of the lesson under a "Reviewer: <title>" heading.
+// On accept, calls onAccept(markdown, generationId, title, format). The
+// parent attaches it as a PDF and/or ADDS it to the end of the lesson text.
 
 import {
   useState,
@@ -24,6 +24,8 @@ import {
   AlertCircle,
   Trash2,
   Check,
+  FileDown,
+  AlignLeft,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 
@@ -59,6 +61,9 @@ function nameFromFile(file: File | undefined): string {
     .slice(0, 80);
 }
 
+/** How the reviewer is added to the lesson. */
+export type ReviewerFormat = 'pdf' | 'text';
+
 type ReviewerResponse = {
   generationId?: string;
   markdown: string;
@@ -69,7 +74,12 @@ interface AIReviewerModalProps {
   open: boolean;
   classId: string | null;
   onClose: () => void;
-  onAccept: (markdown: string, generationId: string | null, title: string) => void;
+  onAccept: (
+    markdown: string,
+    generationId: string | null,
+    title: string,
+    format: ReviewerFormat,
+  ) => void;
 }
 
 export default function AIReviewerModal({
@@ -92,6 +102,7 @@ export default function AIReviewerModal({
   const [draft, setDraft] = useState<ReviewerResponse | null>(null);
   const [editedMarkdown, setEditedMarkdown] = useState('');
   const [title, setTitle] = useState('');
+    const [format, setFormat] = useState<ReviewerFormat>('pdf');
 
   // Seconds counter while generating, so the user can see it's still working.
   useEffect(() => {
@@ -113,6 +124,7 @@ export default function AIReviewerModal({
     setDraft(null);
     setEditedMarkdown('');
     setTitle('');
+    setFormat('pdf');
     setIsDragging(false);
     setIsGenerating(false);
   }
@@ -257,6 +269,7 @@ export default function AIReviewerModal({
       editedMarkdown,
       draft.generationId ?? null,
       title.trim() || 'Reviewer',
+      format,
     );
     resetAll();
     onClose();
@@ -305,6 +318,8 @@ export default function AIReviewerModal({
               warning={draft.warning}
               title={title}
               setTitle={setTitle}
+              format={format}
+              setFormat={setFormat}
               markdown={editedMarkdown}
               setMarkdown={setEditedMarkdown}
             />
@@ -582,16 +597,30 @@ function ConfigStage(props: ConfigStageProps) {
 // Preview stage — name it + edit it before adding
 // ============================================================
 
+const FORMAT_OPTIONS: {
+  value: ReviewerFormat;
+  label: string;
+  hint: string;
+  icon: 'pdf' | 'text';
+}[] = [
+  { value: 'pdf', label: 'PDF only', hint: 'Attached as a file students can download', icon: 'pdf' },
+  { value: 'text', label: 'Text only', hint: 'Added to the end of the lesson content', icon: 'text' },
+];
+
 function PreviewStage({
   warning,
   title,
   setTitle,
+  format,
+  setFormat,
   markdown,
   setMarkdown,
 }: {
   warning?: string;
   title: string;
   setTitle: (v: string) => void;
+  format: ReviewerFormat;
+  setFormat: (v: ReviewerFormat) => void;
   markdown: string;
   setMarkdown: (v: string) => void;
 }) {
@@ -617,11 +646,67 @@ function PreviewStage({
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
         />
         <p className="mt-1 text-xs text-gray-500">
-          Students will see it as{' '}
-          <span className="font-medium text-gray-700">
-            📝 Reviewer: {title.trim() || 'Reviewer'}
-          </span>
+                    {format === 'pdf' ? (
+            <>
+              File:{' '}
+              <span className="font-medium text-gray-700">
+                {title.trim() || 'Reviewer'}.pdf
+              </span>
+            </>
+          ) : (
+            <>
+              Heading in lesson:{' '}
+              <span className="font-medium text-gray-700">
+                📝 Reviewer: {title.trim() || 'Reviewer'}
+              </span>
+            </>
+          )}
         </p>
+      </div>
+
+      {/* How to add it */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-700">
+          Add to lesson as
+        </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+          {FORMAT_OPTIONS.map((opt) => {
+            const selected = format === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setFormat(opt.value)}
+                aria-pressed={selected}
+                className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition ${
+                  selected
+                    ? 'border-red-500 bg-red-50 ring-1 ring-red-500'
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <span
+                  className={`mt-0.5 flex shrink-0 gap-0.5 ${
+                    selected ? 'text-red-600' : 'text-gray-400'
+                  }`}
+                >
+                                   {opt.icon === 'pdf' ? (
+                    <FileDown className="h-4 w-4" />
+                  ) : (
+                    <AlignLeft className="h-4 w-4" />
+                  )}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">
+                    {opt.label}
+                  </span>
+                  <span className="block text-xs leading-snug text-gray-500">
+                    {opt.hint}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Editable content */}
@@ -639,9 +724,9 @@ function PreviewStage({
       </div>
 
       <p className="text-xs text-gray-500">
-        This will be <span className="font-medium text-gray-700">added to the end</span>{' '}
-        of the lesson. Your current content stays. Click Save on the lesson to
-        make it final.
+        {format === 'pdf'
+          ? 'The PDF is attached to the lesson right away. Your lesson text is not changed.'
+                    : 'The text is added to the end of the lesson. Your current content stays. Click Save to make it final.'}
       </p>
     </div>
   );
