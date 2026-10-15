@@ -3,21 +3,26 @@
 // POST: generate a flashcard deck for a lesson.
 // Auth: teacher of the lesson's class (admin allowed).
 //
-// Pattern matches reviewer route:
-//   - Auth → parse → role check → fetch lesson (RLS-gated) → rate limit
-//   - Call Gemini with structured output
-//   - Validate draft, persist via createFlashcardDeckWithCards
-//   - Insert ai_generations row (status=draft for now; flips to 'published'
-//     when teacher hits publish on the deck — see actions/flashcards.ts)
-//   - Log to ai_usage_log
+// Accepts either:
+//   - multipart/form-data: lessonId, desiredCount, title, files[] (0-5 PDF/DOCX)
+//   - application/json:    { lessonId, desiredCount, title }  (lesson text only)
 //
-// Note: unlike the reviewer (which writes markdown to lesson body), this
-// route writes ROWS to flashcard_decks + flashcards. The teacher reviews
-// via the FlashcardDeckEditor UI and flips published=true when ready.
+// Source material:
+//   - If files are uploaded, cards are generated from the files (plus the
+//     lesson body as extra context when it has real content).
+//   - If no files, the lesson body must have substantive content.
+//
+// Flow: auth → parse → role → lesson (RLS) → rate limit → pre-flight →
+//       upload files to Gemini → generate → validate → audit row → persist
+//       deck + cards → log usage.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateText } from '@/lib/ai/client';
+import {
+  uploadFilesToGemini,
+  buildPartsWithFiles,
+} from '@/lib/ai/uploadFile';
 import { assertWithinRateLimit } from '@/lib/ai/rate-limit';
 import { logUsage } from '@/lib/ai/log';
 import { AIError, AIErrors } from '@/lib/ai/errors';
@@ -32,40 +37,124 @@ import { createFlashcardDeckWithCards } from '@/lib/actions/flashcards';
 
 export const runtime = 'nodejs';
 
-type ReqBody = {
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
+const MIN_LESSON_CHARS = 100;
+
+const ALLOWED_MIME = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
+function resolveMime(file: File): string | null {
+  if (file.type && ALLOWED_MIME.has(file.type)) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  return null;
+}
+
+type ParsedRequest = {
   lessonId?: string;
-  desiredCount?: number;
+  desiredCount?: unknown;
   title?: string;
+  files: File[];
 };
 
+async function parseRequest(req: NextRequest): Promise<ParsedRequest> {
+  const contentType = req.headers.get('content-type') ?? '';
+  if (contentType.includes('multipart/form-data')) {
+    const form = await req.formData();
+    return {
+      lessonId: (form.get('lessonId') as string | null) ?? undefined,
+      desiredCount: form.get('desiredCount'),
+      title: (form.get('title') as string | null) ?? undefined,
+      files: form
+        .getAll('files')
+        .filter((f): f is File => f instanceof File && f.size > 0),
+    };
+  }
+  const body = (await req.json()) as {
+    lessonId?: string;
+    desiredCount?: number;
+    title?: string;
+  };
+  return { ...body, files: [] };
+}
+
 export async function POST(req: NextRequest) {
+  try {
+    return await handlePost(req);
+  } catch (err) {
+    console.error('[ai/flashcards] UNHANDLED:', err);
+    return NextResponse.json(
+      {
+        error:
+          err instanceof Error
+            ? `Server error: ${err.message}`
+            : 'Unknown server error.',
+      },
+      { status: 500 },
+    );
+  }
+}
+
+async function handlePost(req: NextRequest): Promise<NextResponse> {
   const supabase = await createClient();
 
   // 1. Auth
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser();
   if (authErr || !user) {
     const e = AIErrors.unauthorized();
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
 
-  // 2. Parse body
-  let body: ReqBody;
+  // 2. Parse body (multipart or JSON)
+  let parsed: ParsedRequest;
   try {
-    body = (await req.json()) as ReqBody;
+    parsed = await parseRequest(req);
   } catch {
-    const e = AIErrors.badInput('invalid JSON body');
+    const e = AIErrors.badInput('invalid request body');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
-  const lessonId = body.lessonId?.trim();
+
+  const lessonId = parsed.lessonId?.trim();
   if (!lessonId) {
     const e = AIErrors.badInput('lessonId is required');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
+  const rawCount = Number(parsed.desiredCount);
   const desiredCount = Math.min(
     20,
-    Math.max(3, Number.isFinite(body.desiredCount) ? Number(body.desiredCount) : 10),
+    Math.max(3, Number.isFinite(rawCount) ? Math.round(rawCount) : 10),
   );
-  const deckTitle = (body.title ?? '').trim() || 'Flashcards';
+  const deckTitle = (parsed.title ?? '').trim() || 'Flashcards';
+  const files = parsed.files;
+
+  // 2b. File validation
+  if (files.length > MAX_FILES) {
+    const e = AIErrors.badInput(`at most ${MAX_FILES} files allowed`);
+    return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
+  }
+  type Prepared = { data: Blob; mimeType: string; displayName: string };
+  const prepared: Prepared[] = [];
+  for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) {
+      const e = AIErrors.badInput(`${file.name} is too large (max 20 MB per file)`);
+      return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
+    }
+    const mime = resolveMime(file);
+    if (!mime) {
+      const e = AIErrors.badInput(`${file.name}: only PDF and DOCX files are supported`);
+      return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
+    }
+    prepared.push({ data: file, mimeType: mime, displayName: file.name });
+  }
 
   // 3. Role check
   const { data: profile } = await supabase
@@ -78,7 +167,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
 
-  // 4. Fetch lesson via RLS-gated query (chain enforces class teacher access)
+  // 4. Fetch lesson via RLS-gated query
   const { data: lessonRow, error: lessonErr } = await supabase
     .from('module_lessons')
     .select('id, title, body, module_id, class_modules!inner(class_id)')
@@ -95,7 +184,7 @@ export async function POST(req: NextRequest) {
   const lesson = lessonRow as unknown as {
     id: string;
     title: string;
-    body: string;
+    body: string | null;
     module_id: string;
     class_modules: { class_id: string } | { class_id: string }[];
   };
@@ -103,7 +192,20 @@ export async function POST(req: NextRequest) {
     ? lesson.class_modules[0]?.class_id
     : lesson.class_modules?.class_id;
 
-  // 5. Rate limit
+  // 5. Pre-flight: need files OR substantive lesson text
+  const bodyText = (lesson.body || '').trim();
+  const hasLessonText = bodyText.length >= MIN_LESSON_CHARS;
+  if (prepared.length === 0 && !hasLessonText) {
+    return NextResponse.json(
+      {
+        error:
+          'This lesson has too little content. Upload a PDF or DOCX file, or add more lesson content first.',
+      },
+      { status: 422 },
+    );
+  }
+
+  // 6. Rate limit
   try {
     await assertWithinRateLimit(supabase, user.id);
   } catch (err) {
@@ -118,39 +220,48 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
-  // 6. Pre-flight: lesson must have substantive content
-  const bodyText = (lesson.body || '').trim();
-  if (bodyText.length < 100) {
-    await logUsage(supabase, {
-      userId: user.id,
-      feature: 'flashcards',
-      status: 'error',
-      errorMessage: 'lesson too short for flashcards',
-    });
-    return NextResponse.json(
-      {
-        error:
-          'This lesson is too short to generate flashcards from. Add more content first.',
-      },
-      { status: 422 },
-    );
+  // 7. Upload files to Gemini (if any)
+  let uploaded: Awaited<ReturnType<typeof uploadFilesToGemini>> = [];
+  if (prepared.length > 0) {
+    try {
+      uploaded = await uploadFilesToGemini(prepared);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[ai/flashcards] upload failed:', message);
+      await logUsage(supabase, {
+        userId: user.id,
+        feature: 'flashcards',
+        status: 'error',
+        errorMessage: message,
+      });
+      const status = err instanceof AIError ? err.statusCode : 500;
+      const userMsg =
+        err instanceof AIError ? err.userMessage : 'File upload to AI failed.';
+      return NextResponse.json({ error: userMsg }, { status });
+    }
   }
 
-  // 7. Call Gemini
+  // 8. Call Gemini
   let draft: FlashcardGeneratorDraft;
   let modelUsed = '';
   let tokensIn = 0;
   let tokensOut = 0;
 
   try {
+    const textPrompt = buildFlashcardGeneratorUserPrompt({
+      lessonTitle: lesson.title,
+      lessonBody: hasLessonText ? bodyText : '',
+      desiredCount,
+      sourceFileNames: prepared.map((p) => p.displayName),
+    });
+
     const result = await generateText({
       model: 'fast',
       systemInstruction: FLASHCARD_GENERATOR_SYSTEM_INSTRUCTION,
-      prompt: buildFlashcardGeneratorUserPrompt({
-        lessonTitle: lesson.title,
-        lessonBody: lesson.body,
-        desiredCount,
-      }),
+      prompt:
+        uploaded.length > 0
+          ? buildPartsWithFiles(uploaded, textPrompt)
+          : textPrompt,
       responseSchema: FLASHCARD_GENERATOR_RESPONSE_SCHEMA as unknown as Record<
         string,
         unknown
@@ -170,6 +281,7 @@ export async function POST(req: NextRequest) {
     draft = validateFlashcardDraft(raw);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error('[ai/flashcards] generation failed:', message);
     await logUsage(supabase, {
       userId: user.id,
       feature: 'flashcards',
@@ -187,7 +299,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: userMsg }, { status });
   }
 
-  // 8. Handle AI decline gracefully
+  // 9. Handle AI decline gracefully
   if (draft.errorMessage) {
     await logUsage(supabase, {
       userId: user.id,
@@ -204,7 +316,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 9. Insert ai_generations row (audit)
+  // 10. Insert ai_generations row (audit)
   const { data: gen, error: genErr } = await supabase
     .from('ai_generations')
     .insert({
@@ -217,8 +329,11 @@ export async function POST(req: NextRequest) {
         lessonTitle: lesson.title,
         desiredCount,
         deckTitle,
+        usedLessonText: hasLessonText,
+        sourceFileNames: prepared.map((p) => p.displayName),
       },
       raw_output: draft as unknown as Record<string, unknown>,
+      source_file_refs: uploaded.map((u) => u.fileUri),
       model_used: modelUsed,
       tokens_used: tokensIn + tokensOut,
     })
@@ -243,7 +358,7 @@ export async function POST(req: NextRequest) {
 
   const generationId = (gen as { id: string }).id;
 
-  // 10. Persist deck + cards
+  // 11. Persist deck + cards
   let result: { deckId: string; insertedCount: number };
   try {
     result = await createFlashcardDeckWithCards({
@@ -269,7 +384,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 11. Log success
+  // 12. Log success
   await logUsage(supabase, {
     userId: user.id,
     feature: 'flashcards',

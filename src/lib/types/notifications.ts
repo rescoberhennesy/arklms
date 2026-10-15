@@ -111,10 +111,6 @@ export const NOTIFICATION_DISPLAY: Record<NotificationType, NotificationDisplayM
     iconClassName: 'text-rose-600 bg-rose-50',
   },
 
-  activity_published: {
-    icon: ClipboardList,
-    iconClassName: 'text-rose-600 bg-rose-50',
-  },
   // Admin watch
   account_new: {
     icon: Sparkles,

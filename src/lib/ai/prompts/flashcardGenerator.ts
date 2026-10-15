@@ -37,6 +37,8 @@ export interface FlashcardGeneratorInput {
   // Number of cards the teacher requested; AI may return fewer if the lesson
   // doesn't support that many distinct facts.
   desiredCount: number;
+  // Names of uploaded files attached to the prompt (empty = text only).
+  sourceFileNames?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -47,8 +49,9 @@ export const FLASHCARD_GENERATOR_SYSTEM_INSTRUCTION = `
 You are an instructional designer creating study flashcards for Philippine
 senior high school students (Grades 11–12).
 
-INPUT: a lesson title and its body content (markdown). You will produce
-a JSON list of front/back card pairs.
+INPUT: a lesson title, plus the lesson body (markdown) and/or attached
+source files (PDF/DOCX). Treat the body and the files together as the
+source material. You will produce a JSON list of front/back card pairs.
 
 CARD RULES:
 - Front: a question, term, concept, or prompt. Short (max ~120 characters).
@@ -60,8 +63,9 @@ CARD RULES:
   formulas, line breaks. No headings, no images, no tables.
 
 CONTENT RULES:
-- Cards must be GROUNDED in the lesson body. Do not invent facts the lesson
-  doesn't contain. Do not add outside knowledge.
+- Cards must be GROUNDED in the source material (lesson body and/or attached
+  files). Do not invent facts the source doesn't contain. Do not add outside
+  knowledge.
 - Cover the most important concepts first. If the lesson defines terms,
   make definition cards. If it lists steps or functions, make recall cards
   ("What is step 3?"). If it has formulas, make formula cards.
@@ -122,23 +126,35 @@ export const FLASHCARD_GENERATOR_RESPONSE_SCHEMA = {
 export function buildFlashcardGeneratorUserPrompt(
   input: FlashcardGeneratorInput,
 ): string {
-  const { lessonTitle, lessonBody, desiredCount } = input;
-  return `
-Generate flashcards from this lesson per the system instructions.
+  const { lessonTitle, lessonBody, desiredCount, sourceFileNames = [] } = input;
+  const hasBody = lessonBody.trim().length > 0;
 
-LESSON TITLE: ${lessonTitle}
-DESIRED CARD COUNT: ${desiredCount}
+  const lines: string[] = [
+    'Generate flashcards from the source material per the system instructions.',
+    '',
+    `LESSON TITLE: ${lessonTitle}`,
+    `DESIRED CARD COUNT: ${desiredCount}`,
+  ];
 
-LESSON BODY (markdown):
----
-${lessonBody}
----
+  if (sourceFileNames.length > 0) {
+    lines.push(
+      '',
+      `ATTACHED SOURCE FILES: ${sourceFileNames.join(', ')}`,
+      'Use the attached files as the main source material.',
+    );
+  }
 
-Reply ONLY with JSON matching the schema. The cards array should contain
-${desiredCount} cards if the lesson supports it; fewer is acceptable.
-`.trim();
+  if (hasBody) {
+    lines.push('', 'LESSON BODY (markdown):', '---', lessonBody, '---');
+  }
+
+  lines.push(
+    '',
+    `Reply ONLY with JSON matching the schema. The cards array should contain ${desiredCount} cards if the source material supports it; fewer is acceptable.`,
+  );
+
+  return lines.join('\n');
 }
-
 // ---------------------------------------------------------------------------
 // Runtime validator + cleanup
 // ---------------------------------------------------------------------------

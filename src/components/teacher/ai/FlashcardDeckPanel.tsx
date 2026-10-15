@@ -18,6 +18,8 @@ import {
   Plus,
   Pencil,
   Check,
+  Paperclip,
+  FileText,
   X,
   ChevronDown,
   ChevronRight,
@@ -33,6 +35,8 @@ import {
   type FlashcardDeckView,
 } from '@/lib/actions/flashcards';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
+import InlineMarkdown from '@/components/shared/InlineMarkdown';
+import MarkdownTextarea from '@/components/shared/MarkdownTextarea';
 
 interface FlashcardDeckPanelProps {
   lessonId: string;
@@ -364,18 +368,16 @@ function CardList({
       {adding ? (
         <div className="rounded-md border border-purple-200 bg-purple-50/30 p-2">
           <div className="mb-2 grid gap-2 sm:grid-cols-2">
-            <textarea
+                        <MarkdownTextarea
               value={addFront}
-              onChange={(e) => setAddFront(e.target.value)}
+              onChange={setAddFront}
               placeholder="Front (question / term)"
-              className="rounded border border-gray-200 px-2 py-1 text-sm focus:border-purple-500 focus:outline-none"
               rows={2}
             />
-            <textarea
+                        <MarkdownTextarea
               value={addBack}
-              onChange={(e) => setAddBack(e.target.value)}
+              onChange={setAddBack}
               placeholder="Back (answer)"
-              className="rounded border border-gray-200 px-2 py-1 text-sm focus:border-purple-500 focus:outline-none"
               rows={2}
             />
           </div>
@@ -465,16 +467,16 @@ function CardEditor({
     return (
       <div className="rounded-md border border-purple-200 bg-purple-50/30 p-2">
         <div className="mb-2 grid gap-2 sm:grid-cols-2">
-          <textarea
+                    <MarkdownTextarea
             value={front}
-            onChange={(e) => setFront(e.target.value)}
-            className="rounded border border-gray-200 px-2 py-1 text-sm focus:border-purple-500 focus:outline-none"
+            onChange={setFront}
+            placeholder="Front (question / term)"
             rows={2}
           />
-          <textarea
+                    <MarkdownTextarea
             value={back}
-            onChange={(e) => setBack(e.target.value)}
-            className="rounded border border-gray-200 px-2 py-1 text-sm focus:border-purple-500 focus:outline-none"
+            onChange={setBack}
+            placeholder="Back (answer)"
             rows={2}
           />
         </div>
@@ -516,11 +518,11 @@ function CardEditor({
       <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-2">
         <p className="text-sm text-gray-900">
           <span className="text-xs font-semibold text-purple-700">Front: </span>
-          {card.front}
+          <InlineMarkdown text={card.front} />
         </p>
         <p className="text-sm text-gray-700">
           <span className="text-xs font-semibold text-purple-700">Back: </span>
-          {card.back}
+          <InlineMarkdown text={card.back} />
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
@@ -550,6 +552,12 @@ function CardEditor({
 // AI generator modal
 // ===========================================================================
 
+const MAX_SOURCE_FILES = 5;
+const MAX_SOURCE_FILE_MB = 20;
+const MIN_CARDS = 3;
+const MAX_CARDS = 20;
+const DEFAULT_CARDS = 10;
+
 function AIFlashcardGeneratorModal({
   open,
   lessonId,
@@ -562,7 +570,13 @@ function AIFlashcardGeneratorModal({
   onGenerated: () => void;
 }) {
   const [title, setTitle] = useState('Flashcards');
-  const [desiredCount, setDesiredCount] = useState(10);
+    const [countInput, setCountInput] = useState(String(DEFAULT_CARDS));
+  const parsedCount = Number(countInput);
+  const countValid =
+    Number.isInteger(parsedCount) &&
+    parsedCount >= MIN_CARDS &&
+    parsedCount <= MAX_CARDS;
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -573,12 +587,41 @@ function AIFlashcardGeneratorModal({
 
   function resetAndClose() {
     setTitle('Flashcards');
-    setDesiredCount(10);
+    setCountInput(String(DEFAULT_CARDS));
+    setFiles([]);
     setLoading(false);
     setErrorMsg(null);
     setResult(null);
     setAiDecline(null);
     onClose();
+  }
+
+  function addFiles(list: FileList | null) {
+    if (!list) return;
+    setErrorMsg(null);
+    const picked: File[] = [];
+    for (const f of Array.from(list)) {
+      if (!/\.(pdf|docx)$/i.test(f.name)) {
+        setErrorMsg(`${f.name}: only PDF and DOCX files are supported.`);
+        continue;
+      }
+      if (f.size > MAX_SOURCE_FILE_MB * 1024 * 1024) {
+        setErrorMsg(`${f.name} is too large (max ${MAX_SOURCE_FILE_MB} MB).`);
+        continue;
+      }
+      picked.push(f);
+    }
+    setFiles((prev) => {
+      const merged = [...prev, ...picked];
+      if (merged.length > MAX_SOURCE_FILES) {
+        setErrorMsg(`You can upload at most ${MAX_SOURCE_FILES} files.`);
+      }
+      return merged.slice(0, MAX_SOURCE_FILES);
+    });
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleGenerate() {
@@ -587,20 +630,34 @@ function AIFlashcardGeneratorModal({
     setResult(null);
     setAiDecline(null);
     try {
+      const form = new FormData();
+      form.append('lessonId', lessonId);
+      form.append('desiredCount', String(parsedCount));
+      form.append('title', title);
+      for (const f of files) form.append('files', f);
+
+      // No Content-Type header: the browser sets the multipart boundary.
       const res = await fetch('/api/ai/flashcards/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonId, desiredCount, title }),
+        body: form,
       });
-      const json = await res.json();
+
+      let json: Record<string, unknown> = {};
+      try {
+        json = await res.json();
+      } catch {
+        setErrorMsg(`Server returned an unexpected response (${res.status}).`);
+        return;
+      }
+
       if (!res.ok) {
-        setErrorMsg(json.error || 'Failed to generate flashcards.');
+        setErrorMsg((json.error as string) || 'Failed to generate flashcards.');
       } else if (json.ok === false && json.errorMessage) {
-        setAiDecline(json.errorMessage);
+        setAiDecline(json.errorMessage as string);
       } else {
         setResult({
-          insertedCount: json.insertedCount,
-          sourceNote: json.sourceNote ?? null,
+          insertedCount: Number(json.insertedCount) || 0,
+          sourceNote: (json.sourceNote as string | null) ?? null,
         });
         onGenerated();
       }
@@ -613,6 +670,8 @@ function AIFlashcardGeneratorModal({
 
   if (!open) return null;
 
+  const atFileLimit = files.length >= MAX_SOURCE_FILES;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
@@ -624,7 +683,8 @@ function AIFlashcardGeneratorModal({
           <button
             type="button"
             onClick={resetAndClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            disabled={loading}
+            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -680,24 +740,96 @@ function AIFlashcardGeneratorModal({
                   className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none disabled:opacity-60"
                 />
               </div>
-              <div>
+
+                            <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Number of cards
+                  Number of cards{' '}
+                  <span className="font-normal text-gray-400">
+                    ({MIN_CARDS}–{MAX_CARDS})
+                  </span>
                 </label>
                 <input
                   type="number"
-                  min={3}
-                  max={20}
+                  inputMode="numeric"
+                  min={MIN_CARDS}
+                  max={MAX_CARDS}
                   step={1}
-                  value={desiredCount}
-                  onChange={(e) =>
-                    setDesiredCount(Math.max(3, Math.min(20, Number(e.target.value) || 10)))
-                  }
+                  value={countInput}
+                  onChange={(e) => setCountInput(e.target.value)}
                   disabled={loading}
-                  className="w-32 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none disabled:opacity-60"
+                  className={`w-32 rounded-md border px-3 py-2 text-sm focus:outline-none disabled:opacity-60 ${
+                    countValid
+                      ? 'border-gray-200 focus:border-purple-500'
+                      : 'border-red-300 focus:border-red-500'
+                  }`}
                 />
+                <p
+                  className={`mt-1 text-xs ${
+                    countValid ? 'text-gray-500' : 'text-red-600'
+                  }`}
+                >
+                  {countValid
+                    ? `Choose ${MIN_CARDS} to ${MAX_CARDS} cards. AI may return fewer if the source doesn't support that many.`
+                    : `Enter a whole number from ${MIN_CARDS} to ${MAX_CARDS}.`}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Source files{' '}
+                  <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <label
+                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-600 hover:border-purple-400 hover:bg-purple-50 ${
+                    loading || atFileLimit ? 'pointer-events-none opacity-60' : ''
+                  }`}
+                >
+                  <Paperclip className="h-4 w-4" />
+                  {atFileLimit
+                    ? `Maximum of ${MAX_SOURCE_FILES} files`
+                    : `Upload PDF or DOCX (up to ${MAX_SOURCE_FILES}, ${MAX_SOURCE_FILE_MB} MB each)`}
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    disabled={loading || atFileLimit}
+                    onChange={(e) => {
+                      addFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+
+                {files.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {files.map((f, i) => (
+                      <li
+                        key={`${f.name}-${i}`}
+                        className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1 text-xs"
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+                        <span className="flex-1 truncate text-gray-700">{f.name}</span>
+                        <span className="shrink-0 text-gray-400">
+                          {(f.size / 1024 / 1024).toFixed(1)} MB
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          disabled={loading}
+                          className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                          aria-label={`Remove ${f.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 <p className="mt-1 text-xs text-gray-500">
-                  AI may return fewer cards if the lesson doesn&apos;t support that many.
+                  With files, cards are made from the files (plus the lesson
+                  text, if any). Without files, the lesson text is used.
                 </p>
               </div>
 
@@ -710,13 +842,13 @@ function AIFlashcardGeneratorModal({
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={loading}
+                disabled={loading || !countValid}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
               >
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Generating...
+                    {files.length > 0 ? 'Reading files & generating...' : 'Generating...'}
                   </>
                 ) : (
                   <>

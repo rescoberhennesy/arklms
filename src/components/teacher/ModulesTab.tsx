@@ -273,6 +273,7 @@ function AddModuleForm({ classId, term, onError, onCancel, onAdded }: AddModuleF
           display_order: Number.MAX_SAFE_INTEGER,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          is_hidden: false,
           lessons: [],
         });
         router.refresh();

@@ -16,8 +16,9 @@ export type ModuleSummary = {
   class_id: string;
   title: string;
   description: string;
-  term: ModuleTerm;
+   term: ModuleTerm;
   display_order: number;
+  is_hidden: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -71,7 +72,7 @@ export async function listModulesWithLessons(
 
   const { data: modules, error: modErr } = await supabase
     .from('class_modules')
-    .select('id, class_id, title, description, term, display_order, created_at, updated_at')
+    .select('id, class_id, title, description, term, display_order, is_hidden, created_at, updated_at')
     .eq('class_id', classId)
     .order('term', { ascending: true })
     .order('display_order', { ascending: true });
@@ -112,7 +113,7 @@ export async function getModuleWithLessons(
 
   const { data: mod, error: modErr } = await supabase
     .from('class_modules')
-    .select('id, class_id, title, description, term, display_order, created_at, updated_at')
+    .select('id, class_id, title, description, term, display_order, is_hidden, created_at, updated_at')
     .eq('id', moduleId)
     .single();
 
