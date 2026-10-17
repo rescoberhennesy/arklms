@@ -18,8 +18,15 @@ interface Props {
 const KIND_LABELS: Record<AIGeneratableKind, string> = {
   mc_single: 'Multiple choice (single answer)',
   mc_multi: 'Multiple choice (multiple answers)',
-  true_false: 'True / False',
-  short_answer: 'Short answer',
+  true_false: 'True or False',
+  short_answer: 'Identification',
+  essay: 'Essay',
+  matching: 'Matching',
+};
+
+const KIND_HINTS: Partial<Record<AIGeneratableKind, string>> = {
+  essay: 'Graded by you',
+  matching: '4–6 pairs each',
 };
 
 const KIND_ORDER: AIGeneratableKind[] = [
@@ -27,6 +34,8 @@ const KIND_ORDER: AIGeneratableKind[] = [
   'mc_multi',
   'true_false',
   'short_answer',
+  'essay',
+  'matching',
 ];
 
 const MAX_FILES = 3;
@@ -40,6 +49,7 @@ export default function AIQuizGenerator({
   classId: _classId,
   onGenerated,
 }: Props) {
+  const [mode, setMode] = useState<'generate' | 'import'>('generate');
   const [files, setFiles] = useState<File[]>([]);
   const [mix, setMix] = useState<QuestionMix>({
     mc_single: 5,
@@ -58,6 +68,7 @@ export default function AIQuizGenerator({
   // Reset state when closed
   useEffect(() => {
     if (!open) {
+      setMode('generate');
       setFiles([]);
       setMix({ mc_single: 5, true_false: 3 });
       setError(null);
@@ -88,11 +99,10 @@ export default function AIQuizGenerator({
   }
 
   const totalRequested = Object.values(mix).reduce((a, b) => a + (b ?? 0), 0);
-  const canSubmit =
-    totalRequested > 0 &&
-    totalRequested <= 25 &&
+    const canSubmit =
     files.length > 0 &&
-    !pending;
+    !pending &&
+    (mode === 'import' || (totalRequested > 0 && totalRequested <= 25));
 
   function handleSubmit() {
     setError(null);
@@ -103,7 +113,8 @@ export default function AIQuizGenerator({
       try {
         const fd = new FormData();
         fd.set('activityId', activityId);
-        fd.set('mix', JSON.stringify(mix));
+        fd.set('mode', mode);
+        fd.set('mix', JSON.stringify(mode === 'import' ? {} : mix));
         for (const f of files) fd.append('files', f);
 
         const res = await fetch('/api/ai/quiz/generate', {
@@ -159,9 +170,37 @@ export default function AIQuizGenerator({
             <ResultView result={result} />
           ) : (
             <>
+                            <div
+                role="tablist"
+                aria-label="What do you want to do?"
+                className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1"
+              >
+                {(
+                  [
+                    ['generate', 'Create new questions'],
+                    ['import', 'Import my existing quiz'],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === m}
+                    onClick={() => setMode(m)}
+                    disabled={pending}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+                      mode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <p className="text-sm text-gray-600">
-                Upload a file as the source. AI will draft questions you can
-                review and edit before publishing.
+                {mode === 'import'
+                  ? 'Upload the quiz you already made. The AI copies your questions word for word, keeps their order, and uses your answer key if the file has one. You review everything before publishing.'
+                  : 'Upload a file as the source. AI will draft questions you can review and edit before publishing.'}
               </p>
 
               <Section title="Source content" icon={<BookOpen className="h-4 w-4" />}>
@@ -192,17 +231,24 @@ export default function AIQuizGenerator({
                 )}
               </Section>
 
+                            {mode === 'generate' && (
               <Section title="Question mix" icon={<Sparkles className="h-4 w-4" />}>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {KIND_ORDER.map((k) => (
                     <div key={k} className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
-                      <span className="text-sm text-gray-700">{KIND_LABELS[k]}</span>
+                        <span className="text-sm text-gray-700">
+                        {KIND_LABELS[k]}
+                        {KIND_HINTS[k] && (
+                          <span className="block text-[11px] text-gray-400">{KIND_HINTS[k]}</span>
+                        )}
+                      </span>
                       <input
-                        type="number"
-                        min={0}
-                        max={20}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={2}
+                        aria-label={`Number of ${KIND_LABELS[k]} questions`}
                         value={mix[k] ?? 0}
-                        onChange={(e) => updateMix(k, e.target.value)}
+                        onChange={(e) => updateMix(k, e.target.value.replace(/\D/g, ''))}
                         disabled={pending}
                         className="w-16 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
                       />
@@ -211,9 +257,21 @@ export default function AIQuizGenerator({
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
                   Total: <span className="font-semibold">{totalRequested}</span> question(s).
-                  Max 25.
+                                   Max 25.
                 </p>
               </Section>
+              )}
+
+              {mode === 'import' && (
+                <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs text-blue-900">
+                  <p className="font-semibold">Tips for a clean import</p>
+                  <ul className="mt-1 list-inside list-disc space-y-0.5">
+                    <li>Typed PDFs or Word files work best. Blurry scans or handwriting may not import.</li>
+                    <li>Include your answer key in the file so answers are copied, not guessed.</li>
+                    <li>Up to {50} items per import.</li>
+                  </ul>
+                </div>
+              )}
 
               {error && (
                 <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -246,7 +304,7 @@ export default function AIQuizGenerator({
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
-              Generate
+                            {mode === 'import' ? 'Import questions' : 'Generate'}
             </button>
           )}
         </div>

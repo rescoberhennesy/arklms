@@ -1,10 +1,10 @@
-
 'use client';
 
 import { useState, useTransition } from 'react';
 import { Check, X, Trash2, UserPlus } from 'lucide-react';
 import { decideJoinRequest, removeEnrollment } from '@/lib/actions/enrollments';
 import type { PendingJoinRequest } from '@/types/class';
+import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 
 interface RosterEntry {
   student_id: string;
@@ -20,6 +20,12 @@ interface StudentsTabProps {
   initialPending: PendingJoinRequest[];
   initialRoster: RosterEntry[];
 }
+
+// What the confirmation dialog is currently asking about
+type PendingConfirm =
+  | { kind: 'remove'; studentId: string; name: string }
+  | { kind: 'approve'; request: PendingJoinRequest }
+  | { kind: 'reject'; request: PendingJoinRequest };
 
 // Relative-time formatter for last_active_at. Mirrors the granularity
 // used by the notification bell: minutes -> hours -> days -> date.
@@ -52,6 +58,42 @@ function activityDotClass(iso: string | null): string {
   return 'bg-gray-300';
 }
 
+function confirmCopy(c: PendingConfirm | null): {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  destructive: boolean;
+} {
+  if (!c) return { title: '', message: '', confirmLabel: '', destructive: false };
+
+  if (c.kind === 'remove') {
+    return {
+      title: `Remove ${c.name} from this class?`,
+      message:
+        "They'll lose access to this class's modules, activities and quizzes. Their submissions and grades are kept, and they can rejoin with the class code.",
+      confirmLabel: 'Remove student',
+      destructive: true,
+    };
+  }
+
+  const name = c.request.student_full_name ?? 'this student';
+  if (c.kind === 'reject') {
+    return {
+      title: `Reject ${name}'s request?`,
+      message: "They won't be added to the class. They can send a new request later if needed.",
+      confirmLabel: 'Reject request',
+      destructive: true,
+    };
+  }
+
+  return {
+    title: `Approve ${name}?`,
+    message: `${c.request.student_email ?? 'This student'} will be added to the class and can see everything you've published.`,
+    confirmLabel: 'Approve',
+    destructive: false,
+  };
+}
+
 export function StudentsTab({
   classId,
   initialPending,
@@ -61,6 +103,7 @@ export function StudentsTab({
   const [roster, setRoster] = useState(initialRoster);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [, startTransition] = useTransition();
 
   function handleDecide(request: PendingJoinRequest, approve: boolean) {
@@ -107,6 +150,17 @@ export function StudentsTab({
     });
   }
 
+  function handleConfirmed() {
+    if (!confirm) return;
+    if (confirm.kind === 'remove') {
+      handleRemove(confirm.studentId);
+    } else {
+      handleDecide(confirm.request, confirm.kind === 'approve');
+    }
+  }
+
+  const copy = confirmCopy(confirm);
+
   return (
     <div className="space-y-6">
       {error && (
@@ -138,7 +192,7 @@ export function StudentsTab({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleDecide(req, true)}
+                    onClick={() => setConfirm({ kind: 'approve', request: req })}
                     disabled={busyId === req.id}
                     className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                   >
@@ -147,7 +201,7 @@ export function StudentsTab({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDecide(req, false)}
+                    onClick={() => setConfirm({ kind: 'reject', request: req })}
                     disabled={busyId === req.id}
                     className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
@@ -212,7 +266,13 @@ export function StudentsTab({
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
-                        onClick={() => handleRemove(s.student_id)}
+                        onClick={() =>
+                          setConfirm({
+                            kind: 'remove',
+                            studentId: s.student_id,
+                            name: s.full_name ?? s.email ?? 'this student',
+                          })
+                        }
                         disabled={busyId === s.student_id}
                         className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
@@ -227,6 +287,16 @@ export function StudentsTab({
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={copy.title}
+        message={copy.message}
+        confirmLabel={copy.confirmLabel}
+        destructive={copy.destructive}
+        onConfirm={handleConfirmed}
+        onClose={() => setConfirm(null)}
+      />
     </div>
   );
 }

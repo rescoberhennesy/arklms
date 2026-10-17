@@ -10,6 +10,7 @@ export type AIFeature =
   | "announcement"
   | "lesson_analysis"
   | "flashcards"
+  | 'activity_prompt'
   | "ping"
   | "practice";  // ← note the leading |
 export type GenerationStatus = "draft" | "edited" | "published" | "discarded";

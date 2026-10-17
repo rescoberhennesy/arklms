@@ -7,26 +7,16 @@ import {
   Trash2,
   Save,
   Loader2,
-  Tag,
   Eye,
   EyeOff,
-  Calendar,
-  FileDown,
-  ChevronDown,
-  Award,
   Plus,
   Lock,
-  Timer,
-  Shuffle,
-  CheckCircle2,
   Sparkles,
-  ListChecks,
-  Clock,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
-import QuestionEditor from '@/components/teacher/QuestionEditor';
+import QuestionRow, { QuestionEditModal } from '@/components/teacher/QuestionEditor';
 import AIQuizGenerator from '@/components/teacher/ai/AIQuizGenerator';
 import QuizAttemptsPanel from '@/components/teacher/QuizAttemptsPanel';
 import {
@@ -72,6 +62,22 @@ const TERM_ACCENTS: Record<ModuleTerm, string> = {
   prefinal: 'border-amber-200 text-amber-800 bg-amber-50',
   final: 'border-rose-200 text-rose-800 bg-rose-50',
 };
+
+function toRoman(n: number): string {
+  const map: [number, string][] = [
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let out = '';
+  for (const [v, s] of map) {
+    while (n >= v) {
+      out += s;
+      n -= v;
+    }
+  }
+  return out;
+}
+
+const MAX_BULK_ITEMS = 20;
 
 function isoToLocal(iso: string): string {
   const d = new Date(iso);
@@ -176,8 +182,10 @@ export default function QuizEditor({
     allowLate !== savedAllowLate;
 
   const [addingKind, setAddingKind] = useState<QuestionKind | ''>('');
+  const [addCount, setAddCount] = useState('5');
+  const [addProgress, setAddProgress] = useState<string | null>(null);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
   const [aiGenOpen, setAiGenOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
 
@@ -394,28 +402,69 @@ export default function QuizEditor({
     router.push(`/teacher/classes/${classId}?tab=activities`);
   }
 
-  function handleAddQuestion() {
-    if (!addingKind) return;
-    const kind = addingKind;
-    setError(null);
+    function addQuestions(kind: QuestionKind, count: number) {
+    const n = Math.min(MAX_BULK_ITEMS, Math.max(1, count));
+        setError(null);
+    const startIndex = quizView.questions.length;
     startTransition(async () => {
+      let created = 0;
       try {
-        await createQuizQuestion({
-          activityId: activity.id,
-          questionKind: kind,
-        });
+        // One at a time so each gets the next display_order
+        for (let i = 0; i < n; i++) {
+          setAddProgress(n > 1 ? `Adding ${i + 1} of ${n}…` : 'Adding…');
+          await createQuizQuestion({ activityId: activity.id, questionKind: kind });
+          created++;
+        }
         setAddingKind('');
+        setAddCount('5');
+      } catch (e) {
+        setError(
+          (e instanceof Error ? e.message : 'Failed to add questions.') +
+            (created > 0 ? ` (${created} of ${n} were added)` : ''),
+        );
+            } finally {
+        setAddProgress(null);
         await refetchQuizView();
         router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to add question.');
+        if (created > 0) setEditIndex(startIndex);
       }
     });
   }
 
-  const totalPoints = quizView.questions.reduce((acc, q) => acc + q.points, 0);
+  function handleAddQuestion() {
+    if (!addingKind) return;
+    addQuestions(addingKind, Number(addCount) || 1);
+  }
+
+    const totalPoints = quizView.questions.reduce((acc, q) => acc + q.points, 0);
+
+  // Consecutive questions of the same kind form one "Test" part.
+  const testParts: {
+    kind: QuestionKind;
+    items: { q: (typeof quizView.questions)[number]; index: number }[];
+    points: number;
+  }[] = [];
+  quizView.questions.forEach((q, index) => {
+    const last = testParts[testParts.length - 1];
+    if (last && last.kind === q.questionKind) {
+      last.items.push({ q, index });
+      last.points += q.points;
+    } else {
+      testParts.push({ kind: q.questionKind, items: [{ q, index }], points: q.points });
+    }
+  });
   const questionCount = quizView.questions.length;
   const locked = quizView.questionsLocked;
+
+    const dueShort = new Date(activity.dueAt).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  const inputClass =
+    'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60';
 
   return (
     <div className="space-y-6">
@@ -425,9 +474,29 @@ export default function QuizEditor({
         </div>
       )}
 
-      {/* Title bar */}
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
+      {/* ============================== HEADER ============================== */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-blue-700">
+              Quiz
+            </span>
+            <span
+              className={`rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${TERM_ACCENTS[activity.term]}`}
+            >
+              {MODULE_TERM_LABELS[activity.term]}
+            </span>
+            {activity.published ? (
+              <span className="rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                Published
+              </span>
+            ) : (
+              <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                Draft · hidden from students
+              </span>
+            )}
+          </div>
+
           {titleEditing ? (
             <input
               type="text"
@@ -447,12 +516,7 @@ export default function QuizEditor({
             />
           ) : (
             <div className="flex items-center gap-2">
-              <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
-                Quiz
-              </span>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {activity.title}
-              </h1>
+              <h1 className="text-2xl font-bold text-gray-900">{activity.title}</h1>
               <button
                 type="button"
                 onClick={() => setTitleEditing(true)}
@@ -464,120 +528,77 @@ export default function QuizEditor({
               </button>
             </div>
           )}
+
+          <p className="text-sm text-gray-600">
+            Due {dueShort} · {questionCount} question{questionCount === 1 ? '' : 's'} ·{' '}
+            {totalPoints} points
+            {quizView.config.timeLimitMinutes !== null &&
+              ` · ${quizView.config.timeLimitMinutes} min limit`}
+            {quizView.config.allowLate && ' · late allowed'}
+            {quizView.attemptCount > 0 &&
+              ` · ${quizView.attemptCount} attempt${quizView.attemptCount === 1 ? '' : 's'} so far`}
+          </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${TERM_ACCENTS[activity.term]}`}
-          >
-            <Tag className="h-3 w-3" />
-            {MODULE_TERM_LABELS[activity.term]}
-          </span>
-          <select
-            value={activity.term}
-            onChange={(e) => handleChangeTerm(e.target.value as ModuleTerm)}
-            disabled={isPending}
-            aria-label="Change term"
-            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            {MODULE_TERMS.map((t) => (
-              <option key={t} value={t}>
-                {MODULE_TERM_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={handleTogglePublish}
-            disabled={isPending}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
-              activity.published
-                ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            } disabled:opacity-50`}
-          >
-            {activity.published ? (
-              <>
-                <Eye className="h-3 w-3" />
-                Published
-              </>
-            ) : (
-              <>
-                <EyeOff className="h-3 w-3" />
-                Draft — click to publish
-              </>
-            )}
-          </button>
+          {activity.published ? (
+            <button
+              type="button"
+              onClick={handleTogglePublish}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <EyeOff className="h-4 w-4" />
+              Unpublish
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleTogglePublish}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+            >
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+              Publish
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Quick stats */}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
-        <span className="inline-flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          Due {new Date(activity.dueAt).toLocaleString()}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Award className="h-3 w-3" />
-          {totalPoints} pts total
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <ListChecks className="h-3 w-3" />
-          {questionCount} question{questionCount === 1 ? '' : 's'}
-        </span>
-        {quizView.config.timeLimitMinutes !== null && (
-          <span className="inline-flex items-center gap-1">
-            <Timer className="h-3 w-3" />
-            {quizView.config.timeLimitMinutes} min
-          </span>
-        )}
-        {quizView.config.allowLate && (
-          <span className="inline-flex items-center gap-1 text-amber-700">
-            <Clock className="h-3 w-3" />
-            Late submissions allowed
-          </span>
-        )}
-        {quizView.attemptCount > 0 && (
-          <span>
-            {quizView.attemptCount} attempt
-            {quizView.attemptCount === 1 ? '' : 's'} so far
-          </span>
-        )}
-      </div>
-
       {locked && (
-        <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <Lock className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div>
-            <p className="font-medium">Questions are locked</p>
+            <p className="font-semibold">Questions are locked</p>
             <p className="mt-0.5 text-xs text-amber-800">
-              At least one student has started an attempt. You can still
-              edit the title, description, due date, and time limit, but
-              the questions themselves are now read-only.
+              A student has already started this quiz. You can still edit the
+              title, instructions, due date and settings, but not the questions.
             </p>
           </div>
         </div>
       )}
 
+      {/* ============================== TWO COLUMNS ============================== */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* LEFT */}
         <div className="space-y-6 lg:col-span-2">
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Instructions
-              </h2>
-              {descEditing ? (
+          {/* Instructions */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 className="text-[15px] font-bold text-gray-900">Instructions</h2>
+                <p className="text-xs text-gray-500">What students read before starting the quiz.</p>
+              </div>
+              {descEditing && (
                 <div className="flex items-center gap-2 text-xs">
-                  {isDescDirty ? (
-                    <span className="text-amber-600">Unsaved changes</span>
-                  ) : (
-                    <span className="text-gray-400">No changes</span>
-                  )}
+                  <span className={isDescDirty ? 'text-amber-600' : 'text-gray-400'}>
+                    {isDescDirty ? 'Unsaved changes' : 'No changes'}
+                  </span>
                   <button
                     type="button"
                     onClick={handleCancelDescription}
                     disabled={isPending}
-                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -585,25 +606,12 @@ export default function QuizEditor({
                     type="button"
                     onClick={handleSaveDescription}
                     disabled={isPending || !isDescDirty}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isPending ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Save className="h-3 w-3" />
-                    )}
+                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                     Save
                   </button>
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setDescEditing(true)}
-                  className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                  aria-label="Edit instructions"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
               )}
             </div>
 
@@ -611,135 +619,169 @@ export default function QuizEditor({
               <MarkdownEditor
                 value={instructions}
                 onChange={setInstructions}
-                placeholder="Instructions students see before starting the quiz. Markdown supported."
+                placeholder="e.g. 'Answer all items. You have one attempt. Read each question carefully.'"
                 rows={6}
                 disabled={isPending}
               />
             ) : savedInstructions.trim() ? (
-              <MarkdownContent body={savedInstructions} />
+              <button
+                type="button"
+                onClick={() => setDescEditing(true)}
+                className="block w-full cursor-text rounded-lg px-2 py-2 text-left transition hover:bg-gray-50"
+                aria-label="Edit instructions"
+              >
+                <MarkdownContent body={savedInstructions} />
+              </button>
             ) : (
-              <p className="text-sm italic text-gray-400">
-                No instructions yet. Click the pencil icon to add some.
-              </p>
+              <button
+                type="button"
+                onClick={() => setDescEditing(true)}
+                className="flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50/60 px-4 py-3 text-left text-sm text-gray-600 hover:border-red-300 hover:bg-red-50/40"
+              >
+                <Plus className="h-4 w-4" />
+                Add instructions
+              </button>
             )}
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Questions
-              </h2>
-              <div className="flex items-center gap-2">
-                {false && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setExportOpen((v) => !v)}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none"
-                    >
-                      <FileDown className="h-3.5 w-3.5" />
-                      Export quiz
-                      <ChevronDown className="h-3 w-3 opacity-60" />
-                    </button>
-                    {exportOpen && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-10"
-                          onClick={() => setExportOpen(false)}
-                        />
-                        <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                          <a
-                            href={`/api/ai/quiz/export?activityId=${activity.id}&variant=student`}
-                            download
-                            onClick={() => setExportOpen(false)}
-                            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <FileDown className="h-4 w-4 text-gray-500" />
-                            Student copy (PDF)
-                          </a>
-                          <a
-                            href={`/api/ai/quiz/export?activityId=${activity.id}&variant=teacher`}
-                            download
-                            onClick={() => setExportOpen(false)}
-                            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <FileDown className="h-4 w-4 text-red-500" />
-                            Teacher copy with answers (PDF)
-                          </a>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {!locked && (
-                  <button
-                    type="button"
-                    onClick={() => setAiGenOpen(true)}
-                    disabled={isPending}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Generate with AI
-                  </button>
-                )}
+          {/* Questions */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 className="text-[15px] font-bold text-gray-900">Questions</h2>
+                <p className="text-xs text-gray-500">
+                  {questionCount === 0
+                    ? 'Add questions manually or generate them with AI.'
+                    : `${questionCount} question${questionCount === 1 ? '' : 's'} · ${totalPoints} points total`}
+                </p>
               </div>
+              {!locked && (
+                <button
+                  type="button"
+                  onClick={() => setAiGenOpen(true)}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Generate with AI
+                </button>
+              )}
             </div>
 
-            {quizView.questions.length === 0 ? (
-              <p className="text-sm italic text-gray-400">
-                No questions yet. Add one below.
-              </p>
+                        {questionCount === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50/60 px-4 py-6 text-center text-sm text-gray-500">
+                No questions yet. Choose a type and how many items below, or use{' '}
+                <span className="font-semibold text-purple-700">Generate with AI</span>.
+              </div>
             ) : (
-              <ul className="space-y-3">
-                {quizView.questions.map((q, idx) => (
-                  <li key={q.id}>
-                    <QuestionEditor
-                      question={q}
-                      index={idx}
-                      locked={locked}
-                      onChanged={refetchQuizView}
-                      onError={setError}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-5">
+                {testParts.map((part, pi) => {
+                  const isLastPart = pi === testParts.length - 1;
+                  const label = QUESTION_KIND_LABELS[part.kind];
+                  return (
+                    <div key={`${part.kind}-${pi}`}>
+                      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 pb-1.5">
+                        <h3 className="text-sm font-bold text-gray-900">
+                          Test {toRoman(pi + 1)} – {label}
+                        </h3>
+                        <span className="text-xs text-gray-500">
+                          {part.items.length} item{part.items.length === 1 ? '' : 's'} ·{' '}
+                          {part.points} pt{part.points === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <ul className="space-y-2">
+                        {part.items.map(({ q, index }) => (
+                          <li key={q.id}>
+                              <QuestionRow
+                              question={q}
+                              index={index}
+                              locked={locked}
+                              onOpen={() => setEditIndex(index)}
+                              onChanged={refetchQuizView}
+                              onError={setError}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                      {/* Only the last part can grow in place (new items go at the end) */}
+                      {isLastPart && !locked && (
+                        <button
+                          type="button"
+                          onClick={() => addQuestions(part.kind, 1)}
+                          disabled={isPending}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add 1 more {label.toLowerCase()}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {!locked && (
-              <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3">
-                <select
-                  value={addingKind}
-                  onChange={(e) =>
-                    setAddingKind(e.target.value as QuestionKind | '')
-                  }
-                  disabled={isPending}
-                  className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-                >
-                  <option value="">Choose a question type…</option>
-                  {QUESTION_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {QUESTION_KIND_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleAddQuestion}
-                  disabled={isPending || !addingKind}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="h-3.5 w-3.5" />
-                  )}
-                  Add question
-                </button>
+              <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+                <p className="mb-2 text-xs font-semibold text-gray-700">
+                  {questionCount === 0 ? 'Add the first test part' : 'Add a new test part'}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="quiz-add-kind" className="sr-only">
+                    Question type
+                  </label>
+                  <select
+                    id="quiz-add-kind"
+                    value={addingKind}
+                    onChange={(e) => setAddingKind(e.target.value as QuestionKind | '')}
+                    disabled={isPending}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                  >
+                    <option value="">Question type…</option>
+                    {QUESTION_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {QUESTION_KIND_LABELS[k]}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-1.5">
+                    <label htmlFor="quiz-add-count" className="sr-only">
+                      Number of items
+                    </label>
+                    <input
+                      id="quiz-add-count"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
+                      value={addCount}
+                      onChange={(e) => setAddCount(e.target.value.replace(/\D/g, ''))}
+                      disabled={isPending}
+                      className="w-14 rounded-lg border border-gray-200 bg-white px-2 py-2 text-center text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                    />
+                    <span className="text-sm text-gray-600">items</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddQuestion}
+                    disabled={
+                      isPending ||
+                      !addingKind ||
+                      !(Number(addCount) >= 1 && Number(addCount) <= MAX_BULK_ITEMS)
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    {addProgress ?? 'Add items'}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Creates blank items of that type (1–{MAX_BULK_ITEMS}) for you to fill in.
+                </p>
               </div>
             )}
           </section>
 
+          {/* Attachments (unchanged component) */}
           <ActivityAttachmentsPanel
             activityId={activity.id}
             classId={classId}
@@ -748,35 +790,54 @@ export default function QuizEditor({
           />
         </div>
 
+        {/* RIGHT: Quiz settings */}
         <aside className="lg:col-span-1">
-          <section className="sticky top-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Quiz settings
-              </h2>
-              {isSettingsDirty && (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-amber-600">Unsaved</span>
-                </div>
-              )}
+          <section className="sticky top-4 space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-[15px] font-bold text-gray-900">Quiz settings</h2>
+              {isSettingsDirty && <span className="text-xs text-amber-600">Unsaved</span>}
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Due date
-                </label>
-                <input
-                  type="datetime-local"
-                  value={dueLocal}
-                  onChange={(e) => setDueLocal(e.target.value)}
-                  disabled={isPending}
-                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-                />
-              </div>
+            {/* Term (saves immediately) */}
+            <div>
+              <label htmlFor="quiz-term" className="mb-1 block text-xs font-semibold text-gray-700">
+                Term
+              </label>
+              <select
+                id="quiz-term"
+                value={activity.term}
+                onChange={(e) => handleChangeTerm(e.target.value as ModuleTerm)}
+                disabled={isPending}
+                className={inputClass}
+              >
+                {MODULE_TERMS.map((t) => (
+                  <option key={t} value={t}>
+                    {MODULE_TERM_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              <div className="rounded-md border border-gray-200 p-3">
-                <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+            <div>
+              <label htmlFor="quiz-due" className="mb-1 block text-xs font-semibold text-gray-700">
+                Due date
+              </label>
+              <input
+                id="quiz-due"
+                type="datetime-local"
+                value={dueLocal}
+                onChange={(e) => setDueLocal(e.target.value)}
+                disabled={isPending}
+                className={inputClass}
+              />
+            </div>
+
+            {/* Timing */}
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Timing</p>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
                   <input
                     type="checkbox"
                     checked={hasTimeLimit}
@@ -784,30 +845,34 @@ export default function QuizEditor({
                     disabled={isPending}
                     className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
-                  <Timer className="h-4 w-4 text-gray-500" />
-                  Enforce time limit
+                  Time limit
                 </label>
-                {hasTimeLimit && (
-                  <div className="mt-2 flex items-center gap-2">
+                {hasTimeLimit ? (
+                  <div className="ml-6 mt-2 flex items-center gap-2">
+                    <label htmlFor="quiz-minutes" className="sr-only">
+                      Minutes
+                    </label>
                     <input
-                      type="number"
-                      min="1"
-                      step="1"
+                      id="quiz-minutes"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={3}
                       value={timeLimitMinutes}
-                      onChange={(e) => setTimeLimitMinutes(e.target.value)}
+                      onChange={(e) => setTimeLimitMinutes(e.target.value.replace(/\D/g, ''))}
                       disabled={isPending}
-                      className="w-24 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                      className="w-20 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
                     />
-                    <span className="text-sm text-gray-600">min</span>
+                    <span className="text-sm text-gray-600">minutes</span>
                   </div>
+                ) : (
+                  <p className="ml-6 mt-1 text-xs text-gray-500">No timer. Students finish at their own pace.</p>
                 )}
-                <p className="mt-1 text-xs text-gray-500">
-                  Auto-submit when timer hits zero. Server enforces deadline.
-                </p>
+                {hasTimeLimit && (
+                  <p className="ml-6 mt-1 text-xs text-gray-500">Auto-submits when time runs out.</p>
+                )}
               </div>
 
-              {/* NEW: Allow late for quizzes */}
-              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
                   checked={allowLate}
@@ -816,18 +881,19 @@ export default function QuizEditor({
                   className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                 />
                 <span>
-                  <span className="inline-flex items-center gap-1 font-medium">
-                    <Clock className="h-3.5 w-3.5 text-gray-500" />
-                    Allow late submissions
-                  </span>
-                  <span className="block text-xs text-gray-500">
-                    Students can start and submit after the due date. Late
-                    attempts are flagged.
-                  </span>
+                  Allow late submissions
+                  <span className="block text-xs text-gray-500">Late attempts are flagged.</span>
                 </span>
               </label>
+            </div>
 
-              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+            {/* Delivery & results */}
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                Questions &amp; results
+              </p>
+
+              <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
                   checked={shuffleQuestions}
@@ -836,17 +902,12 @@ export default function QuizEditor({
                   className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                 />
                 <span>
-                  <span className="inline-flex items-center gap-1 font-medium">
-                    <Shuffle className="h-3.5 w-3.5 text-gray-500" />
-                    Shuffle question order
-                  </span>
-                  <span className="block text-xs text-gray-500">
-                    Each student sees a different order.
-                  </span>
+                  Shuffle question order
+                  <span className="block text-xs text-gray-500">Each student sees a different order.</span>
                 </span>
               </label>
 
-              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
                   checked={autoReleaseGrade}
@@ -855,17 +916,12 @@ export default function QuizEditor({
                   className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                 />
                 <span>
-                  <span className="inline-flex items-center gap-1 font-medium">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-gray-500" />
-                    Auto-release grades
-                  </span>
-                  <span className="block text-xs text-gray-500">
-                    Students see score on submit.
-                  </span>
+                  Auto-release grades
+                  <span className="block text-xs text-gray-500">Students see their score right after submitting.</span>
                 </span>
               </label>
 
-              <label className="inline-flex items-start gap-2 text-sm text-gray-700">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
                   checked={showCorrectAnswers}
@@ -874,67 +930,60 @@ export default function QuizEditor({
                   className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                 />
                 <span>
-                  <span className="font-medium">Show correct answers</span>
-                  <span className="block text-xs text-gray-500">
-                    Reveal on the review screen after submission.
-                  </span>
+                  Show correct answers
+                  <span className="block text-xs text-gray-500">Revealed on the review screen after submitting.</span>
                 </span>
               </label>
+            </div>
 
-              {isSettingsDirty && (
-                <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
-                  <button
-                    type="button"
-                    onClick={handleCancelSettings}
-                    disabled={isPending}
-                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveSettings}
-                    disabled={isPending}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isPending ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Save className="h-3 w-3" />
-                    )}
-                    Save settings
-                  </button>
-                </div>
-              )}
+            {isSettingsDirty && (
+              <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCancelSettings}
+                  disabled={isPending}
+                  className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSettings}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                  Save settings
+                </button>
+              </div>
+            )}
+
+            {/* Delete */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-red-100 pt-4">
+              <div>
+                <p className="text-sm font-semibold text-red-800">Delete quiz</p>
+                <p className="text-xs text-gray-500">Removes all questions, attempts and answers.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
             </div>
           </section>
         </aside>
       </div>
 
-      <div className="border-t border-gray-200" aria-hidden />
-
+      {/* Attempts (unchanged) */}
       <QuizAttemptsPanel
         activityId={activity.id}
         classId={classId}
         quizTotalPoints={Number(quizView.config.quizTotalPoints ?? totalPoints)}
         initialAttempts={initialAttempts}
       />
-
-      <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">
-        <h2 className="text-sm font-semibold text-red-900">Danger zone</h2>
-        <p className="mt-1 text-xs text-red-700">
-          Deleting this quiz is permanent. All questions, attempts, and
-          responses will be removed.
-        </p>
-        <button
-          type="button"
-          onClick={() => setConfirmDelete(true)}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete quiz
-        </button>
-      </section>
 
       <ConfirmDialog
         open={confirmDelete}
@@ -953,6 +1002,15 @@ export default function QuizEditor({
         confirmLabel="Unpublish"
         onConfirm={handleConfirmUnpublish}
         onClose={() => setConfirmUnpublish(false)}
+      />
+
+        <QuestionEditModal
+        questions={quizView.questions}
+        index={editIndex}
+        locked={locked}
+        onIndexChange={setEditIndex}
+        onClose={() => setEditIndex(null)}
+        onChanged={refetchQuizView}
       />
 
       <AIQuizGenerator

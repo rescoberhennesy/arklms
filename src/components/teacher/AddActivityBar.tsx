@@ -313,13 +313,18 @@ export default function AddActivityBar({
                   <label htmlFor="act-points" className="mb-1 block text-xs font-medium text-gray-700">
                     Max points
                   </label>
-                  <input
+                    <input
                     id="act-points"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
+                    maxLength={6}
                     value={maxPoints}
-                    onChange={(e) => setMaxPoints(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value
+                        .replace(/[^\d.]/g, '')      // digits and dots only
+                        .replace(/(\..*)\./g, '$1'); // keep the first dot only
+                      setMaxPoints(v);
+                    }}
                     disabled={isPending}
                     className={inputClass}
                   />
@@ -374,14 +379,15 @@ export default function AddActivityBar({
                         <label htmlFor="act-attempts" className="text-sm text-gray-600">
                           Max attempts
                         </label>
-                        <input
+                          <input
                           id="act-attempts"
-                          type="number"
-                          min="2"
-                          max="10"
-                          step="1"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={2}
                           value={maxAttempts}
-                          onChange={(e) => setMaxAttempts(e.target.value)}
+                          onChange={(e) =>
+                            setMaxAttempts(e.target.value.replace(/\D/g, ''))
+                          }
                           disabled={isPending}
                           className="w-20 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
                         />
@@ -446,7 +452,7 @@ export default function AddActivityBar({
               className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isQuiz ? 'Create quiz (as draft)' : 'Create activity (as draft)'}
+              Continue
             </button>
           </div>
         </form>

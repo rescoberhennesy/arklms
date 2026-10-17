@@ -40,6 +40,18 @@ import {
   type PracticeQuestionConfig,  // ← add this
 } from '@/lib/types/practice';
 
+type PracticeKind = 'mc_single' | 'mc_multi' | 'true_false' | 'short_answer';
+
+/** Practice sessions are self-checked, so only auto-gradable kinds are allowed. */
+function isPracticeKind<T extends { kind: string }>(q: T): q is T & { kind: PracticeKind } {
+  return (
+    q.kind === 'mc_single' ||
+    q.kind === 'mc_multi' ||
+    q.kind === 'true_false' ||
+    q.kind === 'short_answer'
+  );
+}
+
 export const runtime = 'nodejs';
 
 // --------------------------------------------------------------------------
@@ -600,7 +612,7 @@ export async function POST(req: NextRequest) {
       modelUsed,
       tokensUsed: tokensIn + tokensOut,
 
-questions: validated.map((q) => ({
+    questions: validated.filter(isPracticeKind).map((q) => ({
         kind: q.kind,
         prompt: q.prompt,
         points: q.points,

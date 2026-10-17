@@ -402,7 +402,7 @@ export default function StudentActivityView({
       {activity.prompt.trim() && (
         <section className="rounded-xl border-2 border-red-200 bg-red-50/30 p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-700">
-            Question / prompt
+            Questions / Tasks
           </h2>
           <MarkdownContent body={activity.prompt} />
         </section>

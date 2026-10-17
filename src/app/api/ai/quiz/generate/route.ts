@@ -23,7 +23,10 @@ import {
 import {
   QUIZ_GENERATOR_SYSTEM_INSTRUCTION,
   QUIZ_GENERATOR_RESPONSE_SCHEMA,
+  QUIZ_IMPORT_SYSTEM_INSTRUCTION,
+  QUIZ_IMPORT_MAX_QUESTIONS,
   buildQuizGeneratorUserPrompt,
+  buildQuizImportUserPrompt,
   validateAndConvert,
   isAIGeneratableKind,
   type QuestionMix,
@@ -64,7 +67,9 @@ export async function POST(req: NextRequest) {
 
   const activityId = (form.get('activityId') as string | null)?.trim() ?? '';
   const sourceLessonId = (form.get('sourceLessonId') as string | null)?.trim() ?? '';
-  const mixJson = (form.get('mix') as string | null) ?? '';
+    const mixJson = (form.get('mix') as string | null) ?? '';
+  const mode: 'generate' | 'import' =
+    form.get('mode') === 'import' ? 'import' : 'generate';
 
   if (!activityId) {
     const e = AIErrors.badInput('activityId is required');
@@ -85,12 +90,12 @@ export async function POST(req: NextRequest) {
     const e = AIErrors.badInput('mix must be a JSON object');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
-  const totalRequested = Object.values(mix).reduce((a, b) => a + (b ?? 0), 0);
-  if (totalRequested === 0) {
+    const totalRequested = Object.values(mix).reduce((a, b) => a + (b ?? 0), 0);
+  if (mode === 'generate' && totalRequested === 0) {
     const e = AIErrors.badInput('mix must request at least one question');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
-  if (totalRequested > 25) {
+  if (mode === 'generate' && totalRequested > 25) {
     const e = AIErrors.badInput('total questions cannot exceed 25');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
@@ -182,6 +187,10 @@ export async function POST(req: NextRequest) {
     lessonBody = lesson.body;
   }
 
+   if (mode === 'import' && rawFiles.length === 0) {
+    const e = AIErrors.badInput('upload the quiz file you want to import');
+    return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
+  }
   if (!lessonBody && rawFiles.length === 0) {
     const e = AIErrors.badInput('provide either a source lesson or upload a file');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
@@ -235,12 +244,15 @@ export async function POST(req: NextRequest) {
   let tokensOut = 0;
 
   try {
-    const userPrompt = buildQuizGeneratorUserPrompt({
-      lessonTitle,
-      lessonBody,
-      hasUploadedFiles: uploaded.length > 0,
-      mix,
-    });
+        const userPrompt =
+      mode === 'import'
+        ? buildQuizImportUserPrompt(rawFiles.map((f) => f.name))
+        : buildQuizGeneratorUserPrompt({
+            lessonTitle,
+            lessonBody,
+            hasUploadedFiles: uploaded.length > 0,
+            mix,
+          });
     const promptParts =
       uploaded.length > 0
         ? buildPartsWithFiles(uploaded, userPrompt)
@@ -248,10 +260,11 @@ export async function POST(req: NextRequest) {
 
     const result = await generateText({
       model: 'fast',
-      systemInstruction: QUIZ_GENERATOR_SYSTEM_INSTRUCTION,
+            systemInstruction:
+        mode === 'import' ? QUIZ_IMPORT_SYSTEM_INSTRUCTION : QUIZ_GENERATOR_SYSTEM_INSTRUCTION,
+      temperature: mode === 'import' ? 0.1 : 0.6,
       prompt: promptParts,
       responseSchema: QUIZ_GENERATOR_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
-      temperature: 0.6,
     });
     modelUsed = result.modelUsed;
     tokensIn = result.tokens.input;
@@ -305,7 +318,11 @@ export async function POST(req: NextRequest) {
   }
 
   // 11. Validate + convert
-  const { ok: validated, rejected } = validateAndConvert(draft.questions);
+  const { ok: allValid, rejected } = validateAndConvert(draft.questions, {
+    sortByKind: mode !== 'import',
+  });
+  const validated =
+    mode === 'import' ? allValid.slice(0, QUIZ_IMPORT_MAX_QUESTIONS) : allValid;
 
   // 12. Persist ai_generations row (audit trail)
   const { data: genRow, error: genErr } = await supabase
@@ -318,6 +335,7 @@ export async function POST(req: NextRequest) {
       input_params: {
         activityId,
         sourceLessonId: sourceLessonId || null,
+                mode,
         mix,
         fileCount: rawFiles.length,
         totalRequested,
@@ -343,7 +361,8 @@ export async function POST(req: NextRequest) {
         questionKind: q.kind,
         prompt: q.prompt,
         points: q.points,
-        shuffleOptions: q.kind === 'mc_single' || q.kind === 'mc_multi',
+        shuffleOptions:
+          q.kind === 'mc_single' || q.kind === 'mc_multi' || q.kind === 'matching',
         config: q.config,
       });
       inserted.push({ id: questionId, kind: q.kind, prompt: q.prompt });

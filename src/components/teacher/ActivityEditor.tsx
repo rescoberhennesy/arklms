@@ -8,18 +8,17 @@ import {
   Trash2,
   Save,
   Loader2,
-  Tag,
   Eye,
+  Sparkles,
   EyeOff,
-  Calendar,
-  Award,
   CheckCheck,
   Paperclip,
-  RefreshCw,
+  Plus,
 } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
+import AIActivityPromptModal from '@/components/teacher/ai/AIActivityPromptModal';
 import {
   updateActivity,
   setActivityTerm,
@@ -150,6 +149,14 @@ export default function ActivityEditor({
   const [isPending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+
+  function handleAiQuestions(markdown: string, mode: 'replace' | 'append') {
+    setPrompt((current) =>
+      mode === 'append' && current.trim() ? `${current.trim()}\n\n${markdown}` : markdown,
+    );
+    setPromptEditing(true); // show it in the editor; teacher saves when ready
+  }
 
   const sig = activitySignature(activity);
   const lastSyncedSig = useRef(sig);
@@ -381,9 +388,20 @@ export default function ActivityEditor({
 
   const submissionCount = activity.submissions.length;
   const gradedCount = activity.submissions.filter((s: SubmissionWithGrade) => s.grade).length;
+
   const unreturnedCount = activity.submissions.filter(
     (s: SubmissionWithGrade) => s.grade && !s.grade.returnedAt,
   ).length;
+
+    const dueShort = new Date(activity.dueAt).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  const inputClass =
+    'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60';
 
   return (
     <div className="space-y-6">
@@ -393,11 +411,29 @@ export default function ActivityEditor({
         </div>
       )}
 
-      {/* ============================== FULL-WIDTH HEADER ============================== */}
+      {/* ============================== HEADER ============================== */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-700">
+              Activity
+            </span>
+            <span
+              className={`rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${TERM_ACCENTS[activity.term]}`}
+            >
+              {MODULE_TERM_LABELS[activity.term]}
+            </span>
+            {activity.published ? (
+              <span className="rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                Published
+              </span>
+            ) : (
+              <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                Draft · hidden from students
+              </span>
+            )}
+          </div>
 
-      {/* Title bar */}
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
           {titleEditing ? (
             <input
               type="text"
@@ -429,216 +465,184 @@ export default function ActivityEditor({
               </button>
             </div>
           )}
+
+          <p className="text-sm text-gray-600">
+            Due {dueShort} · {activity.maxPoints} points ·{' '}
+            {SUBMISSION_TYPE_LABELS[activity.submissionType]}
+            {activity.allowLate && ' · late allowed'}
+            {activity.maxAttempts > 1 && ` · up to ${activity.maxAttempts} attempts`}
+          </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${TERM_ACCENTS[activity.term]}`}
-          >
-            <Tag className="h-3 w-3" />
-            {MODULE_TERM_LABELS[activity.term]}
-          </span>
-          <select
-            value={activity.term}
-            onChange={(e) => handleChangeTerm(e.target.value as ModuleTerm)}
-            disabled={isPending}
-            aria-label="Change term"
-            title="Change term"
-            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            {MODULE_TERMS.map((t) => (
-              <option key={t} value={t}>
-                {MODULE_TERM_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={handleTogglePublish}
-            disabled={isPending}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
-              activity.published
-                ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            } disabled:opacity-50`}
-          >
-            {activity.published ? (
-              <>
-                <Eye className="h-3 w-3" />
-                Published
-              </>
-            ) : (
-              <>
-                <EyeOff className="h-3 w-3" />
-                Draft — click to publish
-              </>
-            )}
-          </button>
+          {activity.published ? (
+            <button
+              type="button"
+              onClick={handleTogglePublish}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <EyeOff className="h-4 w-4" />
+              Unpublish
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleTogglePublish}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+            >
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+              Publish
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Quick stats */}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
-        <span className="inline-flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          Opens {new Date(activity.startAt).toLocaleString()}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          Due {new Date(activity.dueAt).toLocaleString()}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Award className="h-3 w-3" />
-          {activity.maxPoints} pts
-        </span>
-        <span>
-          {SUBMISSION_TYPE_LABELS[activity.submissionType]}
-          {activity.allowLate && ' · late ok'}
-        </span>
-        {activity.maxAttempts > 1 && (
-          <span className="inline-flex items-center gap-1 text-blue-700">
-            <RefreshCw className="h-3 w-3" />
-            Up to {activity.maxAttempts} attempts
-          </span>
-        )}
-      </div>
-
-      {/* ============================== TWO-COLUMN UPPER ============================== */}
-
+      {/* ============================== TWO COLUMNS ============================== */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* LEFT: Instructions, Prompt, Attachments */}
+        {/* LEFT: content + attachments */}
         <div className="space-y-6 lg:col-span-2">
-          {/* Instructions */}
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                  Instructions
-                </h2>
-                <p className="text-xs text-gray-500">
-                  Background, context, or directions students read before starting.
-                </p>
-              </div>
-              {instructionsEditing && (
-                <div className="flex items-center gap-2 text-xs">
-                  {isInstructionsDirty ? (
-                    <span className="text-amber-600">Unsaved changes</span>
-                  ) : (
-                    <span className="text-gray-400">No changes</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleCancelInstructions}
-                    disabled={isPending}
-                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveInstructions}
-                    disabled={isPending || !isInstructionsDirty}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                    Save
-                  </button>
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            {/* Instructions */}
+            <div className="p-5">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-[15px] font-bold text-gray-900">Instructions</h2>
+                  <p className="text-xs text-gray-500">
+                    Background or directions students read before starting.
+                  </p>
                 </div>
-              )}
-            </div>
+                {instructionsEditing && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={isInstructionsDirty ? 'text-amber-600' : 'text-gray-400'}>
+                      {isInstructionsDirty ? 'Unsaved changes' : 'No changes'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelInstructions}
+                      disabled={isPending}
+                      className="rounded-md border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveInstructions}
+                      disabled={isPending || !isInstructionsDirty}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Save
+                    </button>
+                  </div>
+                )}
+              </div>
 
-            {instructionsEditing ? (
-              <MarkdownEditor
-                value={instructions}
-                onChange={setInstructions}
-                placeholder="e.g. 'Read chapters 3–5, then complete the worksheet attached below.' Markdown supported."
-                rows={6}
-                disabled={isPending}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setInstructionsEditing(true)}
-                className="block w-full cursor-text rounded-md px-2 py-2 text-left transition hover:bg-gray-50"
-                aria-label="Edit instructions"
-              >
-                {savedInstructions.trim() ? (
+              {instructionsEditing ? (
+                <MarkdownEditor
+                  value={instructions}
+                  onChange={setInstructions}
+                  placeholder="e.g. 'Read chapters 3–5, then complete the worksheet attached below.'"
+                  rows={6}
+                  disabled={isPending}
+                />
+              ) : savedInstructions.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setInstructionsEditing(true)}
+                  className="block w-full cursor-text rounded-lg px-2 py-2 text-left transition hover:bg-gray-50"
+                  aria-label="Edit instructions"
+                >
                   <MarkdownContent body={savedInstructions} />
-                ) : (
-                  <span className="text-sm italic text-gray-400">
-                    No instructions yet. Click here to add some.
-                  </span>
-                )}
-              </button>
-            )}
-          </section>
-
-          {/* Question / prompt */}
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                  Question / prompt
-                </h2>
-                <p className="text-xs text-gray-500">
-                  The actual question or task students will answer or complete.
-                </p>
-              </div>
-              {promptEditing && (
-                <div className="flex items-center gap-2 text-xs">
-                  {isPromptDirty ? (
-                    <span className="text-amber-600">Unsaved changes</span>
-                  ) : (
-                    <span className="text-gray-400">No changes</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleCancelPrompt}
-                    disabled={isPending}
-                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSavePrompt}
-                    disabled={isPending || !isPromptDirty}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                    Save
-                  </button>
-                </div>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setInstructionsEditing(true)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50/60 px-4 py-3 text-left text-sm text-gray-600 hover:border-red-300 hover:bg-red-50/40"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add instructions
+                </button>
               )}
             </div>
 
-            {promptEditing ? (
-              <MarkdownEditor
-                value={prompt}
-                onChange={setPrompt}
-                placeholder="e.g. 'Compare the authors' theses and explain which you find more persuasive.' Markdown supported."
-                rows={4}
-                disabled={isPending}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setPromptEditing(true)}
-                className="block w-full cursor-text rounded-md px-2 py-2 text-left transition hover:bg-gray-50"
-                aria-label="Edit prompt"
-              >
-                {savedPrompt.trim() ? (
+            {/* Questions / Tasks */}
+            <div className="border-t border-gray-100 p-5">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-[15px] font-bold text-gray-900">Questions / Tasks</h2>
+                  <p className="text-xs text-gray-500">What students will answer or do.</p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAiPromptOpen(true)}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Generate with AI
+                </button>
+                {promptEditing && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={isPromptDirty ? 'text-amber-600' : 'text-gray-400'}>
+                      {isPromptDirty ? 'Unsaved changes' : 'No changes'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelPrompt}
+                      disabled={isPending}
+                      className="rounded-md border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSavePrompt}
+                      disabled={isPending || !isPromptDirty}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Save
+                    </button>
+                  </div>
+                                )}
+                </div>
+              </div>
+
+              {promptEditing ? (
+                <MarkdownEditor
+                  value={prompt}
+                  onChange={setPrompt}
+                  placeholder="e.g. 'Compute the simple interest for the three cases below and show your solution.'"
+                  rows={4}
+                  disabled={isPending}
+                />
+              ) : savedPrompt.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setPromptEditing(true)}
+                  className="block w-full cursor-text rounded-lg px-2 py-2 text-left transition hover:bg-gray-50"
+                  aria-label="Edit prompt"
+                >
                   <MarkdownContent body={savedPrompt} />
-                ) : (
-                  <span className="text-sm italic text-gray-400">
-                    No prompt yet. Click here to add the question students will answer.
-                  </span>
-                )}
-              </button>
-            )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setPromptEditing(true)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50/60 px-4 py-3 text-left text-sm text-gray-600 hover:border-red-300 hover:bg-red-50/40"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add questions or tasks
+                </button>
+              )}
+            </div>
           </section>
 
-          {/* Attachments */}
+          {/* Attachments (unchanged component) */}
           <ActivityAttachmentsPanel
             activityId={activity.id}
             classId={classId}
@@ -647,38 +651,64 @@ export default function ActivityEditor({
           />
         </div>
 
-        {/* RIGHT: Settings (sticky on lg+) */}
+        {/* RIGHT: Settings */}
         <aside className="lg:col-span-1">
-          <section className="sticky top-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Settings
-              </h2>
-              {isSettingsDirty && (
-                <span className="text-xs text-amber-600">Unsaved</span>
-              )}
+          <section className="sticky top-4 space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-[15px] font-bold text-gray-900">Settings</h2>
+              {isSettingsDirty && <span className="text-xs text-amber-600">Unsaved</span>}
             </div>
 
-            <div className="space-y-3">
+            {/* Term (saves immediately, like before) */}
+            <div>
+              <label htmlFor="set-term" className="mb-1 block text-xs font-semibold text-gray-700">
+                Term
+              </label>
+              <select
+                id="set-term"
+                value={activity.term}
+                onChange={(e) => handleChangeTerm(e.target.value as ModuleTerm)}
+                disabled={isPending}
+                className={inputClass}
+              >
+                {MODULE_TERMS.map((t) => (
+                  <option key={t} value={t}>
+                    {MODULE_TERM_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Max points</label>
+                <label htmlFor="set-points" className="mb-1 block text-xs font-semibold text-gray-700">
+                  Max points
+                </label>
                 <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  id="set-points"
+                  type="text"
+                  inputMode="decimal"
+                  maxLength={6}
                   value={maxPoints}
-                  onChange={(e) => setMaxPoints(e.target.value)}
+                  onChange={(e) =>
+                    setMaxPoints(
+                      e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1'),
+                    )
+                  }
                   disabled={isPending}
-                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                  className={inputClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Submission type</label>
+                <label htmlFor="set-type" className="mb-1 block text-xs font-semibold text-gray-700">
+                  Submission
+                </label>
                 <select
+                  id="set-type"
                   value={submissionType}
                   onChange={(e) => setSubmissionType(e.target.value as SubmissionType)}
                   disabled={isPending}
-                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                  className={inputClass}
                 >
                   {SUBMISSION_TYPES.map((s) => (
                     <option key={s} value={s}>
@@ -687,27 +717,46 @@ export default function ActivityEditor({
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Schedule */}
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                Schedule
+              </p>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Start date</label>
+                <label htmlFor="set-start" className="mb-1 block text-xs font-semibold text-gray-700">
+                  Opens
+                </label>
                 <input
+                  id="set-start"
                   type="datetime-local"
                   value={startLocal}
                   onChange={(e) => setStartLocal(e.target.value)}
                   disabled={isPending}
-                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                  className={inputClass}
                 />
-                <p className="mt-1 text-xs text-gray-500">Visible to students.</p>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Due date</label>
+                <label htmlFor="set-due" className="mb-1 block text-xs font-semibold text-gray-700">
+                  Due
+                </label>
                 <input
+                  id="set-due"
                   type="datetime-local"
                   value={dueLocal}
                   onChange={(e) => setDueLocal(e.target.value)}
                   disabled={isPending}
-                  className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                  className={inputClass}
                 />
               </div>
+            </div>
+
+            {/* Submission rules */}
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                Submission rules
+              </p>
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -718,10 +767,8 @@ export default function ActivityEditor({
                 />
                 Allow late submissions
               </label>
-
-              {/* NEW: bounded attempts */}
-              <div className="rounded-md border border-gray-200 bg-gray-50/50 p-3">
-                <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+              <div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
                   <input
                     type="checkbox"
                     checked={allowResubmission}
@@ -729,24 +776,22 @@ export default function ActivityEditor({
                     disabled={isPending}
                     className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
-                  <RefreshCw className="h-3.5 w-3.5 text-gray-500" />
                   Allow resubmission
                 </label>
-
                 {allowResubmission ? (
-                  <div className="mt-2 ml-6 flex items-center gap-2">
-                    <label className="text-xs text-gray-600">
+                  <div className="ml-6 mt-2 flex items-center gap-2">
+                    <label htmlFor="set-attempts" className="text-xs text-gray-600">
                       Max attempts
                     </label>
                     <input
-                      type="number"
-                      min="2"
-                      max="10"
-                      step="1"
+                      id="set-attempts"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
                       value={maxAttempts}
-                      onChange={(e) => setMaxAttempts(e.target.value)}
+                      onChange={(e) => setMaxAttempts(e.target.value.replace(/\D/g, ''))}
                       disabled={isPending}
-                      className="w-20 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                      className="w-16 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
                     />
                   </div>
                 ) : (
@@ -755,35 +800,50 @@ export default function ActivityEditor({
                   </p>
                 )}
               </div>
+            </div>
 
-              {isSettingsDirty && (
-                <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
-                  <button
-                    type="button"
-                    onClick={handleCancelSettings}
-                    disabled={isPending}
-                    className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveSettings}
-                    disabled={isPending}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                    Save settings
-                  </button>
-                </div>
-              )}
+            {isSettingsDirty && (
+              <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCancelSettings}
+                  disabled={isPending}
+                  className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSettings}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                  Save settings
+                </button>
+              </div>
+            )}
+
+            {/* Delete */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-red-100 pt-4">
+              <div>
+                <p className="text-sm font-semibold text-red-800">Delete activity</p>
+                <p className="text-xs text-gray-500">Removes all submissions and files.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
             </div>
           </section>
         </aside>
       </div>
 
-      <div className="border-t border-gray-200" aria-hidden />
-
+      {/* Submissions (unchanged) */}
       <SubmissionsPanel
         activity={activity}
         classId={classId}
@@ -794,21 +854,6 @@ export default function ActivityEditor({
         isPending={isPending}
       />
 
-      <section className="rounded-xl border border-red-200 bg-red-50/30 p-4">
-        <h2 className="text-sm font-semibold text-red-900">Danger zone</h2>
-        <p className="mt-1 text-xs text-red-700">
-          Deleting this activity is permanent and removes all submissions and attached files.
-        </p>
-        <button
-          type="button"
-          onClick={() => setConfirmDelete(true)}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete activity
-        </button>
-      </section>
-
       <ConfirmDialog
         open={confirmDelete}
         title="Delete activity?"
@@ -817,6 +862,14 @@ export default function ActivityEditor({
         destructive
         onConfirm={handleDelete}
         onClose={() => setConfirmDelete(false)}
+      />
+
+        <AIActivityPromptModal
+        open={aiPromptOpen}
+        activityId={activity.id}
+        hasExisting={prompt.trim().length > 0}
+        onClose={() => setAiPromptOpen(false)}
+        onGenerated={handleAiQuestions}
       />
 
       <ConfirmDialog
@@ -830,6 +883,7 @@ export default function ActivityEditor({
     </div>
   );
 }
+      
 
 // ============================================================================
 // Submissions panel

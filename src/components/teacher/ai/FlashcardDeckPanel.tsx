@@ -749,13 +749,11 @@ function AIFlashcardGeneratorModal({
                   </span>
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  min={MIN_CARDS}
-                  max={MAX_CARDS}
-                  step={1}
+                  maxLength={2}
                   value={countInput}
-                  onChange={(e) => setCountInput(e.target.value)}
+                  onChange={(e) => setCountInput(e.target.value.replace(/\D/g, ''))}
                   disabled={loading}
                   className={`w-32 rounded-md border px-3 py-2 text-sm focus:outline-none disabled:opacity-60 ${
                     countValid
