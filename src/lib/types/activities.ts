@@ -12,7 +12,7 @@ export const ACTIVITY_KINDS = ['assignment', 'quiz'] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = {
-  assignment: 'Assignment',
+  assignment: 'Activity',
   quiz: 'Quiz',
 };
 

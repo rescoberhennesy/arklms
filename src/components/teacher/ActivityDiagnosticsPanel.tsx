@@ -106,7 +106,7 @@ export default function ActivityDiagnosticsPanel({ classId, activities }: Props)
           <option value="">Select an activity…</option>
           {activities.map((a) => (
             <option key={a.id} value={a.id}>
-              [{a.activityKind === 'quiz' ? 'Quiz' : 'Assignment'}] {a.title}
+              [{a.activityKind === 'quiz' ? 'Quiz' : 'Activity'}] {a.title}
             </option>
           ))}
         </select>

@@ -13,7 +13,7 @@ export default function HeroSection() {
     {
       image: '/1.png',
       title: 'WELCOME TO A-LMS',
-      text: 'This is your central hub for everything related to class announcements, course materials, and assignments. Please check this page regularly to stay informed about deadlines and new resources.',
+      text: 'This is your central hub for everything related to class announcements, course materials, and activities. Please check this page regularly to stay informed about deadlines and new resources.',
     },
   ]
 

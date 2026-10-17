@@ -164,7 +164,7 @@ export default function ActivityAttachmentsPanel({
             Attachments
           </h2>
           <p className="text-xs text-gray-500">
-            Reference files (worksheets, readings, rubrics) students download to complete the assignment.
+            Reference files (worksheets, readings, rubrics) students download to complete the activity.
           </p>
         </div>
       </div>

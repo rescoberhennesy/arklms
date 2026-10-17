@@ -51,6 +51,7 @@ import {
   MODULE_TERM_LABELS,
 } from '@/lib/types/modules';
 import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
+import Modal from '@/components/shared/Modal';
 
 interface ModulesTabProps {
   classId: string;
@@ -156,16 +157,14 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
           })}
         </div>
 
-        {!addOpen && (
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add module to {termLabel}
-          </button>
-        )}
+                <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add module to {termLabel}
+        </button>
       </div>
 
       {error && (
@@ -175,20 +174,20 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
       )}
 
       {addOpen && (
-        <AddModuleForm
-          classId={classId}
-          term={activeTerm}
-          onError={setError}
-          onCancel={() => setAddOpen(false)}
-          onAdded={(newModule) => {
-            setModules((prev) => [...prev, newModule]);
-            setAddOpen(false);
-          }}
-        />
+              <AddModuleForm
+        open={addOpen}
+        classId={classId}
+        term={activeTerm}
+        onCancel={() => setAddOpen(false)}
+        onAdded={(newModule) => {
+          setModules((prev) => [...prev, newModule]);
+          setAddOpen(false);
+        }}
+      />
       )}
 
-      {termModules.length === 0 ? (
-        !addOpen && (
+            {termModules.length === 0 ? (
+        (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
               <FolderOpen className="h-6 w-6" />
@@ -242,23 +241,41 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
 // ---------------------------------------------------------------------------
 
 interface AddModuleFormProps {
+  open: boolean;
   classId: string;
   term: ModuleTerm;
-  onError: (msg: string | null) => void;
   onCancel: () => void;
   onAdded: (module: ModuleWithLessons) => void;
 }
 
-function AddModuleForm({ classId, term, onError, onCancel, onAdded }: AddModuleFormProps) {
+function AddModuleForm({ open, classId, term, onCancel, onAdded }: AddModuleFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Start fresh every time the modal opens
+  useEffect(() => {
+    if (open) {
+      setTitle('');
+      setDescription('');
+      setFormError(null);
+    }
+  }, [open]);
+
+  function handleClose() {
+    if (isPending) return;
+    onCancel();
+  }
+
   function handleAdd() {
-    onError(null);
+    setFormError(null);
     const trimmed = title.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setFormError('Title is required.');
+      return;
+    }
     const trimmedDesc = description.trim();
 
     startTransition(async () => {
@@ -278,71 +295,82 @@ function AddModuleForm({ classId, term, onError, onCancel, onAdded }: AddModuleF
         });
         router.refresh();
       } catch (e) {
-        onError(e instanceof Error ? e.message : 'Failed to add module.');
+        setFormError(e instanceof Error ? e.message : 'Failed to add module.');
       }
     });
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h3 className="mb-4 text-sm font-semibold text-gray-900">
-        New {MODULE_TERM_LABELS[term]} module
-      </h3>
-      <div className="space-y-3">
-        <div>
-          <label htmlFor="new-module-title" className="mb-1 block text-xs font-medium text-gray-700">
-            Title <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="new-module-title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Week 1 – Introduction to Business Finance"
-            autoFocus
-            disabled={isPending}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAdd();
-              if (e.key === 'Escape') onCancel();
-            }}
-            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-          />
+    <Modal
+      open={open}
+      title={`New ${MODULE_TERM_LABELS[term]} module`}
+      onClose={handleClose}
+      busy={isPending}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleAdd();
+        }}
+      >
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="new-module-title" className="mb-1 block text-xs font-medium text-gray-700">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="new-module-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Week 1 – Introduction to Business Finance"
+              autoFocus
+              disabled={isPending}
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-module-description" className="mb-1 block text-xs font-medium text-gray-700">
+              Description <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <textarea
+              id="new-module-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief overview of what this module covers."
+              rows={3}
+              disabled={isPending}
+              className="w-full resize-y rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+            />
+          </div>
         </div>
-        <div>
-          <label htmlFor="new-module-description" className="mb-1 block text-xs font-medium text-gray-700">
-            Description <span className="font-normal text-gray-400">(optional)</span>
-          </label>
-          <textarea
-            id="new-module-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief overview of what this module covers."
-            rows={2}
+
+        {formError && (
+          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {formError}
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
+          <button
+            type="button"
+            onClick={handleClose}
             disabled={isPending}
-            className="w-full resize-y rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
-          />
+            className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isPending || !title.trim()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add module
+          </button>
         </div>
-      </div>
-      <div className="mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={isPending}
-          className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={isPending || !title.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          Add module
-        </button>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }
 

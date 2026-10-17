@@ -135,7 +135,7 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Student</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Risk</th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Overall</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Assignments</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Activities</th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Quizzes</th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Submitted</th>
               <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Trend</th>

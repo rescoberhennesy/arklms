@@ -429,7 +429,7 @@ function SidebarRow({ item, role, classesBasePath }: SidebarRowProps) {
           <span className="mt-0.5 block text-[11px] text-gray-400">
             {dateLabel} · {timeLabel}
             {' · '}
-            {a.activityKind === 'quiz' ? 'Quiz' : 'Assignment'}
+            {a.activityKind === 'quiz' ? 'Quiz' : 'Activity'}
             {isDraft && (
               <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-gray-600">
                 Draft

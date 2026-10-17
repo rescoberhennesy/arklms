@@ -24,7 +24,7 @@ interface ActionTile {
 const TILES: ActionTile[] = [
   {
     label: 'Create activity',
-    description: 'Assignment or quiz',
+    description: 'Activity or quiz',
     href: '/teacher/quick/activity',
     icon: ClipboardList,
   },

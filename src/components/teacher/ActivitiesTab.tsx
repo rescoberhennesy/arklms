@@ -23,13 +23,14 @@ import {
   GripVertical,
   Calendar,
   Award,
-  Tag,
-  ChevronDown,
-  ChevronRight,
   Users,
   AlertCircle,
   Copy,
   CopyPlus,
+  MoreHorizontal,
+  ExternalLink,
+  ClipboardList,
+  ListChecks,
 } from 'lucide-react';
 import {
   reorderActivities,
@@ -59,8 +60,8 @@ export interface ActivitiesTabRosterEntry {
   email: string | null;
 }
 
-// Completion-tracking filter buckets (Session 13).
-type CompletionFilter = 'all' | 'has_ungraded' | 'fully_graded';
+// Completion-tracking filter buckets.
+type CompletionFilter = 'all' | 'has_ungraded' | 'fully_graded' | 'drafts';
 
 interface ActivitiesTabProps {
   classId: string;
@@ -69,7 +70,7 @@ interface ActivitiesTabProps {
   /** Default filter when no ?completion= URL param is present.
    *  Lets the server hint "this class has grading to do, start there".
    *  URL always wins if the user has explicitly chosen one. */
-  initialFilter?: CompletionFilter;
+  initialFilter?: 'all' | 'has_ungraded' | 'fully_graded';
 }
 
 type ActivityCardStatus =
@@ -93,40 +94,37 @@ function computeCardStatus(
 }
 
 const STATUS_PILL_CLASS: Record<ActivityCardStatus, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  scheduled: 'bg-blue-100 text-blue-800',
-  open: 'bg-green-100 text-green-800',
-  past_due: 'bg-amber-100 text-amber-800',
-  closed: 'bg-gray-200 text-gray-600',
+  draft: 'bg-gray-100 text-gray-600',
+  scheduled: 'bg-blue-50 text-blue-700',
+  open: 'bg-green-50 text-green-700',
+  past_due: 'bg-amber-50 text-amber-700',
+  closed: 'bg-gray-100 text-gray-600',
 };
 
 const STATUS_PILL_LABEL: Record<ActivityCardStatus, string> = {
-  draft: 'Draft',
+  draft: 'Draft · hidden from students',
   scheduled: 'Scheduled',
   open: 'Open',
   past_due: 'Past due (late ok)',
   closed: 'Closed',
 };
 
-const TERM_ACCENTS: Record<ModuleTerm, string> = {
-  prelim: 'border-blue-200 bg-blue-50',
-  midterm: 'border-purple-200 bg-purple-50',
-  prefinal: 'border-amber-200 bg-amber-50',
-  final: 'border-rose-200 bg-rose-50',
-};
-
-const TERM_TEXT_ACCENTS: Record<ModuleTerm, string> = {
-  prelim: 'text-blue-800',
-  midterm: 'text-purple-800',
-  prefinal: 'text-amber-800',
-  final: 'text-rose-800',
-};
-
 const FILTER_LABEL: Record<CompletionFilter, string> = {
   all: 'All',
   has_ungraded: 'Has ungraded',
   fully_graded: 'Fully graded',
+  drafts: 'Drafts',
 };
+
+const FILTER_KEYS = Object.keys(FILTER_LABEL) as CompletionFilter[];
+
+function isCompletionFilter(v: string | null): v is CompletionFilter {
+  return v !== null && (FILTER_KEYS as string[]).includes(v);
+}
+
+function isModuleTerm(v: string | null): v is ModuleTerm {
+  return v !== null && (MODULE_TERMS as readonly string[]).includes(v);
+}
 
 function activitiesSignature(activities: ActivityWithAllSubmissions[]): string {
   return activities
@@ -144,6 +142,50 @@ function activityIsFullyGraded(a: ActivityWithAllSubmissions): boolean {
 
 function activityHasUngraded(a: ActivityWithAllSubmissions): boolean {
   return a.submissions.some((s: SubmissionWithGrade) => s.grade === null);
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+// Small human hint next to the due date ("Due in 3 days", "Closed", ...).
+function dueHint(
+  a: ActivityWithAllSubmissions,
+  status: ActivityCardStatus,
+  now: number,
+): { text: string; className: string } | null {
+  if (status === 'draft') return null;
+  if (status === 'scheduled') {
+    return {
+      text: `Opens ${formatShortDate(a.startAt)}`,
+      className: 'text-blue-700',
+    };
+  }
+  if (status === 'past_due') {
+    return { text: 'Past due · late allowed', className: 'text-amber-700' };
+  }
+  if (status === 'closed') {
+    return { text: 'Closed', className: 'text-gray-500' };
+  }
+  // open
+  const msLeft = new Date(a.dueAt).getTime() - now;
+  const hours = Math.floor(msLeft / 3_600_000);
+  if (hours < 24) {
+    return {
+      text: hours <= 0 ? 'Due within the hour' : `Due in ${hours} hour${hours === 1 ? '' : 's'}`,
+      className: 'font-semibold text-red-700',
+    };
+  }
+  const days = Math.ceil(msLeft / 86_400_000);
+  return {
+    text: `Due in ${days} day${days === 1 ? '' : 's'}`,
+    className: days <= 3 ? 'font-semibold text-amber-700' : 'text-gray-500',
+  };
 }
 
 export default function ActivitiesTab({
@@ -164,54 +206,80 @@ export default function ActivitiesTab({
   const [error, setError] = useState<string | null>(null);
   const [copyModalOpen, setCopyModalOpen] = useState(false);
 
-  // Filter resolution order:
-  //   1. Explicit URL param (?completion=all|has_ungraded|fully_graded)
-  //      — user has clicked a pill, this wins.
-  //   2. `initialFilter` prop from the server — used on first land when
-  //      the URL is clean. Lets the page hint "this class has grading,
-  //      start there".
-  //   3. 'all' — final fallback.
+  // ---- Filter (URL > server hint > 'all') ---------------------------------
   const filterParam = searchParams.get('completion');
-  const filter: CompletionFilter =
-    filterParam === 'has_ungraded' ||
-    filterParam === 'fully_graded' ||
-    filterParam === 'all'
-      ? (filterParam as CompletionFilter)
-      : (initialFilter ?? 'all');
+  const filter: CompletionFilter = isCompletionFilter(filterParam)
+    ? filterParam
+    : (initialFilter ?? 'all');
 
-  function setFilter(next: CompletionFilter) {
-    // Always write the choice into the URL — including 'all'. This
-    // ensures clicking "All" sticks even when initialFilter would have
-    // defaulted to 'has_ungraded'. Without this, removing the param
-    // would snap back to the server-side default.
+  function replaceParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('completion', next);
+    params.set(key, value);
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
+  function setFilter(next: CompletionFilter) {
+    // Always write the choice into the URL (including 'all') so it sticks
+    // even when initialFilter would default to something else.
+    replaceParam('completion', next);
+  }
+
+  // ---- Active term tab (URL > first term with activities > first term) ----
+  const termParam = searchParams.get('term');
+  const [activeTerm, setActiveTerm] = useState<ModuleTerm>(() => {
+    if (isModuleTerm(termParam)) return termParam;
+    const firstWithActivities = MODULE_TERMS.find((t) =>
+      initialActivities.some((a) => a.term === t),
+    );
+    return firstWithActivities ?? MODULE_TERMS[0];
+  });
+
+  function selectTerm(t: ModuleTerm) {
+    setActiveTerm(t);
+    replaceParam('term', t);
+  }
+
+  const termCounts = useMemo(() => {
+    const m = new Map<ModuleTerm, number>();
+    for (const t of MODULE_TERMS) m.set(t, 0);
+    for (const a of activities) {
+      m.set(a.term, (m.get(a.term) ?? 0) + 1);
+    }
+    return m;
+  }, [activities]);
+
+  // Filter counts are scoped to the active term, so the pills match the list.
   const filterCounts = useMemo(() => {
+    const inTerm = activities.filter((a) => a.term === activeTerm);
     let hasUngraded = 0;
     let fullyGraded = 0;
-    for (const a of activities) {
-      if (!a.published) continue;
+    let drafts = 0;
+    for (const a of inTerm) {
+      if (!a.published) {
+        drafts++;
+        continue;
+      }
       if (activityHasUngraded(a)) hasUngraded++;
       else if (activityIsFullyGraded(a)) fullyGraded++;
     }
     return {
-      all: activities.length,
+      all: inTerm.length,
       has_ungraded: hasUngraded,
       fully_graded: fullyGraded,
+      drafts,
     };
-  }, [activities]);
+  }, [activities, activeTerm]);
 
   function passesFilter(a: ActivityWithAllSubmissions): boolean {
     if (filter === 'all') return true;
+    if (filter === 'drafts') return !a.published;
     if (!a.published) return false;
     if (filter === 'has_ungraded') return activityHasUngraded(a);
     return activityIsFullyGraded(a);
   }
 
+  // ---- ?create=1 opens the add form once --------------------------------
   const [createOpenFromParam, setCreateOpenFromParam] = useState(false);
   const hasConsumedCreateParam = useRef(false);
   useEffect(() => {
@@ -228,6 +296,8 @@ export default function ActivitiesTab({
 
   function handleOptimisticAdd(newActivity: ActivityWithAllSubmissions) {
     setActivities((prev) => [...prev, newActivity]);
+    // Jump to the term the new activity landed in.
+    setActiveTerm(newActivity.term);
   }
 
   function handleActivityRemoved(activityId: string) {
@@ -245,9 +315,6 @@ export default function ActivitiesTab({
   }
 
   function handleCopyCompleted(newActivityId: string) {
-    // Navigate to the editor of the new copy. The router.refresh() inside
-    // the modal repopulates the list, but we also want the teacher to land
-    // in the editor so they can edit dates / publish.
     router.push(`/teacher/classes/${classId}/activities/${newActivityId}`);
   }
 
@@ -260,84 +327,126 @@ export default function ActivitiesTab({
     return m;
   }, [activities]);
 
+  const visible = activities
+    .filter((a) => a.term === activeTerm && passesFilter(a))
+    .sort((x, y) => x.displayOrder - y.displayOrder);
+
+  const termTotal = termCounts.get(activeTerm) ?? 0;
+  const termLabel = MODULE_TERM_LABELS[activeTerm];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <div className="flex flex-wrap items-start gap-2">
-        <div className="flex-1 min-w-0">
+      {/* Row 2: term tabs + filter pills */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          role="tablist"
+          aria-label="Grading period"
+          className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm"
+        >
+          {MODULE_TERMS.map((t) => {
+            const active = t === activeTerm;
+            const count = termCounts.get(t) ?? 0;
+            return (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => selectTerm(t)}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition ${
+                  active
+                    ? 'bg-red-600 font-semibold text-white'
+                    : 'font-medium text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {MODULE_TERM_LABELS[t]}
+                <span
+                  className={`rounded-full px-1.5 text-[11px] font-semibold ${
+                    active ? 'bg-white text-red-600' : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCopyModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            title="Copy an activity from another class"
+          >
+            <CopyPlus className="h-4 w-4" />
+            Copy from another class
+          </button>
           <AddActivityBar
             classId={classId}
             onOptimisticAdd={handleOptimisticAdd}
             onError={setError}
             defaultOpen={createOpenFromParam}
+            defaultTerm={activeTerm}
           />
         </div>
-        <button
-          type="button"
-          onClick={() => setCopyModalOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          title="Copy an activity from another class"
-        >
-          <CopyPlus className="h-4 w-4" />
-          Copy from another class
-        </button>
       </div>
 
-      {/* Completion filter pills */}
+      {/* Row 2: filter pills */}
       <div className="flex flex-wrap items-center gap-2">
-        {(Object.keys(FILTER_LABEL) as CompletionFilter[]).map((key) => {
-          const active = filter === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
-                active
-                  ? 'bg-red-600 text-white shadow-sm'
-                  : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {FILTER_LABEL[key]}
-              <span
-                className={`rounded-full px-1.5 text-[10px] font-semibold ${
+        <div className="flex flex-wrap items-center gap-2">
+          {FILTER_KEYS.map((key) => {
+            const active = filter === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                aria-pressed={active}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
                   active
-                    ? 'bg-white/25 text-white'
-                    : 'bg-gray-100 text-gray-600'
+                    ? 'border-gray-900 bg-gray-900 text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                {filterCounts[key]}
-              </span>
-            </button>
-          );
-        })}
+                {FILTER_LABEL[key]}
+                <span className={active ? 'text-white/70' : 'text-gray-400'}>
+                  · {filterCounts[key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {MODULE_TERMS.map((term) => {
-        const inTerm = activities
-          .filter((a) => a.term === term && passesFilter(a))
-          .sort((x, y) => x.displayOrder - y.displayOrder);
-        return (
-          <TermSection
-            key={term}
-            term={term}
-            classId={classId}
-            activities={inTerm}
-            roster={roster}
-            rosterSize={rosterSize}
-            submitterIdsByActivity={submitterIdsByActivity}
-            filterActive={filter !== 'all'}
-            onReordered={(next) => handleTermReordered(term, next)}
-            onActivityRemoved={handleActivityRemoved}
-            onError={setError}
-          />
-        );
-      })}
+      {/* List or empty state */}
+      {visible.length === 0 ? (
+        <EmptyState
+          termLabel={termLabel}
+          filterActive={filter !== 'all' && termTotal > 0}
+          onShowAll={() => setFilter('all')}
+          onCopy={() => setCopyModalOpen(true)}
+        />
+      ) : (
+        <TermList
+          term={activeTerm}
+          classId={classId}
+          activities={visible}
+          roster={roster}
+          rosterSize={rosterSize}
+          submitterIdsByActivity={submitterIdsByActivity}
+          canReorder={filter === 'all'}
+          onReordered={(next) => handleTermReordered(activeTerm, next)}
+          onActivityRemoved={handleActivityRemoved}
+          onError={setError}
+        />
+      )}
 
       <CopyFromClassModal
         open={copyModalOpen}
@@ -349,31 +458,94 @@ export default function ActivitiesTab({
   );
 }
 
-interface TermSectionProps {
+// ===========================================================================
+// Empty state
+// ===========================================================================
+
+function EmptyState({
+  termLabel,
+  filterActive,
+  onShowAll,
+  onCopy,
+}: {
+  termLabel: string;
+  filterActive: boolean;
+  onShowAll: () => void;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+        <ClipboardList className="h-7 w-7" />
+      </div>
+      {filterActive ? (
+        <>
+          <h3 className="text-lg font-bold text-gray-900">
+            No matching activities in {termLabel}
+          </h3>
+          <p className="max-w-md text-sm text-gray-600">
+            Nothing in this term matches the current filter.
+          </p>
+          <button
+            type="button"
+            onClick={onShowAll}
+            className="mt-1 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Show all activities
+          </button>
+        </>
+      ) : (
+        <>
+          <h3 className="text-lg font-bold text-gray-900">
+            No activities in {termLabel} yet
+          </h3>
+          <p className="max-w-md text-sm text-gray-600">
+            Create an activity or quiz with the button above, or reuse ones
+            you already made in another class.
+          </p>
+          <button
+            type="button"
+            onClick={onCopy}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <CopyPlus className="h-4 w-4" />
+            Copy from another class
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
+// Sortable list for one term
+// ===========================================================================
+
+interface TermListProps {
   term: ModuleTerm;
   classId: string;
   activities: ActivityWithAllSubmissions[];
   roster: ActivitiesTabRosterEntry[];
   rosterSize: number;
   submitterIdsByActivity: Map<string, Set<string>>;
-  filterActive: boolean;
+  canReorder: boolean;
   onReordered: (next: ActivityWithAllSubmissions[]) => void;
   onActivityRemoved: (activityId: string) => void;
   onError: (msg: string | null) => void;
 }
 
-function TermSection({
+function TermList({
   term,
   classId,
   activities,
   roster,
   rosterSize,
   submitterIdsByActivity,
-  filterActive,
+  canReorder,
   onReordered,
   onActivityRemoved,
   onError,
-}: TermSectionProps) {
+}: TermListProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -382,6 +554,7 @@ function TermSection({
   );
 
   function handleDragEnd(event: DragEndEvent) {
+    if (!canReorder) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -407,61 +580,48 @@ function TermSection({
     });
   }
 
-  const emptyMsg = filterActive
-    ? 'No activities in this term match the current filter.'
-    : 'No activities in this term yet.';
-
   return (
-    <section
-      className={`rounded-xl border ${TERM_ACCENTS[term]} p-4 shadow-sm`}
-    >
-      <div className="mb-3 flex items-center gap-2">
-        <Tag className={`h-4 w-4 ${TERM_TEXT_ACCENTS[term]}`} />
-        <h2
-          className={`text-sm font-semibold uppercase tracking-wide ${TERM_TEXT_ACCENTS[term]}`}
-        >
-          {MODULE_TERM_LABELS[term]}
-        </h2>
-        <span className="text-xs text-gray-500">
-          {activities.length}{' '}
-          {activities.length === 1 ? 'activity' : 'activities'}
-        </span>
-      </div>
-
-      {activities.length === 0 ? (
-        <p className="text-sm italic text-gray-400">{emptyMsg}</p>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={activities.map((a) => a.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <ul className="space-y-2">
-              {activities.map((a) => (
-                <ActivityCard
-                  key={a.id}
-                  activity={a}
-                  classId={classId}
-                  roster={roster}
-                  rosterSize={rosterSize}
-                  submitterIds={
-                    submitterIdsByActivity.get(a.id) ?? new Set<string>()
-                  }
-                  onActivityRemoved={onActivityRemoved}
-                  onError={onError}
-                />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndContext>
+    <div className="space-y-2">
+      {!canReorder && (
+        <p className="text-xs text-gray-400">
+          Switch the filter to All to reorder activities.
+        </p>
       )}
-    </section>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={activities.map((a) => a.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul className="space-y-3">
+            {activities.map((a) => (
+              <ActivityCard
+                key={a.id}
+                activity={a}
+                classId={classId}
+                roster={roster}
+                rosterSize={rosterSize}
+                submitterIds={
+                  submitterIdsByActivity.get(a.id) ?? new Set<string>()
+                }
+                canReorder={canReorder}
+                onActivityRemoved={onActivityRemoved}
+                onError={onError}
+              />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
+    </div>
   );
 }
+
+// ===========================================================================
+// Activity card
+// ===========================================================================
 
 interface ActivityCardProps {
   activity: ActivityWithAllSubmissions;
@@ -469,6 +629,7 @@ interface ActivityCardProps {
   roster: ActivitiesTabRosterEntry[];
   rosterSize: number;
   submitterIds: Set<string>;
+  canReorder: boolean;
   onActivityRemoved: (activityId: string) => void;
   onError: (msg: string | null) => void;
 }
@@ -479,6 +640,7 @@ function ActivityCard({
   roster,
   rosterSize,
   submitterIds,
+  canReorder,
   onActivityRemoved,
   onError,
 }: ActivityCardProps) {
@@ -486,6 +648,9 @@ function ActivityCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const {
     attributes,
     listeners,
@@ -494,7 +659,7 @@ function ActivityCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: activity.id });
+  } = useSortable({ id: activity.id, disabled: !canReorder });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -502,15 +667,41 @@ function ActivityCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const cardStatus = computeCardStatus(activity, Date.now());
+  // Close the ⋯ menu on outside click / Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  const now = Date.now();
+  const cardStatus = computeCardStatus(activity, now);
+  const isDraft = cardStatus === 'draft';
+  const hint = dueHint(activity, cardStatus, now);
+
+  const isQuiz = activity.activityKind === 'quiz';
+
   const submissionCount = activity.submissions.length;
   const gradedCount = activity.submissions.filter(
-    (s: SubmissionWithGrade) => s.grade,
+    (s: SubmissionWithGrade) => s.grade !== null,
   ).length;
+  const ungradedCount = submissionCount - gradedCount;
 
   const startAtMs = new Date(activity.startAt).getTime();
   const showRosterCompleteness =
-    activity.published && Date.now() >= startAtMs && rosterSize > 0;
+    activity.published && now >= startAtMs && rosterSize > 0;
 
   const submittedFromRoster = roster.filter((r) =>
     submitterIds.has(r.student_id),
@@ -518,6 +709,12 @@ function ActivityCard({
   const missingStudents = showRosterCompleteness
     ? roster.filter((r) => !submitterIds.has(r.student_id))
     : [];
+
+  const submittedPct =
+    rosterSize > 0 ? Math.round((submittedFromRoster / rosterSize) * 100) : 0;
+  const allGraded = submissionCount > 0 && ungradedCount === 0;
+
+  const href = `/teacher/classes/${classId}/activities/${activity.id}`;
 
   async function handleDelete() {
     try {
@@ -531,6 +728,7 @@ function ActivityCard({
 
   async function handleDuplicate() {
     if (duplicating) return;
+    setMenuOpen(false);
     setDuplicating(true);
     onError(null);
     try {
@@ -545,127 +743,225 @@ function ActivityCard({
       onError(e instanceof Error ? e.message : 'Failed to duplicate activity.');
       setDuplicating(false);
     }
-    // No setDuplicating(false) on success — the page is about to navigate
-    // and unmount this card.
+  }
+
+  // Primary button changes with the activity's state
+  let primary: { label: string; className: string };
+  if (ungradedCount > 0) {
+    primary = {
+      label: 'Grade now',
+      className: 'bg-red-600 text-white hover:bg-red-700',
+    };
+  } else if (isDraft) {
+    primary = {
+      label: 'Edit',
+      className:
+        'border border-red-300 bg-white text-red-700 hover:bg-red-50',
+    };
+  } else {
+    primary = {
+      label: 'Open',
+      className:
+        'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
+    };
   }
 
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className="rounded-md border border-gray-200 bg-white shadow-sm hover:bg-gray-50/60"
+      className={`rounded-xl border shadow-sm transition ${
+        isDraft
+          ? 'border-dashed border-gray-300 bg-gray-50/70'
+          : 'border-gray-200 bg-white hover:border-gray-300'
+      }`}
     >
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          type="button"
-          className="cursor-grab rounded p-0.5 text-gray-300 hover:bg-gray-200 hover:text-gray-500 active:cursor-grabbing"
-          aria-label="Drag to reorder"
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-
-        <div className="min-w-0 flex-1">
-          <Link
-            href={`/teacher/classes/${classId}/activities/${activity.id}`}
-            className="block truncate text-sm font-medium text-gray-900 hover:text-red-600"
-          >
-            {activity.title}
-          </Link>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-            <span className="inline-flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              Due {new Date(activity.dueAt).toLocaleString()}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Award className="h-3 w-3" />
-              {activity.maxPoints} pts
-            </span>
-            {showRosterCompleteness ? (
-              <span
-                className={`inline-flex items-center gap-1 font-medium ${
-                  submittedFromRoster === rosterSize
-                    ? 'text-green-700'
-                    : 'text-gray-700'
-                }`}
-              >
-                <Users className="h-3 w-3" />
-                {submittedFromRoster} of {rosterSize} submitted
-                {gradedCount > 0 && (
-                  <span className="font-normal text-gray-500">
-                    {' '}
-                    · {gradedCount} graded
-                  </span>
-                )}
-              </span>
-            ) : (
-              submissionCount > 0 && (
-                <span>
-                  {submissionCount} submission
-                  {submissionCount === 1 ? '' : 's'}, {gradedCount} graded
-                </span>
-              )
-            )}
-          </div>
-        </div>
-
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL_CLASS[cardStatus]}`}
-        >
-          {STATUS_PILL_LABEL[cardStatus]}
-        </span>
-
-        {showRosterCompleteness && (
+      <div className="flex flex-wrap items-center gap-4 px-4 py-4">
+        {/* Drag handle */}
+        {canReorder && (
           <button
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
             type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            aria-label={
-              expanded ? 'Hide missing students' : 'Show missing students'
-            }
-            aria-expanded={expanded}
-            title={
-              expanded ? 'Hide missing students' : 'Show missing students'
-            }
+            className="-ml-1 cursor-grab rounded p-0.5 text-gray-300 hover:bg-gray-100 hover:text-gray-500 active:cursor-grabbing"
+            aria-label="Drag to reorder"
           >
-            {expanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
+            <GripVertical className="h-4 w-4" />
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={handleDuplicate}
-          disabled={duplicating}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
-          aria-label="Duplicate activity in this class"
-          title="Duplicate in this class"
+        {/* Type icon */}
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+            isDraft
+              ? 'bg-gray-100 text-gray-500'
+              : isQuiz
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-amber-50 text-amber-700'
+          }`}
+          aria-hidden="true"
         >
-          <Copy className="h-3.5 w-3.5" />
-        </button>
+          {isQuiz ? (
+            <ListChecks className="h-5 w-5" />
+          ) : (
+            <ClipboardList className="h-5 w-5" />
+          )}
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setConfirmDelete(true)}
-          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-          aria-label="Delete activity"
-          title="Delete activity"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        {/* Title + meta */}
+        <div className="min-w-[220px] flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={href}
+              className={`truncate text-[15px] font-semibold hover:text-red-600 ${
+                isDraft ? 'text-gray-700' : 'text-gray-900'
+              }`}
+            >
+              {activity.title}
+            </Link>
+            <span
+              className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                isQuiz ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              {isQuiz ? 'Quiz' : 'Activity'}
+            </span>
+            <span
+              className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${STATUS_PILL_CLASS[cardStatus]}`}
+            >
+              {STATUS_PILL_LABEL[cardStatus]}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+            <span className="inline-flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5" />
+              Due {formatShortDate(activity.dueAt)}
+            </span>
+            {hint && <span className={hint.className}>{hint.text}</span>}
+            <span className="inline-flex items-center gap-1">
+              <Award className="h-3.5 w-3.5" />
+              {activity.maxPoints} pts
+            </span>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="w-full sm:w-60">
+          {isDraft ? (
+            <p className="text-xs text-gray-500">Not published yet</p>
+          ) : showRosterCompleteness ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="inline-flex items-center gap-1 text-gray-700">
+                  <Users className="h-3.5 w-3.5 text-gray-400" />
+                  <b className="text-gray-900">{submittedFromRoster}</b> / {rosterSize} submitted
+                </span>
+                {ungradedCount > 0 ? (
+                  <span className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                    {ungradedCount} to grade
+                  </span>
+                ) : allGraded ? (
+                  <span className="font-semibold text-green-700">All graded ✓</span>
+                ) : null}
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className={`h-full rounded-full ${
+                    allGraded && submittedFromRoster === rosterSize
+                      ? 'bg-green-500'
+                      : 'bg-red-500'
+                  }`}
+                  style={{ width: `${submittedPct}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              {rosterSize === 0 ? 'No students enrolled yet' : 'Not open yet'}
+            </p>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="relative flex items-center gap-2" ref={menuRef}>
+          <Link
+            href={href}
+            className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition ${primary.className}`}
+          >
+            {primary.label}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+
+          {menuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+            >
+              <Link
+                href={href}
+                role="menuitem"
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <ExternalLink className="h-4 w-4 text-gray-400" />
+                Open
+              </Link>
+              {showRosterCompleteness && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setExpanded((v) => !v);
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <Users className="h-4 w-4 text-gray-400" />
+                  {expanded ? 'Hide missing students' : 'Show missing students'}
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Copy className="h-4 w-4 text-gray-400" />
+                {duplicating ? 'Duplicating…' : 'Duplicate in this class'}
+              </button>
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setConfirmDelete(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Missing students */}
       {expanded && showRosterCompleteness && (
-        <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2.5">
+        <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-3">
           {missingStudents.length === 0 ? (
-            <p className="text-xs text-green-700">
-              ✓ Everyone submitted. Nice.
-            </p>
+            <p className="text-xs text-green-700">✓ Everyone submitted. Nice.</p>
           ) : (
             <>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-red-700">

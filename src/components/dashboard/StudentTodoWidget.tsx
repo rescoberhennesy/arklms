@@ -91,7 +91,7 @@ export default function StudentTodoWidget({
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
                         <ClipboardList className="h-3 w-3" />
-                        Assignment
+                        Activity
                       </span>
                     );
 

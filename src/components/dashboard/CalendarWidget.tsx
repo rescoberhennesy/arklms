@@ -289,7 +289,7 @@ export default function CalendarWidget({
                         <span className="ml-2 text-gray-500">{a.className}</span>
                       </span>
                       <span className="shrink-0 text-gray-500">
-                        {a.activityKind === 'quiz' ? 'Quiz' : 'Assignment'} · {timeLabel}
+                        {a.activityKind === 'quiz' ? 'Quiz' : 'Activity'} · {timeLabel}
                       </span>
                       {isDraft && (
                         <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-gray-600">

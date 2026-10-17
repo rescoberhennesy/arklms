@@ -292,7 +292,7 @@ export default function SubmissionGrader({
             <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
               <AlertCircle className="-mt-0.5 mr-1 inline h-3 w-3" />
               This is a resubmission. Any previous grade for this student on
-              this assignment was cleared and needs to be re-entered.
+              this activity was cleared and needs to be re-entered.
             </div>
           )}
         </div>
