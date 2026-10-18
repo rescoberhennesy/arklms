@@ -9,7 +9,7 @@ import {
   ArrowRight,
   HelpCircle,
   AlarmClock,
-  AlertCircle,
+  Hourglass,
 } from 'lucide-react';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import type { ActivityWithStudentState } from '@/lib/types/activities';
@@ -47,19 +47,11 @@ export default function QuizPostSubmit({
   autoSubmitted,
 }: QuizPostSubmitProps) {
   const showCorrect = attemptView.config.showCorrectAnswers;
+  const submitted = attemptView.attempt.submittedAt !== null;
 
-  const score = reviewView
-    ? reviewView.score
-    : attemptView.attempt.manualScoreOverride ??
-      attemptView.attempt.autoScore ??
-      null;
   const maxScore = reviewView
     ? reviewView.maxScore
     : attemptView.config.quizTotalPoints ?? activity.maxPoints;
-  const percentage =
-    score !== null && maxScore > 0
-      ? Math.round((score / maxScore) * 100)
-      : null;
 
   const submittedAt = attemptView.attempt.submittedAt
     ? new Date(attemptView.attempt.submittedAt).toLocaleString()
@@ -73,38 +65,38 @@ export default function QuizPostSubmit({
 
   const canRenderReview = showCorrect && reviewView !== null;
 
-  // Count questions awaiting manual grade. A question is "manual-pending"
-  // when its kind is essay or short_answer and the response's manualPoints
-  // is still null. Notes:
-  //   - short_answer has auto-grade via acceptable-strings match, but the
-  //     teacher can override via setManualResponseGrade. We treat it as
-  //     "pending" only if the teacher hasn't set a manual value yet AND
-  //     the auto-grade was unable to mark it correct — i.e. autoCorrect
-  //     is false or null. If autoCorrect is true the auto-grade is fine
-  //     and we don't surface a pending banner for it.
-  //   - We rely on attemptView.responses rather than the review view so
-  //     this works even when showCorrectAnswers is false (the banner is
-  //     useful regardless).
-  const manualPendingCount = attemptView.attempt.submittedAt
-    ? attemptView.questions.reduce((acc, q) => {
-        if (q.questionKind !== 'essay' && q.questionKind !== 'short_answer') {
-          return acc;
-        }
-        const r = attemptView.responses.find((x) => x.questionId === q.id);
-        if (q.questionKind === 'essay') {
-          // Essays always need manual review until manualPoints is set.
-          if (!r || r.manualPoints === null) return acc + 1;
-          return acc;
-        }
-        // short_answer: only pending if not already correct via auto-grade
-        // AND no manual override yet.
-        if (r && r.manualPoints !== null) return acc;
-        if (r && r.autoCorrect === true) return acc;
-        return acc + 1;
-      }, 0)
-    : 0;
+  const responseFor = (questionId: string) =>
+    attemptView.responses.find((x) => x.questionId === questionId);
 
-  const hasManualPending = manualPendingCount > 0;
+  // Essays the student answered that the teacher hasn't scored yet.
+  // (Unanswered essays simply count 0, same rule as the database.)
+  const pendingEssays = submitted
+    ? attemptView.questions.filter((q) => {
+        if (q.questionKind !== 'essay') return false;
+        const r = responseFor(q.id);
+        return !!r && r.manualPoints === null;
+      })
+    : [];
+  const pendingCount = pendingEssays.length;
+  const pendingPoints = pendingEssays.reduce((s, q) => s + q.points, 0);
+  const hasManualPending = pendingCount > 0;
+  const pendingIds = new Set(pendingEssays.map((q) => q.id));
+
+  // Points already decided (auto-graded items + essays the teacher scored).
+  const gradedSoFar = attemptView.questions.reduce((s, q) => {
+    if (pendingIds.has(q.id)) return s;
+    const r = responseFor(q.id);
+    return s + (r ? r.manualPoints ?? r.autoPoints ?? 0 : 0);
+  }, 0);
+  const gradedSoFarMax = maxScore - pendingPoints;
+
+  // The final score is only shown once the grade is released. Students can
+  // only read released grades, so activity.grade is null until then.
+  const releasedScore = activity.grade ? activity.grade.score : null;
+  const percentage =
+    releasedScore !== null && maxScore > 0
+      ? Math.round((releasedScore / maxScore) * 100)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -139,10 +131,10 @@ export default function QuizPostSubmit({
           </div>
         </div>
 
-        {score !== null ? (
+        {releasedScore !== null ? (
           <div className="mt-4 flex items-baseline gap-3">
             <Award className="h-5 w-5 text-green-700" />
-            <span className="text-3xl font-bold text-green-900">{score}</span>
+            <span className="text-3xl font-bold text-green-900">{releasedScore}</span>
             <span className="text-lg text-green-700">/ {maxScore}</span>
             {percentage !== null && (
               <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-sm font-medium text-green-800">
@@ -150,53 +142,34 @@ export default function QuizPostSubmit({
               </span>
             )}
           </div>
+        ) : hasManualPending ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <Hourglass className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+              <div className="text-sm text-amber-900">
+                <p className="font-semibold">Waiting for your teacher to grade</p>
+                <p className="mt-0.5 text-amber-800">
+                  {pendingCount} essay question{pendingCount === 1 ? '' : 's'} (
+                  {pendingPoints} pt{pendingPoints === 1 ? '' : 's'}) still{' '}
+                  {pendingCount === 1 ? 'needs' : 'need'} to be graded. Your
+                  final score will appear here once your teacher finishes.
+                </p>
+                {attemptView.config.autoReleaseGrade && (
+                  <p className="mt-2 text-xs font-medium text-amber-900">
+                    Graded so far: {gradedSoFar} / {gradedSoFarMax} pts
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         ) : (
           <p className="mt-4 text-sm text-green-800">
-            {hasManualPending
-              ? 'Your final score will appear once your teacher finishes grading.'
-              : 'Your teacher will release your grade once they finish reviewing.'}
+            Your teacher will release your grade once they finish reviewing.
           </p>
         )}
       </div>
 
-      {/* Manual-pending banner.
-          Shown when at least one essay (or short_answer the auto-grade
-          couldn't mark correct) is waiting on the teacher. Tells the
-          student their visible score may still change.
-          (Session 11 design lock: surfaced on the post-submit screen
-          only; gradebook row is a Phase 9 polish item.) */}
-      {hasManualPending && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
-            <div className="text-sm text-amber-900">
-              <p className="font-semibold">
-                {manualPendingCount} question
-                {manualPendingCount === 1 ? '' : 's'} awaiting manual grade
-              </p>
-              <p className="mt-0.5 text-amber-800">
-                {score !== null ? (
-                  <>
-                    Your current score reflects only the auto-graded
-                    questions so far. Your final score may change once your
-                    teacher finishes reviewing.
-                  </>
-                ) : (
-                  <>
-                    Your teacher needs to review these before your score
-                    can be released.
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Overall feedback from the teacher (attempt-level).
-          Shown as soon as the teacher has saved any text — matches the
-          per-question feedback pattern already used in ReviewRow below.
-          Empty string means no feedback written yet; render nothing. */}
+      {/* Overall feedback from the teacher (attempt-level). */}
       {attemptView.attempt.feedback.trim() !== '' && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
@@ -239,7 +212,10 @@ export default function QuizPostSubmit({
           </div>
           <p>
             Your teacher hasn&apos;t enabled showing correct answers for this
-            quiz. Your overall score is shown above.
+            quiz.{' '}
+            {releasedScore !== null
+              ? 'Your overall score is shown above.'
+              : 'Your overall score will appear above once it is released.'}
           </p>
         </div>
       )}

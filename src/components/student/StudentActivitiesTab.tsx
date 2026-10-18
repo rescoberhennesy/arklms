@@ -1,68 +1,28 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import {
-  type ActivityWithStudentState,
-  type ActivityStatus,
-} from '@/lib/types/activities';
-import {
-  type ModuleTerm,
-  MODULE_TERMS,
-  MODULE_TERM_LABELS,
-} from '@/lib/types/modules';
-import {
-  Calendar,
-  CheckCircle2,
-  Award,
-  AlertCircle,
-  Clock,
-} from 'lucide-react';
+import { ClipboardList, ListChecks } from 'lucide-react';
+import { type ActivityWithStudentState, type ActivityStatus } from '@/lib/types/activities';
+import { type ModuleTerm, MODULE_TERMS, MODULE_TERM_LABELS } from '@/lib/types/modules';
 
 interface StudentActivitiesTabProps {
   classId: string;
   activities: ActivityWithStudentState[];
 }
 
-const TERM_HEADER_ACCENTS: Record<ModuleTerm, string> = {
-  prelim: 'bg-blue-50 text-blue-800 border-blue-200',
-  midterm: 'bg-purple-50 text-purple-800 border-purple-200',
-  prefinal: 'bg-amber-50 text-amber-800 border-amber-200',
-  final: 'bg-rose-50 text-rose-800 border-rose-200',
-};
-
-const STATUS_PILL: Record<
-  ActivityStatus,
-  { className: string; label: string }
-> = {
+const STATUS_PILL: Record<ActivityStatus, { className: string; label: string }> = {
   not_started: { className: 'bg-gray-100 text-gray-600', label: 'Not started' },
-  open: { className: 'bg-blue-100 text-blue-800', label: 'Open' },
-  late_window: {
-    className: 'bg-amber-100 text-amber-800',
-    label: 'Late accepted',
-  },
-  missing: { className: 'bg-red-100 text-red-800', label: 'Missing' },
-  submitted: { className: 'bg-blue-100 text-blue-800', label: 'Submitted' },
-  late_submitted: {
-    className: 'bg-amber-100 text-amber-800',
-    label: 'Submitted (late)',
-  },
-  graded_unreturned: {
-    className: 'bg-purple-100 text-purple-800',
-    label: 'Graded',
-  },
-  graded_returned: {
-    className: 'bg-green-100 text-green-800',
-    label: 'Graded',
-  },
+  open: { className: 'bg-amber-50 text-amber-700', label: 'To do' },
+  late_window: { className: 'bg-amber-50 text-amber-700', label: 'Late accepted' },
+  missing: { className: 'bg-red-50 text-red-700', label: 'Missed' },
+  submitted: { className: 'bg-blue-50 text-blue-700', label: 'Submitted' },
+  late_submitted: { className: 'bg-blue-50 text-blue-700', label: 'Submitted late' },
+  graded_unreturned: { className: 'bg-purple-50 text-purple-700', label: 'Graded' },
+  graded_returned: { className: 'bg-green-50 text-green-700', label: 'Graded' },
 };
 
-// Session 13 completion-tracking filter buckets.
-// "To do" = anything not yet submitted that the student can still act on,
-// plus 'missing' is excluded (it has its own bucket). 'not_started' is
-// student-side dead code (students can't see unpublished activities), but
-// included for type-completeness.
 type CompletionFilter = 'all' | 'todo' | 'submitted' | 'missed' | 'graded';
 
 const FILTER_LABEL: Record<CompletionFilter, string> = {
@@ -72,6 +32,8 @@ const FILTER_LABEL: Record<CompletionFilter, string> = {
   missed: 'Missed',
   graded: 'Graded',
 };
+
+const FILTER_KEYS = Object.keys(FILTER_LABEL) as CompletionFilter[];
 
 const FILTER_STATUSES: Record<CompletionFilter, ReadonlySet<ActivityStatus>> = {
   all: new Set<ActivityStatus>([
@@ -90,276 +52,243 @@ const FILTER_STATUSES: Record<CompletionFilter, ReadonlySet<ActivityStatus>> = {
   graded: new Set<ActivityStatus>(['graded_unreturned', 'graded_returned']),
 };
 
-export default function StudentActivitiesTab({
-  classId,
-  activities,
-}: StudentActivitiesTabProps) {
+function isModuleTerm(v: string | null): v is ModuleTerm {
+  return v !== null && (MODULE_TERMS as readonly string[]).includes(v);
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function timeHint(a: ActivityWithStudentState): { text: string; className: string } | null {
+  if (a.status === 'missing') return { text: 'Missed', className: 'font-semibold text-red-700' };
+  if (a.status === 'late_window') return { text: 'Past due, late accepted', className: 'font-semibold text-amber-700' };
+  if (a.status !== 'open' && a.status !== 'not_started') return null;
+  const msLeft = new Date(a.dueAt).getTime() - Date.now();
+  if (msLeft <= 0) return null;
+  const hours = Math.floor(msLeft / 3_600_000);
+  if (hours < 24) {
+    return { text: hours <= 0 ? 'Due within the hour' : `${hours} hour${hours === 1 ? '' : 's'} left`, className: 'font-semibold text-red-700' };
+  }
+  const days = Math.ceil(msLeft / 86_400_000);
+  return { text: `${days} day${days === 1 ? '' : 's'} left`, className: days <= 7 ? 'font-semibold text-amber-700' : 'text-gray-500' };
+}
+
+export default function StudentActivitiesTab({ classId, activities }: StudentActivitiesTabProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // URL-driven filter (Session 13).
   const filterParam = searchParams.get('filter');
   const filter: CompletionFilter =
-    filterParam === 'todo' ||
-    filterParam === 'submitted' ||
-    filterParam === 'missed' ||
-    filterParam === 'graded'
+    filterParam === 'todo' || filterParam === 'submitted' || filterParam === 'missed' || filterParam === 'graded'
       ? filterParam
       : 'all';
 
-  function setFilter(next: CompletionFilter) {
+  function replaceParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === 'all') {
-      params.delete('filter');
-    } else {
-      params.set('filter', next);
-    }
+    if (value === null) params.delete(key);
+    else params.set(key, value);
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  // Per-bucket counts for the filter pill badges — based on the full
-  // unfiltered list so users can see how many are in each bucket before
-  // clicking. "All" is the total.
+  function setFilter(next: CompletionFilter) {
+    replaceParam('filter', next === 'all' ? null : next);
+  }
+
+  // Default term: first one with something to do, else first with activities
+  const termParam = searchParams.get('term');
+  const [activeTerm, setActiveTerm] = useState<ModuleTerm>(() => {
+    if (isModuleTerm(termParam)) return termParam;
+    const withTodo = MODULE_TERMS.find((t) =>
+      activities.some((a) => a.term === t && FILTER_STATUSES.todo.has(a.status)),
+    );
+    const withAny = MODULE_TERMS.find((t) => activities.some((a) => a.term === t));
+    return withTodo ?? withAny ?? 'prelim';
+  });
+
+  function selectTerm(t: ModuleTerm) {
+    setActiveTerm(t);
+    replaceParam('term', t);
+  }
+
+  const termCounts = useMemo(() => {
+    const m = new Map<ModuleTerm, number>();
+    for (const t of MODULE_TERMS) m.set(t, 0);
+    for (const a of activities) m.set(a.term, (m.get(a.term) ?? 0) + 1);
+    return m;
+  }, [activities]);
+
+  const inTerm = useMemo(() => activities.filter((a) => a.term === activeTerm), [activities, activeTerm]);
+
   const filterCounts = useMemo(() => {
-    const counts: Record<CompletionFilter, number> = {
-      all: activities.length,
-      todo: 0,
-      submitted: 0,
-      missed: 0,
-      graded: 0,
-    };
-    for (const a of activities) {
+    const counts: Record<CompletionFilter, number> = { all: inTerm.length, todo: 0, submitted: 0, missed: 0, graded: 0 };
+    for (const a of inTerm) {
       if (FILTER_STATUSES.todo.has(a.status)) counts.todo++;
       if (FILTER_STATUSES.submitted.has(a.status)) counts.submitted++;
       if (FILTER_STATUSES.missed.has(a.status)) counts.missed++;
       if (FILTER_STATUSES.graded.has(a.status)) counts.graded++;
     }
     return counts;
-  }, [activities]);
+  }, [inTerm]);
 
-  // Apply filter, then group by term. Terms with zero matches after
-  // filtering are hidden (no empty term cards bleeding through).
-  const filtered = useMemo(
-    () => activities.filter((a) => FILTER_STATUSES[filter].has(a.status)),
-    [activities, filter],
-  );
+  const visible = inTerm
+    .filter((a) => FILTER_STATUSES[filter].has(a.status))
+    .sort((x, y) => x.displayOrder - y.displayOrder);
 
-  const byTerm = new Map<ModuleTerm, ActivityWithStudentState[]>();
-  for (const a of filtered) {
-    const list = byTerm.get(a.term) ?? [];
-    list.push(a);
-    byTerm.set(a.term, list);
-  }
-  for (const list of byTerm.values()) {
-    list.sort((x, y) => x.displayOrder - y.displayOrder);
-  }
-
-  const visibleTerms = MODULE_TERMS.filter(
-    (t) => (byTerm.get(t)?.length ?? 0) > 0,
-  );
-
-  // True empty-state (no activities at all in this class).
   if (activities.length === 0) {
     return (
-      <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">
-          No activities yet
-        </h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Your teacher hasn&apos;t posted any activities for this class.
-        </p>
+      <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+          <ClipboardList className="h-7 w-7" />
+        </div>
+        <h2 className="text-lg font-bold text-gray-900">No activities yet</h2>
+        <p className="text-sm text-gray-600">Your teacher hasn&apos;t posted any activities for this class.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Filter pills */}
-      <div className="flex flex-wrap items-center gap-2">
-        {(Object.keys(FILTER_LABEL) as CompletionFilter[]).map((key) => {
-          const active = filter === key;
+    <div className="space-y-4">
+      {/* Term tabs */}
+      <div role="tablist" aria-label="Grading period" className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+        {MODULE_TERMS.map((t) => {
+          const active = t === activeTerm;
           return (
             <button
-              key={key}
+              key={t}
               type="button"
-              onClick={() => setFilter(key)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
-                active
-                  ? 'bg-red-600 text-white shadow-sm'
-                  : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'
+              role="tab"
+              aria-selected={active}
+              onClick={() => selectTerm(t)}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition ${
+                active ? 'bg-red-600 font-semibold text-white' : 'font-medium text-gray-700 hover:bg-gray-50'
               }`}
             >
-              {FILTER_LABEL[key]}
-              <span
-                className={`rounded-full px-1.5 text-[10px] font-semibold ${
-                  active
-                    ? 'bg-white/25 text-white'
-                    : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                {filterCounts[key]}
+              {MODULE_TERM_LABELS[t]}
+              <span className={`rounded-full px-1.5 text-[11px] font-semibold ${active ? 'bg-white text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                {termCounts.get(t) ?? 0}
               </span>
             </button>
           );
         })}
       </div>
 
-      {visibleTerms.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
-          <p className="text-sm text-gray-600">
-            No activities match the &quot;{FILTER_LABEL[filter]}&quot; filter.
-          </p>
+      {/* List card */}
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div role="tablist" aria-label="Filter activities" className="flex flex-wrap gap-1 border-b border-gray-100 px-4 py-2.5">
+          {FILTER_KEYS.map((key) => {
+            const active = filter === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(key)}
+                className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
+                  active ? 'bg-gray-900 font-semibold text-white' : 'font-medium text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {FILTER_LABEL[key]}{' '}
+                <span className={active ? 'text-white/70' : key === 'missed' && filterCounts.missed > 0 ? 'text-red-600' : 'text-gray-400'}>
+                  {filterCounts[key]}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      ) : (
-        visibleTerms.map((term) => (
-          <TermTable
-            key={term}
-            term={term}
-            classId={classId}
-            activities={byTerm.get(term) ?? []}
-          />
-        ))
-      )}
+
+        {visible.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-gray-500">
+            {inTerm.length === 0
+              ? `No activities in ${MODULE_TERM_LABELS[activeTerm]} yet.`
+              : `Nothing under "${FILTER_LABEL[filter]}" in ${MODULE_TERM_LABELS[activeTerm]}.`}
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {visible.map((a) => (
+              <ActivityRow key={a.id} activity={a} classId={classId} />
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
 
-interface TermTableProps {
-  term: ModuleTerm;
-  classId: string;
-  activities: ActivityWithStudentState[];
-}
+function ActivityRow({ activity, classId }: { activity: ActivityWithStudentState; classId: string }) {
+  const isQuiz = activity.activityKind === 'quiz';
+  const hint = timeHint(activity);
+  const href = `/student/classes/${classId}/activities/${activity.id}`;
+  const isTodo = FILTER_STATUSES.todo.has(activity.status);
+  const isGraded = FILTER_STATUSES.graded.has(activity.status);
+  // A saved draft is still "To do" — it hasn't been submitted yet.
+  const hasDraft = isTodo && activity.submission?.isDraft === true;
+  const pill = hasDraft ? { className: 'bg-gray-100 text-gray-700', label: 'Draft' } : STATUS_PILL[activity.status];
 
-function TermTable({ term, classId, activities }: TermTableProps) {
+  const action = hasDraft
+    ? { label: 'Continue', primary: true }
+    : isTodo
+    ? { label: isQuiz ? 'Take quiz' : activity.status === 'late_window' ? 'Submit late' : 'Start', primary: true }
+    : isGraded
+      ? { label: 'See score', primary: false }
+      : { label: 'View', primary: false };
+
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    <li className="flex flex-wrap items-center gap-4 px-4 py-4">
       <div
-        className={`border-b px-4 py-2 text-sm font-semibold uppercase tracking-wide ${TERM_HEADER_ACCENTS[term]}`}
+        aria-hidden="true"
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+          isQuiz ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'
+        }`}
       >
-        {MODULE_TERM_LABELS[term]}
+        {isQuiz ? <ListChecks className="h-5 w-5" /> : <ClipboardList className="h-5 w-5" />}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="px-4 py-2 text-left font-medium">Activity</th>
-              <th className="px-4 py-2 text-left font-medium">Start</th>
-              <th className="px-4 py-2 text-left font-medium">Due</th>
-              <th className="px-4 py-2 text-center font-medium">Submitted</th>
-              <th className="px-4 py-2 text-center font-medium">Graded</th>
-              <th className="px-4 py-2 text-right font-medium">Score</th>
-              <th className="px-4 py-2 text-right font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {activities.map((a) => (
-              <ActivityRow key={a.id} activity={a} classId={classId} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
 
-interface ActivityRowProps {
-  activity: ActivityWithStudentState;
-  classId: string;
-}
-
-function ActivityRow({ activity, classId }: ActivityRowProps) {
-  const submitted = activity.submission !== null;
-  const graded = activity.grade !== null;
-  const statusPill = STATUS_PILL[activity.status];
-
-  return (
-    <tr className="hover:bg-gray-50/60">
-      <td className="px-4 py-3">
-        <Link
-          href={`/student/classes/${classId}/activities/${activity.id}`}
-          className="font-medium text-gray-900 hover:text-red-600"
-        >
-          {activity.title}
-        </Link>
-        <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
-          <Award className="h-3 w-3" />
-          {activity.maxPoints} pts
-          {activity.allowLate && (
-            <span className="text-amber-600">· late accepted</span>
-          )}
+      <div className="min-w-[220px] flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={href} className="truncate text-[15px] font-semibold text-gray-900 hover:text-red-600">
+            {activity.title}
+          </Link>
+          <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${pill.className}`}>{pill.label}</span>
         </div>
-      </td>
-      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
-        <span className="inline-flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          {new Date(activity.startAt).toLocaleString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-xs whitespace-nowrap">
-        <span
-          className={`inline-flex items-center gap-1 ${
-            activity.status === 'missing'
-              ? 'font-semibold text-red-700'
-              : 'text-gray-600'
-          }`}
-        >
-          <Calendar className="h-3 w-3" />
-          {new Date(activity.dueAt).toLocaleString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-center">
-        {submitted ? (
-          <CheckCircle2 className="mx-auto h-4 w-4 text-green-600" />
-        ) : activity.status === 'missing' ? (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700">
-            <AlertCircle className="h-3.5 w-3.5" />
-            Missing
-          </span>
-        ) : (
-          <span className="text-gray-300">—</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-center">
-        {graded ? (
-          <CheckCircle2 className="mx-auto h-4 w-4 text-green-600" />
-        ) : (
-          <span className="text-gray-300">—</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-right whitespace-nowrap">
-        {graded && activity.grade ? (
-          <span>
-            <span className="font-semibold text-gray-900">
-              {activity.grade.score}
-            </span>
-            <span className="text-gray-400"> / {activity.maxPoints}</span>
-          </span>
-        ) : (
-          <span className="text-gray-300">—</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${statusPill.className}`}
-        >
-          {activity.status === 'late_window' && (
-            <Clock className="h-3 w-3" />
+        <p className="mt-0.5 text-[13px] text-gray-500">
+          {isQuiz ? 'Quiz' : 'Activity'} · Due {formatShortDate(activity.dueAt)}
+          {hint && (
+            <>
+              {' · '}
+              <span className={hint.className}>{hint.text}</span>
+            </>
           )}
-          {statusPill.label}
-        </span>
-      </td>
-    </tr>
+          {' · '}
+          {activity.grade ? (
+            <span className="font-semibold text-gray-900">
+              {activity.grade.score} / {activity.maxPoints}
+            </span>
+          ) : (
+            `${activity.maxPoints} pts`
+          )}
+          {activity.allowLate && isTodo && activity.status !== 'late_window' && ' · late accepted'}
+        </p>
+      </div>
+
+      <Link
+        href={href}
+        className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          action.primary
+            ? 'bg-red-600 text-white hover:bg-red-700'
+            : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        {action.label}
+      </Link>
+    </li>
   );
 }

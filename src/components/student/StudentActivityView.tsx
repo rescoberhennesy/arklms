@@ -3,8 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Calendar,
-  Award,
+  Hourglass,
   Paperclip,
   Upload,
   X,
@@ -34,6 +33,7 @@ import {
   SUBMISSION_TYPE_LABELS,
 } from '@/lib/types/activities';
 import StudentActivityAttachmentsList from '@/components/student/StudentActivityAttachmentsList';
+import { MODULE_TERM_LABELS } from '@/lib/types/modules';
 
 interface StudentActivityViewProps {
   classId: string;
@@ -341,164 +341,259 @@ export default function StudentActivityView({
     }
   }
 
-  // What's the headline state shown to the student right now?
+    // What's the headline state shown to the student right now?
   // Determines which panels render below.
   const showComposer = composing || (!submission && !isNoSubmission);
   const showFinalSubmissionView =
     isFinalSubmission && !composing && !composingNewAttempt;
 
+  const releasedGrade = grade && grade.returnedAt ? grade : null;
+
+  // Status pill shown next to the title (matches the Activities list).
+  const statusPill: { label: string; className: string } = releasedGrade
+    ? { label: 'Graded', className: 'bg-green-50 text-green-700' }
+    : isFinalSubmission
+      ? submission!.isLate
+        ? { label: 'Submitted late', className: 'bg-blue-50 text-blue-700' }
+        : { label: 'Submitted', className: 'bg-blue-50 text-blue-700' }
+      : isDraft
+        ? { label: 'Draft', className: 'bg-gray-100 text-gray-700' }
+        : blockedByDeadline
+          ? { label: 'Missed', className: 'bg-red-50 text-red-700' }
+          : { label: 'To do', className: 'bg-amber-50 text-amber-700' };
+
+  const dueLabel = new Date(activity.dueAt).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">{activity.title}</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-600">
-          <span className="inline-flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            Due {new Date(activity.dueAt).toLocaleString()}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-700">
+            Activity
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Award className="h-3 w-3" />
-            {activity.maxPoints} pts
+          <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-bold uppercase text-blue-700">
+            {MODULE_TERM_LABELS[activity.term]}
           </span>
-          <span>{SUBMISSION_TYPE_LABELS[activity.submissionType]}</span>
-          {activity.allowLate && (
-            <span className="text-amber-600">Late submissions accepted</span>
-          )}
-          {activity.maxAttempts > 1 && (
-            <span className="inline-flex items-center gap-1 text-blue-700">
-              <RefreshCw className="h-3 w-3" />
-              Up to {activity.maxAttempts} attempts
-            </span>
-          )}
+          <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusPill.className}`}>
+            {statusPill.label}
+          </span>
         </div>
+        <h1 className="text-2xl font-bold text-gray-900">{activity.title}</h1>
+        <p className="text-sm text-gray-600">
+          Due {dueLabel} · {activity.maxPoints} points ·{' '}
+          {SUBMISSION_TYPE_LABELS[activity.submissionType]}
+          {activity.allowLate && ' · Late submissions accepted'}
+        </p>
       </div>
 
-      {error && (
-        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {notice && (
-        <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{notice}</span>
-        </div>
-      )}
-
-      {/* Instructions (intro / context) */}
-      {activity.instructions.trim() && (
-        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Instructions
-          </h2>
-          <MarkdownContent body={activity.instructions} />
-        </section>
-      )}
-
-      {/* Prompt (the question / task) */}
-      {activity.prompt.trim() && (
-        <section className="rounded-xl border-2 border-red-200 bg-red-50/30 p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-700">
-            Questions / Tasks
-          </h2>
-          <MarkdownContent body={activity.prompt} />
-        </section>
-      )}
-
-      {/* Attachments (teacher-uploaded reference files) */}
-      {attachments.length > 0 && (
-        <StudentActivityAttachmentsList attachments={attachments} />
-      )}
-
-      {/* Grade (if returned) — only shown if there's a final submission
-          with a released grade. New attempts don't show the prior grade
-          because the server clears it when the new attempt is submitted. */}
-      {showFinalSubmissionView && grade && grade.returnedAt && (
-        <section className="rounded-xl border border-green-200 bg-green-50/40 p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-green-800">
-              Your grade
-            </h2>
-            <div className="text-right">
-              <span className="text-2xl font-bold text-green-900">
-                {grade.score}
-              </span>
-              <span className="text-sm text-green-700">
-                {' '}
-                / {activity.maxPoints}
-              </span>
-            </div>
-          </div>
-          {grade.feedback.trim() && (
-            <div className="mt-3">
-              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-green-700">
-                Feedback
-              </h3>
-              <div className="rounded-md bg-white p-3">
-                <MarkdownContent body={grade.feedback} />
-              </div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+        {/* ---------------- Left: the work ---------------- */}
+        <div className="min-w-0 space-y-6">
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
-        </section>
-      )}
 
-      {/* Submission area */}
-      {isNoSubmission ? (
-        <section className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-          <p className="text-sm text-gray-600">
-            This activity does not require a submission. Your teacher will
-            grade it directly.
-          </p>
-        </section>
-      ) : showFinalSubmissionView ? (
-        <FinalSubmissionView
-          submission={submission!}
-          activity={activity}
-          hasReleasedGrade={grade !== null && grade.returnedAt !== null}
-          attemptsRemaining={attemptsRemaining}
-          canStartNewAttempt={canStartNewAttempt}
-          onStartNewAttempt={() => setConfirmNewAttempt(true)}
-          onDownload={handleDownloadAttachment}
-        />
-      ) : showComposer ? (
-        <ComposerView
-          showsTextField={showsTextField}
-          showsFileField={showsFileField}
-          textBody={textBody}
-          onTextChange={setTextBody}
-          pendingFiles={pendingFiles}
-          onAddFiles={handleAddFiles}
-          onRemoveFile={handleRemovePendingFile}
-          existingDraftAttachments={existingDraftAttachments}
-          onDownloadExisting={handleDownloadAttachment}
-          isPending={isPending}
-          uploadProgress={uploadProgress}
-          blockedByDeadline={blockedByDeadline}
-          isPastDue={isPastDue}
-          allowLate={activity.allowLate}
-          isDraft={isDraft}
-          composingNewAttempt={composingNewAttempt}
-          attemptNumber={
-            composingNewAttempt
-              ? attemptsUsed + 1
-              : isDraft
-                ? submission!.attemptNumber
-                : 1
-          }
-          maxAttempts={activity.maxAttempts}
-          onSaveDraft={handleSaveDraft}
-          onSubmit={handleSubmit}
-          onDiscardDraft={isDraft ? () => setConfirmDiscard(true) : undefined}
-          onCancel={
-            submission && (isDraft || composingNewAttempt)
-              ? handleCancelComposing
-              : undefined
-          }
-        />
-      ) : null}
+          {notice && (
+            <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{notice}</span>
+            </div>
+          )}
+
+          {/* Instructions + Questions / Tasks in one card */}
+          {(activity.instructions.trim() || activity.prompt.trim()) && (
+            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              {activity.instructions.trim() && (
+                <div className="border-b border-gray-100 px-5 py-4 last:border-b-0">
+                  <h2 className="mb-2 text-[15px] font-bold text-gray-900">
+                    Instructions
+                  </h2>
+                  <MarkdownContent body={activity.instructions} />
+                </div>
+              )}
+              {activity.prompt.trim() && (
+                <div className="px-5 py-4">
+                  <h2 className="mb-2 text-[15px] font-bold text-gray-900">
+                    Questions / Tasks
+                  </h2>
+                  <MarkdownContent body={activity.prompt} />
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Attachments (teacher-uploaded reference files) */}
+          {attachments.length > 0 && (
+            <StudentActivityAttachmentsList attachments={attachments} />
+          )}
+
+          {/* Submission area */}
+          {isNoSubmission ? (
+            <section className="rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+              <p className="text-sm text-gray-600">
+                This activity does not require a submission. Your teacher will
+                grade it directly.
+              </p>
+            </section>
+          ) : showFinalSubmissionView ? (
+            <FinalSubmissionView
+              submission={submission!}
+              activity={activity}
+              hasReleasedGrade={releasedGrade !== null}
+              attemptsRemaining={attemptsRemaining}
+              canStartNewAttempt={canStartNewAttempt}
+              onStartNewAttempt={() => setConfirmNewAttempt(true)}
+              onDownload={handleDownloadAttachment}
+            />
+          ) : showComposer ? (
+            <ComposerView
+              showsTextField={showsTextField}
+              showsFileField={showsFileField}
+              textBody={textBody}
+              onTextChange={setTextBody}
+              pendingFiles={pendingFiles}
+              onAddFiles={handleAddFiles}
+              onRemoveFile={handleRemovePendingFile}
+              existingDraftAttachments={existingDraftAttachments}
+              onDownloadExisting={handleDownloadAttachment}
+              isPending={isPending}
+              uploadProgress={uploadProgress}
+              blockedByDeadline={blockedByDeadline}
+              isPastDue={isPastDue}
+              allowLate={activity.allowLate}
+              isDraft={isDraft}
+              composingNewAttempt={composingNewAttempt}
+              attemptNumber={
+                composingNewAttempt
+                  ? attemptsUsed + 1
+                  : isDraft
+                    ? submission!.attemptNumber
+                    : 1
+              }
+              maxAttempts={activity.maxAttempts}
+              onSaveDraft={handleSaveDraft}
+              onSubmit={handleSubmit}
+              onDiscardDraft={isDraft ? () => setConfirmDiscard(true) : undefined}
+              onCancel={
+                submission && (isDraft || composingNewAttempt)
+                  ? handleCancelComposing
+                  : undefined
+              }
+            />
+          ) : null}
+        </div>
+
+        {/* ---------------- Right: grade + details ---------------- */}
+        <aside className="space-y-4 lg:sticky lg:top-6">
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="space-y-4 p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-[15px] font-bold text-gray-900">Your grade</h2>
+                {releasedGrade && (
+                  <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">
+                    Released{' '}
+                    {new Date(releasedGrade.returnedAt!).toLocaleDateString('en-PH', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+                )}
+              </div>
+
+              {releasedGrade ? (
+                <div className="flex items-center gap-4">
+                  <ScoreRing score={releasedGrade.score} max={activity.maxPoints} />
+                  <div>
+                    <p className="flex items-baseline gap-1.5">
+                      <span className="text-4xl font-extrabold leading-none text-gray-900">
+                        {releasedGrade.score}
+                      </span>
+                      <span className="text-base text-gray-600">
+                        / {activity.maxPoints}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ) : isFinalSubmission ? (
+                <div className="flex items-start gap-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-900">
+                  <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                  <p>
+                    Submitted. Waiting for your teacher to grade it. Your score
+                    will show here once it&apos;s released.
+                  </p>
+                </div>
+              ) : isDraft ? (
+                <div className="flex items-start gap-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
+                  <FileEdit className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                  <p>Draft saved, not submitted yet. Submit it so your teacher can grade it.</p>
+                </div>
+              ) : blockedByDeadline ? (
+                <div className="flex items-start gap-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>The deadline has passed and late submissions are not accepted.</p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  {isNoSubmission
+                    ? 'Your teacher will grade this directly.'
+                    : 'Not submitted yet. Your score will show here after your teacher grades it.'}
+                </p>
+              )}
+            </div>
+
+            {releasedGrade && releasedGrade.feedback.trim() && (
+              <div className="space-y-2 border-t border-gray-100 bg-gray-50 px-5 py-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  Teacher feedback
+                </p>
+                <div className="text-sm text-gray-800">
+                  <MarkdownContent body={releasedGrade.feedback} />
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-[15px] font-bold text-gray-900">Details</h2>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2.5 text-[13px]">
+              <dt className="text-gray-500">Due</dt>
+              <dd className="text-right font-semibold text-gray-900">{dueLabel}</dd>
+              <dt className="text-gray-500">Points</dt>
+              <dd className="text-right font-semibold text-gray-900">{activity.maxPoints}</dd>
+              <dt className="text-gray-500">Submit as</dt>
+              <dd className="text-right font-semibold text-gray-900">
+                {SUBMISSION_TYPE_LABELS[activity.submissionType]}
+              </dd>
+              {activity.maxAttempts > 1 && (
+                <>
+                  <dt className="text-gray-500">Attempts</dt>
+                  <dd className="text-right font-semibold text-gray-900">
+                    {attemptsUsed} of {activity.maxAttempts} used
+                  </dd>
+                </>
+              )}
+              <dt className="text-gray-500">Late work</dt>
+              <dd
+                className={`text-right font-semibold ${
+                  activity.allowLate ? 'text-amber-700' : 'text-gray-900'
+                }`}
+              >
+                {activity.allowLate ? 'Accepted' : 'Not accepted'}
+              </dd>
+            </dl>
+          </section>
+        </aside>
+      </div>
 
       <ConfirmDialog
         open={confirmDiscard}
@@ -523,6 +618,37 @@ export default function StudentActivityView({
 }
 
 // ==========================================================================
+// Score ring (right panel)
+// ==========================================================================
+
+function ScoreRing({ score, max }: { score: number; max: number }) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, Math.round((score / max) * 100))) : 0;
+  const r = 36;
+  const c = 2 * Math.PI * r;
+  const filled = (pct / 100) * c;
+  return (
+    <svg role="img" aria-label={`${pct} percent`} width="88" height="88" viewBox="0 0 88 88" className="shrink-0">
+      <circle cx="44" cy="44" r={r} fill="none" stroke="#f4f4f5" strokeWidth="10" />
+      {pct > 0 && (
+        <circle
+          cx="44"
+          cy="44"
+          r={r}
+          fill="none"
+          stroke="#dc2626"
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={`${filled} ${c}`}
+          transform="rotate(-90 44 44)"
+        />
+      )}
+      <text x="44" y="50" textAnchor="middle" fontSize="18" fontWeight="800" fill="#18181b">
+        {pct}%
+      </text>
+    </svg>
+  );
+}
+// ==========================================================================
 // Final (locked) submission view
 // ==========================================================================
 
@@ -546,10 +672,10 @@ function FinalSubmissionView({
   onDownload,
 }: FinalSubmissionViewProps) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <h2 className="text-[15px] font-bold text-gray-900">
             Your submission
           </h2>
           <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-500">

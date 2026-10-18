@@ -624,15 +624,16 @@ export default function QuizAttemptGrader({ view }: QuizAttemptGraderProps) {
                       <div className="flex flex-wrap items-center gap-3">
                         <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
                           {isManualOnly ? 'Score' : 'Override score'}
-                          <input
-                            type="number"
-                            min={0}
-                            max={q.points}
-                            step="any"
+                             <input
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
+                            aria-label={`Score for question ${idx + 1} out of ${q.points}`}
                             value={draft.pointsInput}
-                            onChange={(e) =>
-                              setRow(q.id, { pointsInput: e.target.value })
-                            }
+                            onChange={(e) => {
+                              const v = cleanScore(e.target.value, q.points);
+                              if (v !== null) setRow(q.id, { pointsInput: v });
+                            }}
                             disabled={pending}
                             placeholder={
                               isManualOnly ? '0' : 'leave blank to use auto'
@@ -753,11 +754,24 @@ function kindLabel(k: QuestionKind): string {
       return 'Multiple choice (multi)';
     case 'true_false':
       return 'True / False';
-    case 'short_answer':
-      return 'Short answer';
+        case 'short_answer':
+      return 'Identification';
     case 'essay':
       return 'Essay';
     case 'matching':
       return 'Matching';
   }
+}
+
+// Keeps digits and one decimal point (max 2 places). Returns null when the
+// value would go above the question's max points, so the keystroke is ignored.
+function cleanScore(raw: string, max: number): string | null {
+  let clean = raw.replace(/[^\d.]/g, '');
+  const dot = clean.indexOf('.');
+  if (dot !== -1) {
+    clean =
+      clean.slice(0, dot + 1) + clean.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+  }
+  if (clean !== '' && clean !== '.' && Number(clean) > max) return null;
+  return clean;
 }

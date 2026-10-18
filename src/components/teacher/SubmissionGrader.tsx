@@ -105,9 +105,11 @@ export default function SubmissionGrader({
 
   // ---- Validation -------------------------------------------------------
 
-  function parseScore(): number | null {
+    function parseScore(): number | null {
     const trimmed = scoreInput.trim();
     if (trimmed === '') return null;
+    // Digits with an optional decimal part only (no letters, signs or "e").
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
     const n = Number(trimmed);
     if (!Number.isFinite(n)) return null;
     if (n < 0 || n > activity.maxPoints) return null;
@@ -116,9 +118,17 @@ export default function SubmissionGrader({
 
   // ---- Handlers ---------------------------------------------------------
 
-  function handleScoreChange(v: string) {
+    function handleScoreChange(v: string) {
+    // Keep digits and a single decimal point (max 2 decimal places).
+    let clean = v.replace(/[^\d.]/g, '');
+    const dot = clean.indexOf('.');
+    if (dot !== -1) {
+      clean = clean.slice(0, dot + 1) + clean.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+    }
+    // Don't allow a score above the activity's max points.
+    if (clean !== '' && clean !== '.' && Number(clean) > activity.maxPoints) return;
     editingRef.current = true;
-    setScoreInput(v);
+    setScoreInput(clean);
     setError(null);
   }
 
@@ -390,10 +400,10 @@ export default function SubmissionGrader({
             </span>
             <div className="flex items-center gap-2">
               <input
-                type="number"
-                min={0}
-                max={activity.maxPoints}
-                step="any"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                aria-label={`Score out of ${activity.maxPoints}`}
                 value={scoreInput}
                 onChange={(e) => handleScoreChange(e.target.value)}
                 disabled={pending}

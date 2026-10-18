@@ -375,31 +375,42 @@ export async function listActivitiesForStudent(
     gradeBySubmission.set(g.submission_id, mapGrade(g));
   }
 
-  // Pick the highest-numbered row for each activity. If a draft exists,
-  // it has the highest attempt_number (since drafts are created at attempt
-  // = previous_final + 1 OR overwrite an existing draft on the same number).
-  const submissionByActivity = new Map<string, ActivitySubmission>();
+  // Two picks per activity:
+  //  - latestRow: the highest-numbered row, draft included. Returned as
+  //    `submission` so the activity page can resume an in-progress draft.
+  //  - latestFinal: the highest-numbered NON-draft row. Status and grade are
+  //    computed from this, so a saved draft never counts as "Submitted".
+  const latestRowByActivity = new Map<string, ActivitySubmission>();
+  const latestFinalByActivity = new Map<string, ActivitySubmission>();
   for (const s of submissionRows) {
-    const existing = submissionByActivity.get(s.activity_id);
     const mapped = mapSubmission(s, attachmentsBySubmission.get(s.id) ?? []);
-    if (!existing || mapped.attemptNumber > existing.attemptNumber) {
-      submissionByActivity.set(s.activity_id, mapped);
+
+    const row = latestRowByActivity.get(s.activity_id);
+    if (!row || mapped.attemptNumber > row.attemptNumber) {
+      latestRowByActivity.set(s.activity_id, mapped);
+    }
+
+    if (!mapped.isDraft) {
+      const fin = latestFinalByActivity.get(s.activity_id);
+      if (!fin || mapped.attemptNumber > fin.attemptNumber) {
+        latestFinalByActivity.set(s.activity_id, mapped);
+      }
     }
   }
 
   return activityRows.map((a) => {
     const activity = mapActivity(a);
-    const submission = submissionByActivity.get(a.id) ?? null;
-    // Grade lookup: a draft has no grade row; only check grades for submitted rows.
-    const grade =
-      submission && !submission.isDraft
-        ? gradeBySubmission.get(submission.id) ?? null
-        : null;
+    const submission = latestRowByActivity.get(a.id) ?? null;
+    const finalSubmission = latestFinalByActivity.get(a.id) ?? null;
+    // Grades only exist on submitted (non-draft) rows.
+    const grade = finalSubmission
+      ? gradeBySubmission.get(finalSubmission.id) ?? null
+      : null;
     return {
       ...activity,
       submission,
       grade,
-      status: computeActivityStatus(activity, submission, grade, 'student'),
+      status: computeActivityStatus(activity, finalSubmission, grade, 'student'),
     };
   });
 }

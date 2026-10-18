@@ -15,6 +15,8 @@ interface LessonAttachmentPreviewProps {
   attachmentId: string;
   fileName: string;
   mimeType: string | null;
+  /** Optional custom link getter (e.g. activity attachments). Defaults to lesson attachments. */
+  getUrl?: () => Promise<string | { url: string }>;
 }
 
 type PreviewKind =
@@ -23,6 +25,7 @@ type PreviewKind =
   | 'video'
   | 'audio'
   | 'text'
+  | 'office'
   | 'unsupported';
 
 function detectPreviewKind(
@@ -47,6 +50,7 @@ function detectPreviewKind(
   ) {
     return 'text';
   }
+    if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) return 'office';
   return 'unsupported';
 }
 
@@ -69,6 +73,7 @@ export default function LessonAttachmentPreview({
   attachmentId,
   fileName,
   mimeType,
+  getUrl,
 }: LessonAttachmentPreviewProps) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -82,9 +87,10 @@ export default function LessonAttachmentPreview({
   async function ensureUrl(): Promise<string | null> {
     if (signed && Date.now() - signed.at < URL_TTL_MS) return signed.url;
     try {
-      const result = await getAttachmentSignedUrl(attachmentId);
-      setSigned({ url: result.url, at: Date.now() });
-      return result.url;
+            const result = getUrl ? await getUrl() : await getAttachmentSignedUrl(attachmentId);
+      const url = typeof result === 'string' ? result : result.url;
+      setSigned({ url, at: Date.now() });
+      return url;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load preview.');
       return null;
@@ -151,7 +157,7 @@ export default function LessonAttachmentPreview({
       </button>
 
       {expanded && (
-        <div className="col-span-full mt-2 w-full basis-full overflow-hidden rounded-md border border-gray-200 bg-white">
+          <div className="order-last col-span-full mt-2 w-full basis-full overflow-hidden rounded-md border border-gray-200 bg-white">
           {error ? (
             <div className="flex items-start gap-2 px-3 py-3 text-xs text-red-700">
               <X className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -232,6 +238,21 @@ function PreviewBody({
           {textBody ?? ''}
         </pre>
       );
+        case 'office':
+      return (
+        <div>
+          <iframe
+            src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`}
+            title={`Preview: ${fileName}`}
+            className="h-[600px] w-full border-0 bg-gray-50"
+          />
+          <p className="border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
+            Previewed with Microsoft Office Online. If it doesn&apos;t load, use Download.
+          </p>
+        </div>
+      );
+
+
     case 'unsupported':
     default:
       return (

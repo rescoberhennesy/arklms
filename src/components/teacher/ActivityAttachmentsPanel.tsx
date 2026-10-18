@@ -13,6 +13,7 @@ import {
 import type { ActivityAttachment } from '@/lib/types/activities';
 import { createClient } from '@/lib/supabase/client';
 import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
+import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 
 interface ActivityAttachmentsPanelProps {
   activityId: string;
@@ -182,7 +183,7 @@ export default function ActivityAttachmentsPanel({
           {attachments.map((att) => (
             <li
               key={att.id}
-              className="flex items-center gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+            className="flex flex-wrap items-center gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
             >
               <FileText className="h-4 w-4 flex-shrink-0 text-gray-500" />
               <div className="min-w-0 flex-1">
@@ -191,6 +192,12 @@ export default function ActivityAttachmentsPanel({
                   {formatBytes(att.fileSize)} · {new Date(att.uploadedAt).toLocaleDateString()}
                 </p>
               </div>
+                <LessonAttachmentPreview
+                attachmentId={att.id}
+                fileName={att.fileName}
+                mimeType={att.mimeType ?? null}
+                getUrl={() => getSignedActivityAttachmentUrl(att.filePath)}
+              />
               <button
                 type="button"
                 onClick={() => handleDownload(att)}

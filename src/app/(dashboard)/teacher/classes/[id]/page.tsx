@@ -198,14 +198,18 @@ export default async function ClassDetailPage({
           <ModulesTab classId={klass.id} initialModules={modules} />
         )}
 
-        {tab === 'activities' && (
-          <div className="space-y-4">
-            <TeacherProgressStrip classId={klass.id} />
-            <ActivitiesTab
-              classId={klass.id}
-              activities={activities}
-              roster={activitiesRoster}
-            />
+                {tab === 'activities' && (
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+            <div className="min-w-0">
+              <ActivitiesTab
+                classId={klass.id}
+                activities={activities}
+                roster={activitiesRoster}
+              />
+            </div>
+            <aside className="lg:sticky lg:top-4">
+              <TeacherProgressStrip classId={klass.id} activities={activities} />
+            </aside>
           </div>
         )}
 

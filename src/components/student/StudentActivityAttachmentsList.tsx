@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { FileText, Download, Loader2, Paperclip } from 'lucide-react';
 import { getSignedActivityAttachmentUrl } from '@/lib/actions/activities';
 import type { ActivityAttachment } from '@/lib/types/activities';
+import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 
 interface StudentActivityAttachmentsListProps {
   attachments: ActivityAttachment[];
@@ -49,13 +50,22 @@ export default function StudentActivityAttachmentsList({
         {attachments.map((att) => (
           <li
             key={att.id}
-            className="flex items-center gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+            className="flex flex-wrap items-center gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
           >
             <FileText className="h-4 w-4 flex-shrink-0 text-gray-500" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-gray-900">{att.fileName}</p>
               <p className="text-xs text-gray-500">{formatBytes(att.fileSize)}</p>
             </div>
+
+            {/* Preview: opens below the row (PDF, images, Word/PPT/Excel, text…) */}
+            <LessonAttachmentPreview
+              attachmentId={att.id}
+              fileName={att.fileName}
+              mimeType={(att as { mimeType?: string | null }).mimeType ?? null}
+              getUrl={() => getSignedActivityAttachmentUrl(att.filePath)}
+            />
+
             <button
               type="button"
               onClick={() => handleDownload(att)}

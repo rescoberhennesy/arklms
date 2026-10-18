@@ -44,8 +44,9 @@ function weightsToForm(w: ClassGradeWeights): WeightsForm {
 function parseField(v: string): number | null {
   const trimmed = v.trim();
   if (trimmed === '') return null;
+  // Whole numbers only (no letters, signs, decimals or "e").
+  if (!/^\d+$/.test(trimmed)) return null;
   const n = Number(trimmed);
-  if (!Number.isFinite(n)) return null;
   if (n < 0 || n > 100) return null;
   return n;
 }
@@ -219,7 +220,7 @@ export default function GradeWeightsModal({
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${sumBadgeClass}`}
             >
-              {liveSum !== null ? `${liveSum.toFixed(2)} / 100` : '— / 100'}
+             {liveSum !== null ? `${liveSum} / 100` : '— / 100'}
             </span>
           </div>
 
@@ -269,18 +270,25 @@ interface WeightFieldProps {
 }
 
 function WeightField({ label, value, onChange, disabled }: WeightFieldProps) {
+  function handleChange(raw: string) {
+    // Digits only, 0–100.
+    const clean = raw.replace(/\D/g, '').slice(0, 3);
+    if (clean !== '' && Number(clean) > 100) return;
+    onChange(clean);
+  }
+
   return (
     <label className="flex items-center justify-between gap-3">
       <span className="text-sm text-gray-700">{label}</span>
       <div className="flex items-center gap-1">
         <input
-          type="number"
-          min={0}
-          max={100}
-          step="any"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          aria-label={`${label} weight in percent`}
           value={value}
           placeholder="0"
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => handleChange(e.target.value)}
           disabled={disabled}
           className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50"
         />

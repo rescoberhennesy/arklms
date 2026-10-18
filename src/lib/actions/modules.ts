@@ -763,3 +763,227 @@ export async function getAttachmentSignedUrl(
 
   return { url: data.signedUrl, fileName: row.file_name, mimeType: row.mime_type };
 }
+
+// ===========================================================================
+// Copy modules + lessons from another class
+// ===========================================================================
+
+export type CopyModulesSelection = {
+  moduleId: string;
+  /** Lessons to copy from this module (empty = copy the module only). */
+  lessonIds: string[];
+};
+
+export type CopyModulesResult = {
+  modules: number;
+  lessons: number;
+  files: number;
+  decks: number;
+};
+
+export async function copyModulesFromClass(input: {
+  targetClassId: string;
+  selections: CopyModulesSelection[];
+  /** 'same' keeps each module's original term. */
+  targetTerm: ModuleTerm | 'same';
+}): Promise<CopyModulesResult> {
+  const { supabase } = await requireAuth();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  if (input.selections.length === 0) throw new Error('Select at least one module.');
+
+  const result: CopyModulesResult = { modules: 0, lessons: 0, files: 0, decks: 0 };
+  const createdModuleIds: string[] = [];
+  const copiedPaths: string[] = [];
+  const nextOrderByTerm = new Map<string, number>();
+
+  async function nextModuleOrder(term: ModuleTerm): Promise<number> {
+    if (!nextOrderByTerm.has(term)) {
+      const { data } = await supabase
+        .from('class_modules')
+        .select('display_order')
+        .eq('class_id', input.targetClassId)
+        .eq('term', term)
+        .order('display_order', { ascending: false })
+        .limit(1);
+      const top = (data?.[0] as { display_order: number } | undefined)?.display_order;
+      nextOrderByTerm.set(term, top === undefined ? 0 : top + 1);
+    }
+    const n = nextOrderByTerm.get(term)!;
+    nextOrderByTerm.set(term, n + 1);
+    return n;
+  }
+
+  try {
+    for (const sel of input.selections) {
+      // --- Source module (RLS: only classes this teacher can read) ---
+      const { data: srcMod, error: modErr } = await supabase
+        .from('class_modules')
+        .select('id, class_id, title, description, term')
+        .eq('id', sel.moduleId)
+        .single();
+      if (modErr || !srcMod) throw new Error('A selected module could not be found.');
+      const mod = srcMod as {
+        id: string;
+        class_id: string;
+        title: string;
+        description: string | null;
+        term: ModuleTerm;
+      };
+
+      const term = input.targetTerm === 'same' ? mod.term : input.targetTerm;
+      const sameClass = mod.class_id === input.targetClassId;
+
+      const { data: newMod, error: insModErr } = await supabase
+        .from('class_modules')
+        .insert({
+          class_id: input.targetClassId,
+          title: sameClass ? `${mod.title} (copy)` : mod.title,
+          description: mod.description ?? '',
+          term,
+          display_order: await nextModuleOrder(term),
+          is_hidden: true, // teacher reviews, then shows it
+        })
+        .select('id')
+        .single();
+      if (insModErr || !newMod) {
+        throw new Error(`Failed to copy module "${mod.title}": ${insModErr?.message ?? 'unknown'}`);
+      }
+      const newModuleId = (newMod as { id: string }).id;
+      createdModuleIds.push(newModuleId);
+      result.modules++;
+
+      if (sel.lessonIds.length === 0) continue;
+
+      // --- Lessons (keep their original order) ---
+      const { data: srcLessons, error: lessErr } = await supabase
+        .from('module_lessons')
+        .select('id, title, body, display_order')
+        .eq('module_id', mod.id)
+        .in('id', sel.lessonIds)
+        .order('display_order', { ascending: true });
+      if (lessErr) throw new Error(`Failed to load lessons: ${lessErr.message}`);
+
+      const lessons = (srcLessons ?? []) as {
+        id: string;
+        title: string;
+        body: string | null;
+        display_order: number;
+      }[];
+
+      for (let i = 0; i < lessons.length; i++) {
+        const l = lessons[i];
+        const { data: newLesson, error: insLessErr } = await supabase
+          .from('module_lessons')
+          .insert({
+            module_id: newModuleId,
+            title: l.title,
+            body: l.body ?? '',
+            display_order: i,
+            published: false, // no notifications until the teacher publishes
+          })
+          .select('id')
+          .single();
+        if (insLessErr || !newLesson) {
+          throw new Error(`Failed to copy lesson "${l.title}": ${insLessErr?.message ?? 'unknown'}`);
+        }
+        const newLessonId = (newLesson as { id: string }).id;
+        result.lessons++;
+
+        // --- Attachments: duplicate the files under the new class folder ---
+        const { data: atts, error: attErr } = await supabase
+          .from('lesson_attachments')
+          .select('file_path, file_name, file_size, mime_type')
+          .eq('lesson_id', l.id);
+        if (attErr) throw new Error(`Failed to load attachments: ${attErr.message}`);
+
+        for (const att of (atts ?? []) as {
+          file_path: string;
+          file_name: string;
+          file_size: number;
+          mime_type: string | null;
+        }[]) {
+          const safeName = att.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          // Path rule: <class_id>/<module_id>/<lesson_id>/<filename>
+          const destPath = `${input.targetClassId}/${newModuleId}/${newLessonId}/${Date.now()}-${safeName}`;
+
+          const { error: copyErr } = await supabase.storage
+            .from('lesson-attachments')
+            .copy(att.file_path, destPath);
+          if (copyErr) throw new Error(`Failed to copy file "${att.file_name}": ${copyErr.message}`);
+          copiedPaths.push(destPath);
+
+          const { error: attInsErr } = await supabase.from('lesson_attachments').insert({
+            lesson_id: newLessonId,
+            file_path: destPath,
+            file_name: att.file_name,
+            file_size: att.file_size,
+            mime_type: att.mime_type,
+          });
+          if (attInsErr) {
+            throw new Error(`Failed to save file "${att.file_name}": ${attInsErr.message}`);
+          }
+          result.files++;
+        }
+
+        // --- Flashcard decks (as drafts) ---
+        const { data: decks, error: deckErr } = await supabase
+          .from('flashcard_decks')
+          .select('id, title')
+          .eq('lesson_id', l.id);
+        if (deckErr) throw new Error(`Failed to load flashcards: ${deckErr.message}`);
+
+        for (const deck of (decks ?? []) as { id: string; title: string }[]) {
+          const { data: newDeck, error: insDeckErr } = await supabase
+            .from('flashcard_decks')
+            .insert({
+              lesson_id: newLessonId,
+              title: deck.title,
+              published: false,
+              created_by: user.id,
+            })
+            .select('id')
+            .single();
+          if (insDeckErr || !newDeck) {
+            throw new Error(`Failed to copy deck "${deck.title}": ${insDeckErr?.message ?? 'unknown'}`);
+          }
+
+          const { data: cards, error: cardErr } = await supabase
+            .from('flashcards')
+            .select('front, back, display_order')
+            .eq('deck_id', deck.id)
+            .order('display_order', { ascending: true });
+          if (cardErr) throw new Error(`Failed to load cards: ${cardErr.message}`);
+
+          const cardRows = ((cards ?? []) as { front: string; back: string; display_order: number }[]).map(
+            (c) => ({
+              deck_id: (newDeck as { id: string }).id,
+              front: c.front,
+              back: c.back,
+              display_order: c.display_order,
+            }),
+          );
+          if (cardRows.length > 0) {
+            const { error: insCardsErr } = await supabase.from('flashcards').insert(cardRows);
+            if (insCardsErr) throw new Error(`Failed to copy cards: ${insCardsErr.message}`);
+          }
+          result.decks++;
+        }
+      }
+    }
+  } catch (err) {
+    // Roll back: deleting modules cascades to lessons, attachments and decks
+    if (createdModuleIds.length > 0) {
+      await supabase.from('class_modules').delete().in('id', createdModuleIds);
+    }
+    if (copiedPaths.length > 0) {
+      await supabase.storage.from('lesson-attachments').remove(copiedPaths);
+    }
+    throw err;
+  }
+
+  revalidatePath(`/teacher/classes/${input.targetClassId}`);
+  return result;
+}

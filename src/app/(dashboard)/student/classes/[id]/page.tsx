@@ -175,10 +175,14 @@ export default async function StudentClassDetailPage({
         {tab === 'modules' && (
           <StudentModulesView classId={klass.id} modules={modules} />
         )}
-        {tab === 'activities' && (
-          <div className="space-y-4">
-            <StudentProgressStrip classId={klass.id} />
-            <StudentActivitiesTab classId={klass.id} activities={activities} />
+                {tab === 'activities' && (
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+            <div className="min-w-0">
+              <StudentActivitiesTab classId={klass.id} activities={activities} />
+            </div>
+            <aside className="lg:sticky lg:top-4">
+              <StudentProgressStrip classId={klass.id} activities={activities} />
+            </aside>
           </div>
         )}
         {tab === 'grades' && gradesView && (

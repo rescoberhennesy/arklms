@@ -26,6 +26,7 @@ import {
   Trash2,
   FileText,
   Loader2,
+  CopyPlus,
   MoreHorizontal,
   FolderOpen,
   Pencil,
@@ -52,6 +53,7 @@ import {
 } from '@/lib/types/modules';
 import { useServerSyncedState } from '@/lib/hooks/useServerSyncedState';
 import Modal from '@/components/shared/Modal';
+import CopyModulesModal from '@/components/teacher/CopyModulesModal';
 
 interface ModulesTabProps {
   classId: string;
@@ -91,6 +93,7 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
     firstTermWithModules(initialModules),
   );
   const [addOpen, setAddOpen] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Dashboard quick-action deep link: ?tab=modules&create=1 opens the
@@ -157,14 +160,24 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
           })}
         </div>
 
-                <button
-          type="button"
-          onClick={() => setAddOpen(true)}
-          className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
-        >
-          <Plus className="h-4 w-4" />
-          Add module to {termLabel}
-        </button>
+                <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCopyOpen(true)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
+          >
+            <CopyPlus className="h-4 w-4" />
+            Copy from another class
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
+          >
+            <Plus className="h-4 w-4" />
+            Add module to {termLabel}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -173,7 +186,13 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
         </div>
       )}
 
+      <CopyModulesModal
+        open={copyOpen}
+        targetClassId={classId}
+        onClose={() => setCopyOpen(false)}
+      />
       {addOpen && (
+
               <AddModuleForm
         open={addOpen}
         classId={classId}
