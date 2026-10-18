@@ -358,8 +358,12 @@ export async function reorderMyClasses(orderedIds: string[]): Promise<ActionResu
     revalidatePath('/teacher/classes');
     revalidatePath('/teacher/dashboard');
     return { ok: true, data: undefined };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Failed to reorder classes';
+    } catch (e: unknown) {
+    console.error('[reorderMyClasses] failed:', e);
+    const msg =
+      e && typeof e === 'object' && 'message' in e
+        ? String((e as { message: unknown }).message)
+        : 'Failed to reorder classes';
     return { ok: false, error: msg };
   }
 }

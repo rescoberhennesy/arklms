@@ -1,184 +1,152 @@
 import Link from 'next/link';
-import { ArrowLeft, ClipboardList } from 'lucide-react';
-import {
-  getMyClassActivities,
-  type MyClassActivitiesFilters,
-} from '@/lib/actions/activities';
+import { getMyClassActivities } from '@/lib/actions/activities';
 import { listMyClasses } from '@/lib/actions/classes';
+import { DEFAULT_CLASS_COLOR } from '@/types/class';
 import ActivitiesTab from '@/components/teacher/ActivitiesTab';
-import TeacherActivitiesFilterBar from '@/components/teacher/TeacherActivitiesFilterBar';
+import ShortcutClassPicker from '@/components/teacher/ShortcutClassPicker';
 
 export const dynamic = 'force-dynamic';
 
 interface PageProps {
-  searchParams: Promise<{
-    classId?: string;
-    section?: string;
-    track?: string;
-    grade?: string;
-    // ?completion= is read by each ActivitiesTab itself — we just pass it
-    // through the URL; it isn't a server-fetched filter.
-  }>;
+  // ?completion= and ?term= are read by ActivitiesTab itself.
+  searchParams: Promise<{ classId?: string }>;
 }
 
 export default async function TeacherActivitiesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
 
-  const filters: MyClassActivitiesFilters = {
-    classId: sp.classId || null,
-    section: sp.section || null,
-    track: sp.track || null,
-    gradeLevel: sp.grade || null,
-  };
-
   const [allClassesRes, aggregated] = await Promise.all([
     listMyClasses(),
-    getMyClassActivities(filters),
+    getMyClassActivities({ classId: null, section: null, track: null, gradeLevel: null }),
   ]);
 
   if (!allClassesRes.ok) {
     return (
-      <div className="space-y-4 p-6">
+      <div className="space-y-5">
         <PageHeader />
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           Failed to load classes: {allClassesRes.error}
         </div>
       </div>
     );
   }
 
-  const allActiveClasses = allClassesRes.data.filter((c) => !c.is_archived);
-  const totalCount = allActiveClasses.length;
-  const matchedCount = aggregated.length;
+  const classes = allClassesRes.data.filter((c) => !c.is_archived);
 
-  // Per-class default filter: if any class in the matched set has
-  // ungraded work and the URL doesn't pin a filter, default that class
-  // to `has_ungraded`. ActivitiesTab is per-class, so we compute the
-  // default for each class individually. Teachers see "the grading is
-  // here" on first land; clicking the "All" pill expands back to
-  // everything. We don't push this into the URL — keeps the address
-  // bar clean and means the next visit re-evaluates against fresh data.
-  const initialFilterByClass = new Map <
-    string,
-    'all' | 'has_ungraded' | 'fully_graded'
-  >();
-  for (const { class: c, activities } of aggregated) {
-    const hasUngraded = activities.some(
-      (a) =>
-        a.published && a.submissions.some((s) => s.grade === null),
+  if (classes.length === 0) {
+    return (
+      <div className="space-y-5">
+        <PageHeader />
+        <NoClasses message="Create a class from the Classes page to start adding activities." />
+      </div>
     );
-    initialFilterByClass.set(c.id, hasUngraded ? 'has_ungraded' : 'all');
   }
 
+  const byClassId = new Map(aggregated.map((a) => [a.class.id, a]));
+
+  // Picker label: "N to grade" when there is grading to do, else activity count.
+  const metaByClassId: Record<string, string> = {};
+  for (const c of classes) {
+    const acts = byClassId.get(c.id)?.activities ?? [];
+    const toGrade = acts
+      .filter((a) => a.published)
+      .reduce((n, a) => n + a.submissions.filter((s) => s.grade === null).length, 0);
+    metaByClassId[c.id] =
+      toGrade > 0
+        ? `${toGrade} to grade`
+        : `${acts.length} ${acts.length === 1 ? 'activity' : 'activities'}`;
+  }
+
+  const selected = classes.find((c) => c.id === sp.classId) ?? classes[0];
+  const entry = byClassId.get(selected.id);
+  const activities = entry?.activities ?? [];
+  const roster = entry?.roster ?? [];
+
+  // Open on "To grade" when this class has ungraded work (same as before).
+  const hasUngraded = activities.some(
+    (a) => a.published && a.submissions.some((s) => s.grade === null),
+  );
+
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-5">
       <PageHeader />
 
-      <TeacherActivitiesFilterBar
-        classes={allActiveClasses}
-        matchedCount={matchedCount}
-        totalCount={totalCount}
-      />
-
-      {totalCount === 0 ? (
-        <EmptyState
-          title="No active classes yet"
-          message="You don't have any active classes. Create one from the Classes page to start adding activities."
-        />
-      ) : matchedCount === 0 ? (
-        <EmptyState
-          title="No classes match your filters"
-          message="Try clearing one or more filters to see your activities."
-        />
-      ) : (
-        <div className="space-y-8">
-          {aggregated.map(({ class: c, activities, roster }) => (
-            <section
-              key={c.id}
-              className="rounded-xl border border-gray-200 bg-white shadow-sm"
-            >
-              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-3">
-                <div>
-                  <h2 className="text-base font-semibold text-gray-900">
-                    {c.name}
-                  </h2>
-                  <p className="text-xs text-gray-500">
-                    {[c.section, c.grade_level, c.track, c.semester]
-                      .filter(Boolean)
-                      .join(' · ') || 'No section info'}
-                    {' · '}
-                    {activities.length}{' '}
-                    {activities.length === 1 ? 'activity' : 'activities'}
-                    {' · '}
-                    {c.enrolled_count}{' '}
-                    {c.enrolled_count === 1 ? 'student' : 'students'}
-                  </p>
-                </div>
-                <Link
-                  href={`/teacher/classes/${c.id}?tab=activities`}
-                  className="text-xs font-medium text-red-700 hover:text-red-800 hover:underline"
-                >
-                  Open class →
-                </Link>
-              </header>
-              <div className="p-5">
-                {/* ActivitiesTab is fully self-contained. Create button,
-                    copy-from-class modal, dnd reorder, completion filter
-                    pills, status pills, expand-to-show-missing-students —
-                    all of it works inside each block. Each block reads from
-                    its own classId, so creating an activity inside block #3
-                    creates it in class #3 (the correct, expected behavior). */}
-                <ActivitiesTab
-                  classId={c.id}
-                  activities={activities}
-                  roster={roster}
-                  initialFilter={initialFilterByClass.get(c.id) ?? 'all'}
-                />
-              </div>
-            </section>
-          ))}
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
+        <div className="lg:sticky lg:top-20">
+          <ShortcutClassPicker classes={classes} selectedId={selected.id} metaByClassId={metaByClassId} />
         </div>
-      )}
+
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+          <ClassHeaderRow
+            name={selected.name}
+            color={selected.color}
+            meta={[selected.section, selected.grade_level, selected.semester].filter(Boolean).join(' · ')}
+            href={`/teacher/classes/${selected.id}?tab=activities`}
+          />
+          <div className="p-5">
+            <ActivitiesTab
+              key={selected.id}
+              classId={selected.id}
+              activities={activities}
+              roster={roster}
+              initialFilter={hasUngraded ? 'has_ungraded' : 'all'}
+            />
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
 
 function PageHeader() {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <Link
-          href="/teacher/dashboard"
-          className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to dashboard
-        </Link>
-        <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-gray-900">
-          <ClipboardList className="h-6 w-6 text-red-600" />
-          Activities
-        </h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Activities across all your classes. Each class keeps its own term
-          ordering and create button — activities aren't reorderable across
-          classes.
-        </p>
-      </div>
+    <div>
+      <h1 className="text-[28px] font-extrabold tracking-tight text-zinc-900">Activities</h1>
+      <p className="mt-1 text-sm text-zinc-500">Pick a class to manage and grade its activities.</p>
     </div>
   );
 }
 
-function EmptyState({
-  title,
-  message,
+function ClassHeaderRow({
+  name,
+  color,
+  meta,
+  href,
 }: {
-  title: string;
-  message: string;
+  name: string;
+  color: string | null;
+  meta: string;
+  href: string;
 }) {
+  const accent = color ?? DEFAULT_CLASS_COLOR;
   return (
-    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
-      <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-      <p className="mt-1 text-sm text-gray-500">{message}</p>
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-5 py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="h-3 w-3 shrink-0 rounded-full"
+          style={{
+            backgroundColor: accent,
+            boxShadow: `0 0 0 4px color-mix(in oklab, ${accent} 25%, transparent)`,
+          }}
+        />
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-extrabold text-zinc-900">{name}</h2>
+          {meta && <p className="truncate text-[12.5px] text-zinc-500">{meta}</p>}
+        </div>
+      </div>
+      <Link href={href} className="text-[13px] font-bold text-red-700 hover:text-red-800">
+        Open class →
+      </Link>
+    </header>
+  );
+}
+
+function NoClasses({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center">
+      <h3 className="text-base font-bold text-zinc-900">No active classes yet</h3>
+      <p className="mt-1 text-sm text-zinc-500">{message}</p>
     </div>
   );
 }

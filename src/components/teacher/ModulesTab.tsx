@@ -32,6 +32,7 @@ import {
   Pencil,
   ArrowRightLeft,
   ExternalLink,
+  EyeOff,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import {
@@ -119,17 +120,16 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
   }
 
   return (
-    <div className="space-y-5">
-      {/* Grading-period tabs + add button */}
+    <div className="space-y-6">
+      {/* Grading-period tabs + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
           role="tablist"
           aria-label="Grading period"
-          className="inline-flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1"
+          className="inline-flex flex-wrap gap-1 rounded-2xl bg-zinc-100 p-1"
         >
-          {MODULE_TERMS.map((term) => {
+            {MODULE_TERMS.map((term) => {
             const active = term === activeTerm;
-            const count = modules.filter((m) => m.term === term).length;
             return (
               <button
                 key={term}
@@ -141,30 +141,23 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
                   setAddOpen(false);
                   setError(null);
                 }}
-                className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-4 text-sm transition ${
+                className={`inline-flex min-h-10 items-center rounded-xl px-5 text-sm transition ${
                   active
-                    ? 'bg-red-600 font-semibold text-white'
-                    : 'font-medium text-gray-700 hover:bg-gray-100'
+                    ? 'bg-white font-bold text-red-700 shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
+                    : 'font-semibold text-zinc-500 hover:text-zinc-900'
                 }`}
               >
                 {MODULE_TERM_LABELS[term]}
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {count}
-                </span>
               </button>
             );
           })}
         </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setCopyOpen(true)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
           >
             <CopyPlus className="h-4 w-4" />
             Copy from another class
@@ -172,16 +165,16 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
           <button
             type="button"
             onClick={() => setAddOpen(true)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-bold text-white shadow-[0_6px_16px_rgba(220,38,38,0.22)] transition hover:bg-red-700 active:scale-[0.98]"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4" strokeWidth={2.4} />
             Add module to {termLabel}
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -192,42 +185,39 @@ export default function ModulesTab({ classId, initialModules }: ModulesTabProps)
         onClose={() => setCopyOpen(false)}
       />
       {addOpen && (
-
-              <AddModuleForm
-        open={addOpen}
-        classId={classId}
-        term={activeTerm}
-        onCancel={() => setAddOpen(false)}
-        onAdded={(newModule) => {
-          setModules((prev) => [...prev, newModule]);
-          setAddOpen(false);
-        }}
-      />
+        <AddModuleForm
+          open={addOpen}
+          classId={classId}
+          term={activeTerm}
+          onCancel={() => setAddOpen(false)}
+          onAdded={(newModule) => {
+            setModules((prev) => [...prev, newModule]);
+            setAddOpen(false);
+          }}
+        />
       )}
 
-            {termModules.length === 0 ? (
-        (
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
-              <FolderOpen className="h-6 w-6" />
-            </div>
-            <h3 className="text-base font-semibold text-gray-900">
-              No {termLabel} modules yet
-            </h3>
-            <p className="max-w-md text-sm text-gray-600">
-              Modules group your lessons by week or topic. Students only see
-              lessons you publish.
-            </p>
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-600 bg-white px-4 text-sm font-semibold text-red-700 transition hover:bg-red-50"
-            >
-              <Plus className="h-4 w-4" />
-              Add the first {termLabel} module
-            </button>
+      {termModules.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+            <FolderOpen className="h-6 w-6" />
           </div>
-        )
+          <h3 className="text-base font-bold text-zinc-900">
+            No {termLabel} modules yet
+          </h3>
+          <p className="max-w-md text-sm text-zinc-600">
+            Modules group your lessons by week or topic. Students only see
+            lessons you publish.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-red-600 bg-white px-4 text-sm font-bold text-red-700 transition hover:bg-red-50"
+          >
+            <Plus className="h-4 w-4" />
+            Add the first {termLabel} module
+          </button>
+        </div>
       ) : (
         <ModuleList
           classId={classId}
@@ -334,7 +324,7 @@ function AddModuleForm({ open, classId, term, onCancel, onAdded }: AddModuleForm
       >
         <div className="space-y-3">
           <div>
-            <label htmlFor="new-module-title" className="mb-1 block text-xs font-medium text-gray-700">
+            <label htmlFor="new-module-title" className="mb-1 block text-xs font-semibold text-zinc-700">
               Title <span className="text-red-500">*</span>
             </label>
             <input
@@ -345,12 +335,12 @@ function AddModuleForm({ open, classId, term, onCancel, onAdded }: AddModuleForm
               placeholder="e.g. Week 1 – Introduction to Business Finance"
               autoFocus
               disabled={isPending}
-              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+              className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-4 focus:ring-red-500/10 disabled:opacity-60"
             />
           </div>
           <div>
-            <label htmlFor="new-module-description" className="mb-1 block text-xs font-medium text-gray-700">
-              Description <span className="font-normal text-gray-400">(optional)</span>
+            <label htmlFor="new-module-description" className="mb-1 block text-xs font-semibold text-zinc-700">
+              Description <span className="font-normal text-zinc-400">(optional)</span>
             </label>
             <textarea
               id="new-module-description"
@@ -359,30 +349,30 @@ function AddModuleForm({ open, classId, term, onCancel, onAdded }: AddModuleForm
               placeholder="Brief overview of what this module covers."
               rows={3}
               disabled={isPending}
-              className="w-full resize-y rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+              className="w-full resize-y rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-4 focus:ring-red-500/10 disabled:opacity-60"
             />
           </div>
         </div>
 
         {formError && (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {formError}
           </div>
         )}
 
-        <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
+        <div className="mt-5 flex justify-end gap-2 border-t border-zinc-100 pt-4">
           <button
             type="button"
             onClick={handleClose}
             disabled={isPending}
-            className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isPending || !title.trim()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Add module
@@ -394,7 +384,7 @@ function AddModuleForm({ open, classId, term, onCancel, onAdded }: AddModuleForm
 }
 
 // ---------------------------------------------------------------------------
-// Module list for one term (drag to reorder)
+// Module list for one term (drag to reorder) — drawn as a numbered path
 // ---------------------------------------------------------------------------
 
 interface ModuleListProps {
@@ -445,11 +435,19 @@ function ModuleList({
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={modules.map((m) => m.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-3">
-          {modules.map((module) => (
+        <div className="relative space-y-4">
+          {/* The path line connecting the numbered markers */}
+          {modules.length > 1 && (
+            <div
+              aria-hidden="true"
+              className="absolute bottom-8 left-[23px] top-8 w-0.5 bg-zinc-200"
+            />
+          )}
+          {modules.map((module, index) => (
             <ModuleCard
               key={module.id}
               module={module}
+              index={index}
               classId={classId}
               onLessonsChanged={(lessons) =>
                 onModulesChanged(
@@ -468,11 +466,12 @@ function ModuleList({
 }
 
 // ---------------------------------------------------------------------------
-// One module card
+// One module card (numbered marker + card)
 // ---------------------------------------------------------------------------
 
 interface ModuleCardProps {
   module: ModuleWithLessons;
+  index: number;
   classId: string;
   onLessonsChanged: (lessons: LessonSummary[]) => void;
   onMoved: (moduleId: string, term: ModuleTerm) => void;
@@ -482,6 +481,7 @@ interface ModuleCardProps {
 
 function ModuleCard({
   module,
+  index,
   classId,
   onLessonsChanged,
   onMoved,
@@ -500,10 +500,16 @@ function ModuleCard({
 
   const lessons = module.lessons;
   const publishedCount = lessons.filter((l) => l.published).length;
+  const draftCount = lessons.length - publishedCount;
+  
+  const isHidden = Boolean(module.is_hidden);
+
   const summary =
     lessons.length === 0
-      ? 'No lessons'
-      : `${lessons.length} ${lessons.length === 1 ? 'lesson' : 'lessons'} · ${publishedCount} published`;
+      ? 'No lessons yet'
+      : `${lessons.length} ${lessons.length === 1 ? 'lesson' : 'lessons'} · ${publishedCount} published${
+          draftCount > 0 ? ` · ${draftCount} draft` : ''
+        }`;
 
   const lessonSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -604,171 +610,204 @@ function ModuleCard({
 
   const otherTerms = MODULE_TERMS.filter((t) => t !== module.term);
 
+    const markerClass = isHidden
+    ? 'border-2 border-dashed border-zinc-300 bg-white text-zinc-400'
+    : expanded
+      ? 'border border-red-200 bg-red-50 text-red-700'
+      : 'border border-zinc-200 bg-white text-zinc-600';
+
   return (
-    <article
+    <div
       ref={setNodeRef}
       style={style}
-      className="group rounded-2xl border border-gray-200 bg-white shadow-sm"
+      className="group relative flex items-start gap-3 sm:gap-4"
     >
-      <header className="flex items-center gap-2 px-3 py-2.5">
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          type="button"
-          className="cursor-grab rounded p-1 text-gray-300 opacity-0 transition hover:bg-gray-100 hover:text-gray-600 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
-          aria-label="Drag to reorder module"
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
+      {/* Numbered marker on the path */}
+      <span
+        aria-hidden="true"
+        className={`relative z-[1] flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[15px] font-extrabold shadow-[0_0_0_6px_#faf8f7] ${markerClass}`}
+      >
+        {String(index + 1).padStart(2, '0')}
+      </span>
 
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          aria-label={expanded ? 'Collapse module' : 'Expand module'}
-          aria-expanded={expanded}
-        >
-          {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-        </button>
-
-        {renaming ? (
-          <input
-            type="text"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={handleRenameSave}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRenameSave();
-              if (e.key === 'Escape') {
-                setRenaming(false);
-                setRenameValue(module.title);
-              }
-            }}
-            autoFocus
-            aria-label="Module title"
-            className="min-w-0 flex-1 rounded-md border border-red-300 px-2 py-1.5 text-base font-semibold text-gray-900 focus:outline-none focus:ring-1 focus:ring-red-500"
-          />
-        ) : (
-          <Link
-            href={`/teacher/classes/${classId}/modules/${module.id}`}
-            className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 hover:text-red-600"
-          >
-            {module.title}
-          </Link>
-        )}
-
-        <span className="hidden whitespace-nowrap text-sm text-gray-500 sm:inline">{summary}</span>
-
-        <div className="relative" ref={menuRef}>
+      <article
+        className={`min-w-0 flex-1 overflow-visible rounded-2xl border ${
+          isHidden
+            ? 'border-dashed border-zinc-300 bg-zinc-50'
+            : 'border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]'
+        }`}
+      >
+        <header className="flex flex-wrap items-center gap-3 px-3 py-3 sm:px-4">
           <button
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
             type="button"
-            onClick={() => {
-              setMenuOpen((v) => !v);
-              setMoveOpen(false);
-            }}
-            disabled={isPending}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
-            aria-label="Module options"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
+            className="-mr-1 cursor-grab rounded p-1 text-zinc-300 opacity-0 transition hover:bg-zinc-100 hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+            aria-label="Drag to reorder module"
           >
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-5 w-5" />}
+            <GripVertical className="h-4 w-4" />
           </button>
 
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-11 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg"
-            >
-              <Link
-                role="menuitem"
-                href={`/teacher/classes/${classId}/modules/${module.id}`}
-                className="flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-sm text-gray-800 hover:bg-gray-100"
-              >
-                <ExternalLink className="h-4 w-4 text-gray-500" />
-                Open module
-              </Link>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  closeMenu();
-                  setRenameValue(module.title);
-                  setRenaming(true);
-                }}
-                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-gray-800 hover:bg-gray-100"
-              >
-                <Pencil className="h-4 w-4 text-gray-500" />
-                Rename
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => setMoveOpen((v) => !v)}
-                aria-expanded={moveOpen}
-                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-gray-800 hover:bg-gray-100"
-              >
-                <ArrowRightLeft className="h-4 w-4 text-gray-500" />
-                Move to another period
-                <ChevronRight className={`ml-auto h-4 w-4 text-gray-400 transition ${moveOpen ? 'rotate-90' : ''}`} />
-              </button>
-              {moveOpen && (
-                <div className="mb-1 ml-7 flex flex-col">
-                  {otherTerms.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => handleMove(t)}
-                      className="min-h-8 rounded-lg px-2.5 text-left text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      {MODULE_TERM_LABELS[t]}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="my-1 h-px bg-gray-100" />
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  closeMenu();
-                  setConfirmDelete(true);
-                }}
-                className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-red-700 hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete module
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 transition hover:bg-zinc-200 hover:text-zinc-900"
+            aria-label={expanded ? 'Collapse module' : 'Expand module'}
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
 
-      {expanded && (
-        <div className="border-t border-gray-100 px-3 pb-3 pt-2 sm:pl-14">
-          {lessons.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-gray-500">No lessons in this module yet.</p>
-          ) : (
-            <DndContext
-              sensors={lessonSensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleLessonDragEnd}
-            >
-              <SortableContext items={lessons.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-                <ul className="space-y-0.5">
-                  {lessons.map((lesson) => (
-                    <LessonRow key={lesson.id} lesson={lesson} classId={classId} />
-                  ))}
-                </ul>
-              </SortableContext>
-            </DndContext>
-          )}
+          <div className="min-w-0 flex-1 basis-[220px]">
+            {renaming ? (
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleRenameSave}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameSave();
+                  if (e.key === 'Escape') {
+                    setRenaming(false);
+                    setRenameValue(module.title);
+                  }
+                }}
+                autoFocus
+                aria-label="Module title"
+                className="w-full rounded-lg border border-red-300 px-2 py-1.5 text-base font-bold text-zinc-900 focus:outline-none focus:ring-4 focus:ring-red-500/10"
+              />
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`/teacher/classes/${classId}/modules/${module.id}`}
+                  className={`min-w-0 truncate text-base font-extrabold hover:text-red-600 ${
+                    isHidden ? 'text-zinc-500' : 'text-zinc-900'
+                  }`}
+                >
+                  {module.title}
+                </Link>
+                {isHidden && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-200 px-2.5 py-0.5 text-[11.5px] font-bold text-zinc-600">
+                    <EyeOff className="h-3 w-3" />
+                    Hidden from students
+                  </span>
+                )}
+              </div>
+            )}
+            <p className="mt-0.5 text-[12.5px] text-zinc-500">{summary}</p>
+          </div>
 
-          <AddLessonInline moduleId={module.id} classId={classId} onError={onError} />
-        </div>
-      )}
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen((v) => !v);
+                setMoveOpen(false);
+              }}
+              disabled={isPending}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-800 disabled:opacity-50"
+              aria-label="Module options"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-5 w-5" />}
+            </button>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-11 z-20 w-56 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-xl"
+              >
+                <Link
+                  role="menuitem"
+                  href={`/teacher/classes/${classId}/modules/${module.id}`}
+                  className="flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-sm text-zinc-800 hover:bg-zinc-100"
+                >
+                  <ExternalLink className="h-4 w-4 text-zinc-500" />
+                  Open module
+                </Link>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu();
+                    setRenameValue(module.title);
+                    setRenaming(true);
+                  }}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-100"
+                >
+                  <Pencil className="h-4 w-4 text-zinc-500" />
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setMoveOpen((v) => !v)}
+                  aria-expanded={moveOpen}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-100"
+                >
+                  <ArrowRightLeft className="h-4 w-4 text-zinc-500" />
+                  Move to another period
+                  <ChevronRight className={`ml-auto h-4 w-4 text-zinc-400 transition ${moveOpen ? 'rotate-90' : ''}`} />
+                </button>
+                {moveOpen && (
+                  <div className="mb-1 ml-7 flex flex-col">
+                    {otherTerms.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleMove(t)}
+                        className="min-h-8 rounded-lg px-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-100"
+                      >
+                        {MODULE_TERM_LABELS[t]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="my-1 h-px bg-zinc-100" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu();
+                    setConfirmDelete(true);
+                  }}
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-red-700 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete module
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+
+        {expanded && (
+          <div className="border-t border-zinc-100 px-2.5 pb-3 pt-2 sm:px-3">
+            {lessons.length === 0 ? (
+              <p className="px-2 py-2 text-sm text-zinc-500">No lessons in this module yet.</p>
+            ) : (
+              <DndContext
+                sensors={lessonSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleLessonDragEnd}
+              >
+                <SortableContext items={lessons.map((l) => l.id)} strategy={verticalListSortingStrategy}>
+                  <ul className="space-y-1">
+                      {lessons.map((lesson) => (
+                      <LessonRow key={lesson.id} lesson={lesson} classId={classId} />
+                    ))}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            )}
+
+            <AddLessonInline moduleId={module.id} classId={classId} onError={onError} />
+          </div>
+        )}
+      </article>
 
       <ConfirmDialog
         open={confirmDelete}
@@ -779,7 +818,7 @@ function ModuleCard({
         onConfirm={handleDelete}
         onClose={() => setConfirmDelete(false)}
       />
-    </article>
+    </div>
   );
 }
 
@@ -820,16 +859,16 @@ function AddLessonInline({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1 inline-flex min-h-10 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+        className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 text-sm font-bold text-red-700 transition hover:border-red-300 hover:bg-red-50"
       >
-        <Plus className="h-4 w-4" />
+        <Plus className="h-4 w-4" strokeWidth={2.4} />
         Add lesson
       </button>
     );
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 px-1">
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
       <input
         type="text"
         value={title}
@@ -845,7 +884,7 @@ function AddLessonInline({
             setTitle('');
           }
         }}
-        className="min-w-0 flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-4 focus:ring-red-500/10 disabled:opacity-60"
       />
       <button
         type="button"
@@ -854,7 +893,7 @@ function AddLessonInline({
           setTitle('');
         }}
         disabled={isPending}
-        className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
       >
         Cancel
       </button>
@@ -862,7 +901,7 @@ function AddLessonInline({
         type="button"
         onClick={handleCreate}
         disabled={isPending || !title.trim()}
-        className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         Create & edit
@@ -872,10 +911,16 @@ function AddLessonInline({
 }
 
 // ---------------------------------------------------------------------------
-// One lesson row
+// One lesson row (whole row clicks through to the lesson)
 // ---------------------------------------------------------------------------
 
-function LessonRow({ lesson, classId }: { lesson: LessonSummary; classId: string }) {
+function LessonRow({
+  lesson,
+  classId,
+}: {
+  lesson: LessonSummary;
+  classId: string;
+}) {
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const {
@@ -903,34 +948,46 @@ function LessonRow({ lesson, classId }: { lesson: LessonSummary; classId: string
     <li
       ref={setNodeRef}
       style={style}
-      className="group/lesson flex min-h-11 items-center gap-2 rounded-lg px-2 hover:bg-gray-50"
+      className="group/lesson relative flex min-h-14 items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-zinc-50"
     >
       <button
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
         type="button"
-        className="cursor-grab rounded p-0.5 text-gray-300 opacity-0 transition hover:text-gray-500 focus-visible:opacity-100 group-hover/lesson:opacity-100 active:cursor-grabbing"
+        className="relative z-10 cursor-grab rounded p-0.5 text-zinc-300 opacity-0 transition hover:text-zinc-500 focus-visible:opacity-100 group-hover/lesson:opacity-100 active:cursor-grabbing"
         aria-label="Drag to reorder lesson"
       >
         <GripVertical className="h-3.5 w-3.5" />
       </button>
 
-      <FileText className="h-4 w-4 shrink-0 text-gray-400" />
-
-      <Link
-        href={`/teacher/classes/${classId}/lessons/${lesson.id}`}
-        className="min-w-0 flex-1 truncate text-sm text-gray-800 hover:text-red-600"
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+          lesson.published ? 'bg-red-50 text-red-600' : 'bg-zinc-100 text-zinc-500'
+        }`}
       >
-        {lesson.title}
-      </Link>
+        <FileText className="h-4 w-4" />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        {/* Stretched link: the whole row opens the lesson */}
+        <Link
+          href={`/teacher/classes/${classId}/lessons/${lesson.id}`}
+          className="block truncate text-sm font-bold text-zinc-900 after:absolute after:inset-0 after:rounded-xl after:content-[''] hover:text-red-600"
+        >
+          {lesson.title}
+        </Link>
+         {!lesson.published && (
+          <p className="truncate text-xs text-zinc-500">Not visible to students yet</p>
+        )}
+      </div>
 
       {lesson.published ? (
-        <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-800">
+        <span className="shrink-0 rounded-full bg-green-50 px-2.5 py-0.5 text-[11.5px] font-bold text-green-700">
           Published
         </span>
       ) : (
-        <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">
+        <span className="shrink-0 rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11.5px] font-bold text-zinc-600">
           Draft
         </span>
       )}
@@ -938,12 +995,14 @@ function LessonRow({ lesson, classId }: { lesson: LessonSummary; classId: string
       <button
         type="button"
         onClick={() => setConfirmDelete(true)}
-        className="rounded p-1.5 text-gray-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover/lesson:opacity-100"
+        className="relative z-10 rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover/lesson:opacity-100"
         aria-label="Delete lesson"
         title="Delete lesson"
       >
         <Trash2 className="h-4 w-4" />
       </button>
+
+      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
 
       <ConfirmDialog
         open={confirmDelete}

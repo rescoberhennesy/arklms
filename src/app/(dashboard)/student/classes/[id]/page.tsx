@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ChevronLeft, User } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { getStudentClassById } from '@/lib/actions/enrollments';
 import LeaveClassButton from '@/components/student/LeaveClassButton';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
@@ -16,8 +16,7 @@ import { listActivitiesForStudent } from '@/lib/actions/activities';
 import { getStudentGradebookView } from '@/lib/actions/gradebook';
 import { getClassPeople } from '@/lib/actions/classPeople';
 import { createClient } from '@/lib/supabase/server';
-import ClassCover from '@/components/dashboard/ClassCover';
-import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
+import ClassHeader from '@/components/dashboard/ClassHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,8 +56,6 @@ export default async function StudentClassDetailPage({
     redirect('/student/classes');
   }
 
- 
-
   let announcements: Awaited<ReturnType<typeof listAnnouncements>> = [];
   let currentUserId = '';
   if (tab === 'stream') {
@@ -97,50 +94,23 @@ export default async function StudentClassDetailPage({
       <SetPageTitle title={klass.name} />
       <Link
         href="/student/classes"
-        className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+        className="inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900"
       >
         <ChevronLeft size={16} />
         Back to classes
       </Link>
 
-      <ClassCover
-        url={klass.cover_photo_url}
+      <ClassHeader
+        name={klass.name}
+        section={klass.section}
+        gradeLevel={klass.grade_level}
+        track={klass.track}
+        semester={klass.semester}
         color={klass.color}
-        className="rounded-xl px-6 py-6 text-white shadow-sm"
-      >
-        <div className="absolute right-4 top-4 z-10">
-          <LeaveClassButton classId={klass.id} className={klass.name} />
-        </div>
-        <div className="relative">
-          {/* Title — anchors the banner with the most visual weight */}
-          <h1 className="text-3xl font-bold leading-tight drop-shadow-sm">
-            {klass.name}
-          </h1>
-
-          {/* Metadata badges: section, grade level, track, semester */}
-          <div className="mt-3">
-            <ClassMetaBadges
-              section={klass.section}
-              gradeLevel={klass.grade_level}
-              track={klass.track}
-              semester={klass.semester}
-            />
-          </div>
-
-          {/* Teacher attribution. Kept separate from the metadata badges
-              because it's contextual info (who teaches), not structural
-              info (what kind of class). Reads naturally as a subtitle. */}
-          {klass.teacher_name && (
-            <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-white/90 drop-shadow-sm">
-              <User className="h-3.5 w-3.5 opacity-80" />
-              <span>
-                Teacher:{' '}
-                <span className="font-semibold">{klass.teacher_name}</span>
-              </span>
-            </p>
-          )}
-        </div>
-      </ClassCover>
+        coverPhotoUrl={klass.cover_photo_url}
+        teacherName={klass.teacher_name}
+        actions={<LeaveClassButton classId={klass.id} className={klass.name} />}
+      />
 
       <nav className="border-b border-gray-200">
         <div className="-mb-px flex gap-6 overflow-x-auto">
@@ -175,7 +145,7 @@ export default async function StudentClassDetailPage({
         {tab === 'modules' && (
           <StudentModulesView classId={klass.id} modules={modules} />
         )}
-                {tab === 'activities' && (
+        {tab === 'activities' && (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0">
               <StudentActivitiesTab classId={klass.id} activities={activities} />

@@ -69,67 +69,61 @@ export default function StudentDashboardView({
         personalTasks={personalTasks}
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <section className="space-y-3 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Your classes</h2>
-            <Link
-              href="/student/classes"
-              className="text-sm font-medium text-red-600 hover:text-red-700"
-            >
-              View all →
-            </Link>
-          </div>
-
-          {pendingRequestsCount > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              You have {pendingRequestsCount} pending join{' '}
-              {pendingRequestsCount === 1 ? 'request' : 'requests'}.
-              {' '}
-              <Link
-                href="/student/classes"
-                className="font-medium underline-offset-2 hover:underline"
-              >
-                View requests
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        {/* LEFT: Your classes → To-do */}
+        <div className="min-w-0 space-y-6">
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-extrabold tracking-tight text-zinc-900">Your classes</h2>
+              <Link href="/student/classes" className="text-sm font-bold text-red-700 hover:text-red-800">
+                View all →
               </Link>
             </div>
-          )}
 
-          {previewClasses.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
-              <p className="text-sm text-slate-600">
-                You aren&apos;t enrolled in any classes yet.
-              </p>
-              <Link
-                href="/student/classes"
-                className="mt-3 inline-block text-sm font-medium text-red-600 hover:text-red-700"
-              >
-                Find classes to join →
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {previewClasses.map((c) => (
-                <RichClassCard key={c.id} role="student" cls={c} />
-              ))}
-            </div>
-          )}
-        </section>
+            {pendingRequestsCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm">
+                <span className="text-zinc-700">
+                  <b className="font-bold text-zinc-900">{pendingRequestsCount}</b> pending join{' '}
+                  {pendingRequestsCount === 1 ? 'request' : 'requests'}, waiting for teacher approval.
+                </span>
+                <Link href="/student/classes" className="text-sm font-bold text-red-700 hover:text-red-800">
+                  View requests →
+                </Link>
+              </div>
+            )}
 
-        <aside className="space-y-4 lg:col-span-1">
+            {previewClasses.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center">
+                <p className="text-sm text-zinc-600">You aren&apos;t enrolled in any classes yet.</p>
+                <Link
+                  href="/student/classes"
+                  className="mt-3 inline-block text-sm font-bold text-red-700 hover:text-red-800"
+                >
+                  Find classes to join →
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {previewClasses.map((c) => (
+                  <RichClassCard key={c.id} role="student" cls={c} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <StudentTodoWidget items={todoItems} personalTasks={personalTasks} />
+        </div>
+
+        {/* RIGHT: Calendar → Announcements */}
+        <aside className="space-y-5">
           <CalendarWidget
             initialData={calendarData}
             fetcher={getStudentCalendarItems}
             role="student"
             classesBasePath="/student/classes"
           />
-          <StudentTodoWidget items={todoItems} personalTasks={personalTasks} />
-          <AnnouncementsWidget
-            items={announcements}
-            classesBasePath="/student/classes"
-          />
+          <AnnouncementsWidget items={announcements} classesBasePath="/student/classes" />
         </aside>
-
       </div>
     </div>
   );

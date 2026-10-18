@@ -4,27 +4,21 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, FileText, FolderOpen } from 'lucide-react';
 import { type ModuleWithLessons } from '@/lib/actions/modules';
-import {
-  type ModuleTerm,
-  MODULE_TERMS,
-  MODULE_TERM_LABELS,
-} from '@/lib/types/modules';
+import { type ModuleTerm, MODULE_TERMS, MODULE_TERM_LABELS } from '@/lib/types/modules';
+import { cn } from '@/lib/utils/cn';
 
 interface StudentModulesViewProps {
   classId: string;
   modules: ModuleWithLessons[];
 }
 
+const CARD = 'rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]';
+
 function modulesForTerm(modules: ModuleWithLessons[], term: ModuleTerm) {
-  return modules
-    .filter((m) => m.term === term)
-    .sort((a, b) => a.display_order - b.display_order);
+  return modules.filter((m) => m.term === term).sort((a, b) => a.display_order - b.display_order);
 }
 
-export default function StudentModulesView({
-  classId,
-  modules,
-}: StudentModulesViewProps) {
+export default function StudentModulesView({ classId, modules }: StudentModulesViewProps) {
   // Students only see visible modules and published lessons. The database
   // already enforces this; filtering here too keeps the UI honest. Modules
   // with no published lessons yet are left out entirely.
@@ -40,15 +34,10 @@ export default function StudentModulesView({
 
   if (visibleModules.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
-          <FolderOpen className="h-6 w-6" />
-        </div>
-        <h3 className="text-base font-semibold text-gray-900">No lessons yet</h3>
-        <p className="max-w-md text-sm text-gray-600">
-          Your teacher hasn&apos;t published any lessons yet. Check back later.
-        </p>
-      </div>
+      <EmptyState
+        title="No lessons yet"
+        message="Your teacher hasn't published any lessons yet. Check back later."
+      />
     );
   }
 
@@ -61,11 +50,10 @@ export default function StudentModulesView({
       <div
         role="tablist"
         aria-label="Grading period"
-        className="inline-flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1"
+        className="inline-flex flex-wrap gap-1 rounded-xl border border-zinc-200 bg-white p-1"
       >
         {MODULE_TERMS.map((term) => {
           const active = term === activeTerm;
-          const count = visibleModules.filter((m) => m.term === term).length;
           return (
             <button
               key={term}
@@ -73,43 +61,32 @@ export default function StudentModulesView({
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTerm(term)}
-              className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-4 text-sm transition ${
+              className={cn(
+                'rounded-lg px-4 py-2 text-sm transition',
                 active
-                  ? 'bg-red-600 font-semibold text-white'
-                  : 'font-medium text-gray-700 hover:bg-gray-100'
-              }`}
+                  ? 'bg-red-600 font-semibold text-white shadow-[0_4px_12px_rgba(220,38,38,0.25)]'
+                  : 'font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900',
+              )}
             >
               {MODULE_TERM_LABELS[term]}
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                {count}
-              </span>
             </button>
           );
         })}
       </div>
 
       {termModules.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-gray-500">
-            <FolderOpen className="h-6 w-6" />
-          </div>
-          <h3 className="text-base font-semibold text-gray-900">
-            No {termLabel} lessons yet
-          </h3>
-          <p className="max-w-md text-sm text-gray-600">
-            Your teacher hasn&apos;t posted anything for {termLabel} yet. Check back later.
-          </p>
-        </div>
+        <EmptyState
+          title={`No ${termLabel} lessons yet`}
+          message={`Your teacher hasn't posted anything for ${termLabel} yet. Check back later.`}
+        />
       ) : (
-        <div className="space-y-3">
-          {termModules.map((module) => (
-            <ModuleCard key={module.id} module={module} classId={classId} />
+        <ol className="relative space-y-4">
+          {/* Course path line */}
+          <span aria-hidden="true" className="absolute bottom-6 left-5 top-6 w-px bg-zinc-200" />
+          {termModules.map((module, i) => (
+            <ModuleCard key={module.id} module={module} classId={classId} number={i + 1} />
           ))}
-        </div>
+        </ol>
       )}
     </div>
   );
@@ -118,55 +95,84 @@ export default function StudentModulesView({
 interface ModuleCardProps {
   module: ModuleWithLessons;
   classId: string;
+  number: number;
 }
 
-function ModuleCard({ module, classId }: ModuleCardProps) {
+function ModuleCard({ module, classId, number }: ModuleCardProps) {
   const [expanded, setExpanded] = useState(true);
   const count = module.lessons.length;
 
   return (
-    <article className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <header className="flex items-center gap-2 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          aria-label={expanded ? 'Collapse module' : 'Expand module'}
-          aria-expanded={expanded}
-        >
-          {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-        </button>
+    <li className="relative flex gap-4">
+      {/* Numbered marker */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          'relative z-[1] mt-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-bold transition-colors',
+          expanded ? 'border-red-200 bg-red-50 text-red-700' : 'border-zinc-200 bg-white text-zinc-600',
+        )}
+      >
+        {String(number).padStart(2, '0')}
+      </span>
 
-        <Link
-          href={`/student/classes/${classId}/modules/${module.id}`}
-          className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 hover:text-red-600"
-        >
-          {module.title}
-        </Link>
+      <article className={cn(CARD, 'min-w-0 flex-1 overflow-hidden')}>
+        <header className="flex items-center gap-3 px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <Link
+              href={`/student/classes/${classId}/modules/${module.id}`}
+              className="block truncate text-[15px] font-bold tracking-tight text-zinc-900 hover:text-red-700"
+            >
+              {module.title}
+            </Link>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              {count} {count === 1 ? 'item' : 'items'}
+            </p>
+          </div>
 
-        <span className="whitespace-nowrap text-sm text-gray-500">
-          {count} {count === 1 ? 'lesson' : 'lessons'}
-        </span>
-      </header>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
+            aria-label={expanded ? 'Collapse module' : 'Expand module'}
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+          </button>
+        </header>
 
-      {expanded && (
-        <div className="border-t border-gray-100 px-3 pb-3 pt-2 sm:pl-14">
-          <ul className="space-y-0.5">
+        {expanded && (
+          <ul className="divide-y divide-zinc-100 border-t border-zinc-100">
             {module.lessons.map((lesson) => (
               <li key={lesson.id}>
                 <Link
                   href={`/student/classes/${classId}/lessons/${lesson.id}`}
-                  className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-gray-800 hover:bg-gray-50 hover:text-red-600"
+                  className="group flex min-h-12 items-center gap-3 px-5 py-2.5 transition hover:bg-zinc-50"
                 >
-                  <FileText className="h-4 w-4 shrink-0 text-gray-400" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{lesson.title}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 transition group-hover:bg-red-50 group-hover:text-red-600">
+                    <FileText className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 group-hover:text-zinc-900">
+                    {lesson.title}
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-zinc-500" />
                 </Link>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-    </article>
+        )}
+      </article>
+    </li>
+  );
+}
+
+function EmptyState({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center">
+      <span className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+        <FolderOpen className="h-6 w-6" />
+      </span>
+      <h3 className="text-base font-bold text-zinc-900">{title}</h3>
+      <p className="max-w-md text-sm text-zinc-500">{message}</p>
+    </div>
   );
 }

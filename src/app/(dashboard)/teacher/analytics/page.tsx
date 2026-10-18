@@ -1,197 +1,202 @@
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  BarChart3,
-  AlertTriangle,
-  TrendingDown,
-  TrendingUp,
-  Minus,
-  ExternalLink,
-} from 'lucide-react';
+import { AlertTriangle, TrendingDown, TrendingUp, Minus, ChevronRight } from 'lucide-react';
 import {
   getMyClassAnalytics,
-  type MyClassAnalyticsFilters,
   type ClassHealthCard,
   type AtRiskStudentRow,
 } from '@/lib/actions/analytics';
 import { listMyClasses } from '@/lib/actions/classes';
-import TeacherAnalyticsFilterBar from '@/components/teacher/TeacherAnalyticsFilterBar';
+import { DEFAULT_CLASS_COLOR } from '@/types/class';
+import ShortcutClassPicker from '@/components/teacher/ShortcutClassPicker';
 
 export const dynamic = 'force-dynamic';
 
+const CARD = 'rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]';
+
 interface PageProps {
-  searchParams: Promise<{
-    classId?: string;
-    section?: string;
-    track?: string;
-    grade?: string;
-  }>;
+  searchParams: Promise<{ classId?: string }>;
 }
 
 export default async function TeacherAnalyticsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
 
-  const filters: MyClassAnalyticsFilters = {
-    classId: sp.classId || null,
-    section: sp.section || null,
-    track: sp.track || null,
-    gradeLevel: sp.grade || null,
-  };
-
   const [allClassesRes, aggregated] = await Promise.all([
     listMyClasses(),
-    getMyClassAnalytics(filters),
+    getMyClassAnalytics({ classId: null, section: null, track: null, gradeLevel: null }),
   ]);
 
   if (!allClassesRes.ok) {
     return (
-      <div className="space-y-4 p-6">
+      <div className="space-y-5">
         <PageHeader />
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           Failed to load classes: {allClassesRes.error}
         </div>
       </div>
     );
   }
 
-  const allActiveClasses = allClassesRes.data.filter((c) => !c.is_archived);
-  const totalCount = allActiveClasses.length;
-  const matchedCount = aggregated.healthCards.length;
+  const classes = allClassesRes.data.filter((c) => !c.is_archived);
 
-  // Cross-class totals for the at-a-glance bar at the top of the page.
-  const totalAtRiskStudents = aggregated.atRiskStudents.filter(
-    (s) => s.atRiskClassCount > 0,
+  if (classes.length === 0) {
+    return (
+      <div className="space-y-5">
+        <PageHeader />
+        <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center">
+          <h3 className="text-base font-bold text-zinc-900">No active classes yet</h3>
+          <p className="mt-1 text-sm text-zinc-500">
+            Create a class from the Classes page to start tracking analytics.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const colorById = new Map(classes.map((c) => [c.id, c.color ?? DEFAULT_CLASS_COLOR]));
+
+  // Picker labels: "N at risk" in red, else student count.
+  const metaByClassId: Record<string, string> = {};
+  const alertByClassId: Record<string, boolean> = {};
+  for (const card of aggregated.healthCards) {
+    const id = card.class.id;
+    if (card.atRiskCount > 0) {
+      metaByClassId[id] = `${card.atRiskCount} at risk`;
+      alertByClassId[id] = true;
+    } else {
+      metaByClassId[id] = `${card.studentCount} ${card.studentCount === 1 ? 'student' : 'students'}`;
+    }
+  }
+
+  // "All classes" (overview) unless a valid class is picked.
+  const selectedClass = classes.find((c) => c.id === sp.classId) ?? null;
+  const selectedId = selectedClass?.id ?? '';
+
+  const healthCards = selectedId
+    ? aggregated.healthCards.filter((h) => h.class.id === selectedId)
+    : aggregated.healthCards;
+
+  const students: AtRiskStudentRow[] = selectedId
+    ? aggregated.atRiskStudents
+        .map((s) => ({ ...s, memberships: s.memberships.filter((m) => m.classId === selectedId) }))
+        .filter((s) => s.memberships.length > 0)
+    : aggregated.atRiskStudents;
+
+  // Totals (computed from memberships so they also work when filtered).
+  const totalAtRisk = students.filter((s) => s.memberships.some((m) => m.risk === 'at_risk')).length;
+  const totalWatchOnly = students.filter(
+    (s) => !s.memberships.some((m) => m.risk === 'at_risk') && s.memberships.length > 0,
   ).length;
-  const totalWatchOnlyStudents = aggregated.atRiskStudents.filter(
-    (s) => s.atRiskClassCount === 0 && s.watchClassCount > 0,
-  ).length;
-  const totalAwaitingGrades = aggregated.healthCards.reduce(
-    (sum, c) => sum + c.studentsAwaitingGrades,
-    0,
-  );
-  const totalMissingSubmissions = aggregated.healthCards.reduce(
-    (sum, c) => sum + c.totalMissingSubmissions,
-    0,
-  );
+  const totalAwaiting = healthCards.reduce((sum, c) => sum + c.studentsAwaitingGrades, 0);
+  const totalMissing = healthCards.reduce((sum, c) => sum + c.totalMissingSubmissions, 0);
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-5">
       <PageHeader />
 
-      <TeacherAnalyticsFilterBar
-        classes={allActiveClasses}
-        matchedCount={matchedCount}
-        totalCount={totalCount}
-      />
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
+        <div className="lg:sticky lg:top-20">
+          <ShortcutClassPicker
+            classes={classes}
+            selectedId={selectedId}
+            metaByClassId={metaByClassId}
+            alertByClassId={alertByClassId}
+            allItemSubtitle="Overview"
+          />
+        </div>
 
-      {totalCount === 0 ? (
-        <EmptyState
-          title="No active classes yet"
-          message="You don't have any active classes. Create one from the Classes page to start tracking analytics."
-        />
-      ) : matchedCount === 0 ? (
-        <EmptyState
-          title="No classes match your filters"
-          message="Try clearing one or more filters to see your analytics."
-        />
-      ) : (
-        <>
-          {/* Top-line summary bar */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <SummaryStat
-              label="At-risk students"
-              value={totalAtRiskStudents}
-              tone="danger"
-            />
-            <SummaryStat
-              label="On watch"
-              value={totalWatchOnlyStudents}
-              tone="warning"
-            />
-            <SummaryStat
-              label="Awaiting grades"
-              value={totalAwaitingGrades}
-              tone="info"
-            />
-            <SummaryStat
-              label="Missing submissions"
-              value={totalMissingSubmissions}
-              tone="neutral"
-            />
-          </div>
-
-          {/* Class health cards grid */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
-              Class health
-            </h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {aggregated.healthCards.map((card) => (
-                <HealthCard key={card.class.id} card={card} />
-              ))}
-            </div>
+        <div className="min-w-0 space-y-5">
+          {/* Summary strip */}
+          <section className={`${CARD} grid grid-cols-2 sm:grid-cols-4`}>
+            <Stat label="At-risk students" value={totalAtRisk} sub="Needs help now" alert={totalAtRisk > 0} />
+            <Stat label="On watch" value={totalWatchOnly} sub="Borderline, keep an eye on" />
+            <Stat label="Awaiting grades" value={totalAwaiting} sub="Submissions to check" />
+            <Stat label="Missing submissions" value={totalMissing} sub="Past due, not turned in" last />
           </section>
 
-          {/* Cross-class at-risk students roll-up */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
-                Students needing attention
-              </h2>
-              <span className="text-xs text-gray-500">
-                {aggregated.atRiskStudents.length}{' '}
-                {aggregated.atRiskStudents.length === 1
-                  ? 'student'
-                  : 'students'}{' '}
-                flagged across {matchedCount}{' '}
-                {matchedCount === 1 ? 'class' : 'classes'}
-              </span>
+          {/* Students needing attention */}
+          <section className={`overflow-hidden ${CARD}`}>
+            <div className="px-5 py-4">
+              <h2 className="text-base font-extrabold text-zinc-900">Students needing attention</h2>
+              <p className="text-xs text-zinc-400">
+                {students.length} {students.length === 1 ? 'student' : 'students'} flagged
+                {selectedClass ? ` in ${selectedClass.name}` : ` across ${healthCards.length} ${healthCards.length === 1 ? 'class' : 'classes'}`}
+              </p>
             </div>
-            {aggregated.atRiskStudents.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-green-200 bg-green-50 p-8 text-center">
-                <p className="text-sm font-semibold text-green-800">
-                  Nobody flagged. Nice work.
-                </p>
-                <p className="mt-1 text-xs text-green-700">
-                  No students are currently at-risk or on watch in any of these
-                  classes.
-                </p>
-              </div>
+            {students.length === 0 ? (
+              <p className="border-t border-zinc-100 px-5 py-10 text-center text-sm text-zinc-500">
+                Nobody flagged. No students are at risk or on watch.
+              </p>
             ) : (
-              <AtRiskStudentsTable rows={aggregated.atRiskStudents} />
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-y border-zinc-100 bg-zinc-50/70">
+                    <tr className="text-left text-xs text-zinc-400">
+                      <th className="px-5 py-2.5 font-medium">Student</th>
+                      <th className="px-3 py-2.5 font-medium">Flagged in</th>
+                      <th className="px-3 py-2.5 font-medium">Lowest avg</th>
+                      <th className="px-5 py-2.5 font-medium">Why</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {students.map((row) => (
+                      <StudentRow key={row.studentId} row={row} colorById={colorById} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
 
-          {/* Methodology footnote — defensible-by-design note for the
-              defense. Same reasoning we've used throughout: per-class
-              numbers are real, cross-class aggregations are only counts
-              of risk flags, never averaged scores. */}
-          <details className="text-xs text-gray-500">
-            <summary className="cursor-pointer font-medium">
-              How is "at-risk" decided?
-            </summary>
-            <div className="mt-2 space-y-1 rounded-md border border-gray-200 bg-gray-50 p-3">
+          {/* Class health */}
+          <section className={`overflow-hidden ${CARD}`}>
+            <div className="px-5 py-4">
+              <h2 className="text-base font-extrabold text-zinc-900">Class health</h2>
+              <p className="text-xs text-zinc-400">Click a class to open its Analytics tab</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-y border-zinc-100 bg-zinc-50/70">
+                  <tr className="text-left text-xs text-zinc-400">
+                    <th className="px-5 py-2.5 font-medium">Class</th>
+                    <th className="px-3 py-2.5 font-medium">Class average</th>
+                    <th className="px-3 py-2.5 text-center font-medium">At risk</th>
+                    <th className="px-3 py-2.5 text-center font-medium">Watch</th>
+                    <th className="px-3 py-2.5 text-center font-medium">Safe</th>
+                    <th className="px-5 py-2.5"><span className="sr-only">Open</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {healthCards.map((card) => (
+                    <HealthRow key={card.class.id} card={card} color={colorById.get(card.class.id)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Methodology (unchanged text) */}
+          <details className="px-1 text-xs text-zinc-500">
+            <summary className="cursor-pointer font-semibold text-zinc-600">How is &quot;at-risk&quot; decided?</summary>
+            <div className={`mt-2 space-y-1.5 p-4 ${CARD}`}>
               <p>
-                Each student is classified per-class. The aggregation on this
-                page counts how many classes flag them — it never averages
-                scores across classes (different subjects, different weights).
+                Each student is classified per-class. The aggregation on this page counts how many classes flag
+                them — it never averages scores across classes (different subjects, different weights).
               </p>
               <p>
-                <strong>At-risk</strong> if any of: avg score below 70%,
-                submission rate below 60%, or score trend declining.
+                <strong>At-risk</strong> if any of: avg score below 70%, submission rate below 60%, or score trend
+                declining.
               </p>
               <p>
-                <strong>Watch</strong> if borderline: avg score 70–75% or
-                submission rate 60–70%.
+                <strong>Watch</strong> if borderline: avg score 70–75% or submission rate 60–70%.
               </p>
               <p>
-                Trend uses the last 3 graded activities vs earlier ones; needs
-                at least 4 data points (graded + missing).
+                Trend uses the last 3 graded activities vs earlier ones; needs at least 4 data points (graded +
+                missing).
               </p>
             </div>
           </details>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -202,208 +207,132 @@ export default async function TeacherAnalyticsPage({ searchParams }: PageProps) 
 
 function PageHeader() {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <Link
-          href="/teacher/dashboard"
-          className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to dashboard
-        </Link>
-        <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-gray-900">
-          <BarChart3 className="h-6 w-6 text-red-600" />
-          Analytics
-        </h1>
-        <p className="mt-1 text-sm text-gray-600">
-          A health check across all your classes. Per-class deep-dives (quiz
-          question diagnostics, score distributions) live inside each class —
-          click a card to open them.
-        </p>
-      </div>
+    <div>
+      <h1 className="text-[28px] font-extrabold tracking-tight text-zinc-900">Analytics</h1>
+      <p className="mt-1 text-sm text-zinc-500">How your classes are doing, and who needs attention.</p>
     </div>
   );
 }
 
-function SummaryStat({
+function Stat({
   label,
   value,
-  tone,
+  sub,
+  alert = false,
+  last = false,
 }: {
   label: string;
   value: number;
-  tone: 'danger' | 'warning' | 'info' | 'neutral';
+  sub: string;
+  alert?: boolean;
+  last?: boolean;
 }) {
-  const colorClasses: Record<typeof tone, string> = {
-    danger: 'border-red-200 bg-red-50 text-red-900',
-    warning: 'border-amber-200 bg-amber-50 text-amber-900',
-    info: 'border-blue-200 bg-blue-50 text-blue-900',
-    neutral: 'border-gray-200 bg-gray-50 text-gray-900',
-  };
   return (
-    <div
-      className={`rounded-xl border ${colorClasses[tone]} px-4 py-3 shadow-sm`}
-    >
-      <div className="text-2xl font-bold tabular-nums">{value}</div>
-      <div className="text-xs font-medium opacity-80">{label}</div>
+    <div className={`px-5 py-4 ${last ? '' : 'sm:border-r sm:border-zinc-100'}`}>
+      <p className="text-[13px] text-zinc-500">{label}</p>
+      <p className={`text-[28px] font-extrabold leading-tight tabular-nums ${alert ? 'text-red-600' : 'text-zinc-900'}`}>
+        {value}
+      </p>
+      <p className="text-xs text-zinc-400">{sub}</p>
     </div>
   );
 }
 
-function HealthCard({ card }: { card: ClassHealthCard }) {
+function avgBarColor(pct: number): string {
+  if (pct < 70) return 'bg-red-500';
+  if (pct < 75) return 'bg-amber-500';
+  return 'bg-green-500';
+}
+
+function HealthRow({ card, color }: { card: ClassHealthCard; color?: string }) {
   const c = card.class;
-  return (
-    <Link
-      href={`/teacher/classes/${c.id}?tab=analytics`}
-      className="block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-red-200 hover:shadow-md"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-gray-900">
-            {c.name}
-          </h3>
-          <p className="truncate text-xs text-gray-500">
-            {[c.section, c.grade_level, c.track].filter(Boolean).join(' · ') ||
-              'No section info'}
-            {' · '}
-            {card.studentCount}{' '}
-            {card.studentCount === 1 ? 'student' : 'students'}
-          </p>
-        </div>
-        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-      </div>
+  const href = `/teacher/classes/${c.id}?tab=analytics`;
+  const avg = card.classAvgPct;
+  const meta = [c.section, `${card.studentCount} ${card.studentCount === 1 ? 'student' : 'students'}`]
+    .filter(Boolean)
+    .join(' · ');
 
-      <div className="mt-3 flex items-baseline gap-1">
-        <span className="text-2xl font-bold tabular-nums text-gray-900">
-          {card.classAvgPct === null
-            ? '—'
-            : `${card.classAvgPct.toFixed(1)}%`}
-        </span>
-        <span className="text-xs text-gray-500">class avg</span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <RiskTile label="At-risk" value={card.atRiskCount} tone="danger" />
-        <RiskTile label="Watch" value={card.watchCount} tone="warning" />
-        <RiskTile label="Safe" value={card.safeCount} tone="success" />
-      </div>
-
-      {(card.studentsAwaitingGrades > 0 || card.totalMissingSubmissions > 0) && (
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          {card.studentsAwaitingGrades > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-800">
-              {card.studentsAwaitingGrades} awaiting grades
-            </span>
-          )}
-          {card.totalMissingSubmissions > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
-              {card.totalMissingSubmissions} missing submissions
-            </span>
-          )}
-        </div>
-      )}
-    </Link>
-  );
-}
-
-function RiskTile({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: 'danger' | 'warning' | 'success';
-}) {
-  const colorClasses = {
-    danger: value > 0 ? 'bg-red-50 text-red-900' : 'bg-gray-50 text-gray-400',
-    warning:
-      value > 0 ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-400',
-    success:
-      value > 0 ? 'bg-green-50 text-green-900' : 'bg-gray-50 text-gray-400',
-  };
-  return (
-    <div className={`rounded-md px-1 py-1.5 ${colorClasses[tone]}`}>
-      <div className="text-sm font-bold tabular-nums">{value}</div>
-      <div className="text-[10px] font-medium uppercase tracking-wide opacity-80">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function AtRiskStudentsTable({ rows }: { rows: AtRiskStudentRow[] }) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <th className="px-4 py-2.5">Student</th>
-              <th className="px-4 py-2.5">Flagged in</th>
-              <th className="px-4 py-2.5">Worst avg</th>
-              <th className="px-4 py-2.5">Reasons</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map((row) => (
-              <StudentRow key={row.studentId} row={row} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function StudentRow({ row }: { row: AtRiskStudentRow }) {
-  // Collapse all unique reasons across memberships into a single readable
-  // list — most teachers don't care which class said "low submission rate";
-  // they care that this student has a low submission rate.
-  const uniqueReasons = Array.from(
-    new Set(row.memberships.flatMap((m) => m.riskReasons)),
+  const count = (n: number, tone: string) => (
+    <span className={`font-bold tabular-nums ${n > 0 ? tone : 'text-zinc-300'}`}>{n}</span>
   );
 
   return (
-    <tr className="hover:bg-gray-50/60">
-      <td className="px-4 py-3 align-top">
-        <div className="font-medium text-gray-900">
-          {row.fullName ?? 'Unknown'}
-        </div>
-        <div className="text-xs text-gray-500">{row.email}</div>
+    <tr className="group relative transition hover:bg-zinc-50/70">
+      <td className="px-5 py-3.5">
+        <Link href={href} className="flex items-center gap-2.5 after:absolute after:inset-0 after:content-['']">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color ?? DEFAULT_CLASS_COLOR }} />
+          <span className="min-w-0">
+            <span className="block truncate font-bold text-zinc-900 group-hover:text-red-700">{c.name}</span>
+            <span className="block truncate text-xs text-zinc-400">{meta}</span>
+          </span>
+        </Link>
       </td>
-      <td className="px-4 py-3 align-top">
+      <td className="px-3 py-3.5">
+        {avg === null ? (
+          <span className="text-xs text-zinc-400">No grades yet</span>
+        ) : (
+          <div className="flex min-w-[160px] items-center gap-2.5">
+            <span className="w-12 font-extrabold tabular-nums text-zinc-900">{avg.toFixed(1)}%</span>
+            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+              <span
+                className={`block h-full rounded-full ${avgBarColor(avg)}`}
+                style={{ width: `${Math.max(2, Math.min(100, avg))}%` }}
+              />
+            </span>
+          </div>
+        )}
+      </td>
+      <td className="px-3 py-3.5 text-center">{count(card.atRiskCount, 'text-red-600')}</td>
+      <td className="px-3 py-3.5 text-center">{count(card.watchCount, 'text-amber-600')}</td>
+      <td className="px-3 py-3.5 text-center">{count(card.safeCount, 'text-green-600')}</td>
+      <td className="px-5 py-3.5 text-right">
+        <ChevronRight className="ml-auto h-4 w-4 text-zinc-300" />
+      </td>
+    </tr>
+  );
+}
+
+function StudentRow({ row, colorById }: { row: AtRiskStudentRow; colorById: Map<string, string> }) {
+  const uniqueReasons = Array.from(new Set(row.memberships.flatMap((m) => m.riskReasons)));
+
+  return (
+    <tr className="transition hover:bg-zinc-50/70">
+      <td className="px-5 py-3.5 align-top">
+        <div className="font-semibold text-zinc-900">{row.fullName ?? 'Unknown'}</div>
+        <div className="max-w-[260px] truncate text-xs text-zinc-400">{row.email}</div>
+      </td>
+      <td className="px-3 py-3.5 align-top">
         <div className="flex flex-wrap gap-1.5">
           {row.memberships.map((m) => (
             <Link
               key={m.classId}
               href={`/teacher/classes/${m.classId}?tab=analytics`}
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition hover:opacity-80 ${
-                m.risk === 'at_risk'
-                  ? 'bg-red-100 text-red-900'
-                  : 'bg-amber-100 text-amber-900'
-              }`}
               title={`${m.className} — ${m.risk === 'at_risk' ? 'At-risk' : 'Watch'}`}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold transition hover:opacity-80 ${
+                m.risk === 'at_risk' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+              }`}
             >
-              {m.risk === 'at_risk' ? (
-                <AlertTriangle className="h-3 w-3" />
-              ) : null}
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: colorById.get(m.classId) ?? DEFAULT_CLASS_COLOR }}
+              />
+              {m.risk === 'at_risk' && <AlertTriangle className="h-3 w-3" />}
               <span className="max-w-[14ch] truncate">{m.className}</span>
               <TrendIcon trend={m.trend} />
             </Link>
           ))}
         </div>
       </td>
-      <td className="px-4 py-3 align-top tabular-nums text-gray-700">
+      <td className="px-3 py-3.5 align-top font-extrabold tabular-nums text-zinc-900">
         {row.worstAvgPct === null ? '—' : `${row.worstAvgPct.toFixed(1)}%`}
       </td>
-      <td className="px-4 py-3 align-top text-xs text-gray-600">
+      <td className="px-5 py-3.5 align-top text-[13px] text-zinc-600">
         {uniqueReasons.length === 0 ? (
-          <span className="italic text-gray-400">—</span>
+          <span className="text-zinc-300">—</span>
         ) : (
           <ul className="space-y-0.5">
             {uniqueReasons.map((r) => (
-              <li key={r}>• {r}</li>
+              <li key={r}>{r}</li>
             ))}
           </ul>
         )}
@@ -412,38 +341,9 @@ function StudentRow({ row }: { row: AtRiskStudentRow }) {
   );
 }
 
-function TrendIcon({
-  trend,
-}: {
-  trend: 'improving' | 'stable' | 'declining' | 'insufficient_data';
-}) {
-  if (trend === 'declining') {
-    return (
-      <TrendingDown className="h-3 w-3" aria-label="Trend: declining" />
-    );
-  }
-  if (trend === 'improving') {
-    return (
-      <TrendingUp className="h-3 w-3" aria-label="Trend: improving" />
-    );
-  }
-  if (trend === 'stable') {
-    return <Minus className="h-3 w-3" aria-label="Trend: stable" />;
-  }
+function TrendIcon({ trend }: { trend: 'improving' | 'stable' | 'declining' | 'insufficient_data' }) {
+  if (trend === 'declining') return <TrendingDown className="h-3 w-3" aria-label="Trend: declining" />;
+  if (trend === 'improving') return <TrendingUp className="h-3 w-3" aria-label="Trend: improving" />;
+  if (trend === 'stable') return <Minus className="h-3 w-3" aria-label="Trend: stable" />;
   return null;
-}
-
-function EmptyState({
-  title,
-  message,
-}: {
-  title: string;
-  message: string;
-}) {
-  return (
-    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
-      <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-      <p className="mt-1 text-sm text-gray-500">{message}</p>
-    </div>
-  );
 }

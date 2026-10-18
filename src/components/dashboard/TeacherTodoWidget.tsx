@@ -1,25 +1,14 @@
 // src/components/dashboard/TeacherTodoWidget.tsx
 //
-// Teacher to-do widget — focused on GRADING work only.
-// Sections shown here:
+// Teacher to-do widget — grading work + personal tasks.
 //   - To grade (submission_ungraded)
 //   - Manual review (quiz_manual_pending)
-//   - My tasks (personal_tasks)
-//
-// Class deadlines moved to ClassDeadlinesWidget on the left column.
+//   - My tasks (PersonalTasksPanel)
 
 'use client';
 
 import { useMemo } from 'react';
-import {
-  FileQuestion,
-  ClipboardList,
-} from 'lucide-react';
-import type {
-  TeacherTodoItem,
-  TeacherTodoKind,
-  PersonalTaskItem,
-} from '@/lib/types/dashboard';
+import type { TeacherTodoItem, TeacherTodoKind, PersonalTaskItem } from '@/lib/types/dashboard';
 import TodoRow from './TodoRow';
 import PersonalTasksPanel from './PersonalTasksPanel';
 
@@ -28,9 +17,6 @@ interface TeacherTodoWidgetProps {
   personalTasks: PersonalTaskItem[];
 }
 
-// Only grading-related kinds rendered here. class_deadline filtered out
-// at render time — even if the parent still passes them in (it shouldn't
-// after the page edit, but this is defense-in-depth).
 type GradingKind = Exclude<TeacherTodoKind, 'class_deadline'>;
 
 const SECTION_TITLE: Record<GradingKind, string> = {
@@ -38,10 +24,7 @@ const SECTION_TITLE: Record<GradingKind, string> = {
   quiz_manual_pending: 'Manual review',
 };
 
-const SECTION_ORDER: GradingKind[] = [
-  'submission_ungraded',
-  'quiz_manual_pending',
-];
+const SECTION_ORDER: GradingKind[] = ['submission_ungraded', 'quiz_manual_pending'];
 
 function formatRelativeAge(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -58,11 +41,7 @@ function studentLabel(name: string | null, email: string | null): string {
   return name?.trim() || email?.trim() || 'Unknown student';
 }
 
-export default function TeacherTodoWidget({
-  items,
-  personalTasks,
-}: TeacherTodoWidgetProps) {
-  // Filter out class_deadline items defensively; group remaining grading work.
+export default function TeacherTodoWidget({ items, personalTasks }: TeacherTodoWidgetProps) {
   const grouped = useMemo(() => {
     const map: Record<GradingKind, TeacherTodoItem[]> = {
       submission_ungraded: [],
@@ -79,38 +58,30 @@ export default function TeacherTodoWidget({
   const totalCount = gradingCount + personalTasks.length;
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-900">To-do</h2>
+        <h2 className="text-base font-extrabold text-zinc-900">To-do</h2>
         {totalCount > 0 && (
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-zinc-400">
             {totalCount} {totalCount === 1 ? 'item' : 'items'}
           </span>
         )}
       </header>
 
-      {totalCount === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-          <div className="text-2xl">☕</div>
-          <p className="mt-1 text-sm font-medium text-slate-700">
-            Nothing to grade right now.
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            New submissions and quiz attempts will appear here.
-          </p>
-          <div className="mt-3 w-full">
-            <PersonalTasksPanel items={personalTasks} />
+      <div className="flex flex-col gap-4">
+        {gradingCount === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-6 text-center">
+            <p className="text-sm font-semibold text-zinc-700">Nothing to grade right now.</p>
+            <p className="mt-0.5 text-xs text-zinc-500">New submissions and quiz attempts will appear here.</p>
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {SECTION_ORDER.map((kind) => {
+        ) : (
+          SECTION_ORDER.map((kind) => {
             const rows = grouped[kind];
             if (rows.length === 0) return null;
             return (
               <div key={kind}>
-                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  {SECTION_TITLE[kind]} · {rows.length}
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-400">
+                  {SECTION_TITLE[kind]} · <span className="text-red-600">{rows.length}</span>
                 </p>
                 <ul className="flex flex-col gap-1.5">
                   {rows.map((item) => (
@@ -121,11 +92,11 @@ export default function TeacherTodoWidget({
                 </ul>
               </div>
             );
-          })}
+          })
+        )}
 
-          <PersonalTasksPanel items={personalTasks} />
-        </div>
-      )}
+        <PersonalTasksPanel items={personalTasks} />
+      </div>
     </section>
   );
 }
@@ -147,23 +118,15 @@ function GradingRow({ item }: { item: TeacherTodoItem }) {
     ? `/teacher/classes/${item.classId}/activities/${item.activityId}/attempts/${item.attemptId}`
     : `/teacher/classes/${item.classId}/activities/${item.activityId}/submissions/${item.submissionId}`;
 
-  const kindBadge = isQuiz ? (
-    <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
-      <FileQuestion className="h-3 w-3" />
-      Quiz
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
-      <ClipboardList className="h-3 w-3" />
-      Activity
+  const kindBadge = (
+    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-bold text-zinc-600">
+      {isQuiz ? 'Quiz' : 'Activity'}
     </span>
   );
 
   const draftBadge =
     !isQuiz && item.isDraftGrade ? (
-      <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-        Draft saved
-      </span>
+      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Draft saved</span>
     ) : null;
 
   return (
@@ -174,9 +137,7 @@ function GradingRow({ item }: { item: TeacherTodoItem }) {
         <>
           <span className="truncate">{item.className}</span>
           <span aria-hidden>·</span>
-          <span className="truncate">
-            {studentLabel(item.studentName, item.studentEmail)}
-          </span>
+          <span className="truncate">{studentLabel(item.studentName, item.studentEmail)}</span>
           <span aria-hidden>·</span>
           <span>{formatRelativeAge(item.sortKey)}</span>
         </>

@@ -1,7 +1,7 @@
 import { getStudentCalendarItems } from '@/lib/actions/dashboard';
 import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import FullCalendarView from '@/components/dashboard/FullCalendarView';
-import CalendarSubscribeButton from '@/components/dashboard/CalendarSubscribeButton';
+
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +32,7 @@ export default async function StudentCalendarPage() {
             personal tasks.
           </p>
         </div>
-        <CalendarSubscribeButton />
+        
       </div>
 
       <FullCalendarView

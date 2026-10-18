@@ -5,21 +5,18 @@ import type { GradeLevel, Semester, Track } from '@/types/class';
 // Color theming for each track. Distinct accent per track so a teacher
 // scanning a list of classes can recognize tracks by color, not just text.
 const TRACK_COLORS_ON_DARK: Record<Track, string> = {
-  ABM: 'bg-emerald-500/25 ring-emerald-200/40 text-white',
-  HUMSS: 'bg-rose-500/25 ring-rose-200/40 text-white',
-  'H.E': 'bg-amber-500/25 ring-amber-200/40 text-white',
-  ICT: 'bg-sky-500/25 ring-sky-200/40 text-white',
+  ABM: 'bg-emerald-500/25 ring-1 ring-inset ring-emerald-200/40 text-white backdrop-blur-sm',
+  HUMSS: 'bg-rose-500/25 ring-1 ring-inset ring-rose-200/40 text-white backdrop-blur-sm',
+  'H.E': 'bg-amber-500/25 ring-1 ring-inset ring-amber-200/40 text-white backdrop-blur-sm',
+  ICT: 'bg-sky-500/25 ring-1 ring-inset ring-sky-200/40 text-white backdrop-blur-sm',
 };
 
-// Light-background equivalents for use on cards (white surface).
-// Same hue family per track, just tuned for a light surface so text stays
-// readable. Each track keeps its own "personality" between the banner and
-// the card grid.
+// Light-surface equivalents: flat tinted chips, no ring.
 const TRACK_COLORS_ON_LIGHT: Record<Track, string> = {
-  ABM: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  HUMSS: 'bg-rose-50 text-rose-700 ring-rose-200',
-  'H.E': 'bg-amber-50 text-amber-800 ring-amber-200',
-  ICT: 'bg-sky-50 text-sky-700 ring-sky-200',
+  ABM: 'bg-emerald-50 text-emerald-700',
+  HUMSS: 'bg-rose-50 text-rose-700',
+  'H.E': 'bg-amber-50 text-amber-800',
+  ICT: 'bg-sky-50 text-sky-700',
 };
 
 interface ClassMetaBadgesProps {
@@ -28,31 +25,21 @@ interface ClassMetaBadgesProps {
   track?: Track | null;
   semester: Semester;
   /**
-   * When true, render dark-on-light badges suitable for white card surfaces.
-   * Default (false) renders translucent-white badges for use on top of the
-   * class cover image / gradient banner.
+   * When 'on-light', render flat chips suitable for white card surfaces.
+   * Default ('on-dark') renders translucent-white pills for use on top of
+   * the class cover image / color banner.
    */
   variant?: 'on-dark' | 'on-light';
-  /**
-   * Skips rendering the section badge. Useful for cards where the section
-   * already appears prominently (e.g. as a subtitle in the cover overlay),
-   * to avoid duplicating it in the body.
-   */
+  /** Skips the section badge (e.g. when the section is already shown as a subtitle). */
   hideSection?: boolean;
-  /**
-   * Smaller padding + text. Use on dense card grids where the standard
-   * size would overwhelm the layout.
-   */
+  /** Smaller padding + text for dense card grids. */
   size?: 'sm' | 'md';
 }
 
 /**
- * Class metadata badges. Renders a flex-wrap row of pills showing the
- * structural information about a class: section (optional), grade level,
- * track, semester. Each badge has an icon for quick visual scan.
- *
- * Skips any badge whose value is null/undefined so partial data
- * (e.g. older classes without a track set) doesn't render an empty pill.
+ * Class metadata badges: section (optional), grade level, track, semester.
+ * Skips any badge whose value is null/undefined so partial data doesn't
+ * render an empty pill.
  */
 export default function ClassMetaBadges({
   section,
@@ -65,61 +52,49 @@ export default function ClassMetaBadges({
 }: ClassMetaBadgesProps) {
   const isLight = variant === 'on-light';
 
+  const shape = isLight ? 'rounded-lg' : 'rounded-full';
+
   const baseBadge = isLight
-    ? 'bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-200'
+    ? 'bg-stone-100 text-stone-600'
     : 'bg-white/20 text-white ring-1 ring-inset ring-white/30 backdrop-blur-sm';
 
   const trackBadge = track
     ? isLight
-      ? `${TRACK_COLORS_ON_LIGHT[track]} ring-1 ring-inset`
-      : `${TRACK_COLORS_ON_DARK[track]} ring-1 ring-inset backdrop-blur-sm`
+      ? TRACK_COLORS_ON_LIGHT[track]
+      : TRACK_COLORS_ON_DARK[track]
     : '';
 
   const sizeClass =
     size === 'sm'
-      ? 'px-2 py-0.5 text-[11px] gap-1'
+      ? 'px-2.5 py-1 text-[11.5px] gap-1'
       : 'px-2.5 py-1 text-xs gap-1.5';
 
-  const iconSize = size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3';
+  const iconSize = size === 'sm' ? 'h-3 w-3' : 'h-3 w-3';
+
+  const badge = `inline-flex items-center font-semibold ${shape} ${sizeClass}`;
 
   return (
-    <div
-      className={
-        size === 'sm' ? 'flex flex-wrap items-center gap-1.5' : 'flex flex-wrap items-center gap-2'
-      }
-    >
+    <div className="flex flex-wrap items-center gap-1.5">
       {!hideSection && section && (
-        <span
-          className={`inline-flex items-center rounded-full font-medium ${sizeClass} ${baseBadge}`}
-          title="Section"
-        >
-          <Hash className={`${iconSize} opacity-80`} />
+        <span className={`${badge} ${baseBadge}`} title="Section">
+          <Hash className={`${iconSize} opacity-70`} />
           {section}
         </span>
       )}
       {gradeLevel && (
-        <span
-          className={`inline-flex items-center rounded-full font-medium ${sizeClass} ${baseBadge}`}
-          title="Grade level"
-        >
-          <GraduationCap className={`${iconSize} opacity-80`} />
+        <span className={`${badge} ${baseBadge}`} title="Grade level">
+          <GraduationCap className={`${iconSize} opacity-70`} />
           {gradeLevel}
         </span>
       )}
       {track && (
-        <span
-          className={`inline-flex items-center rounded-full font-medium ${sizeClass} ${trackBadge}`}
-          title="Track"
-        >
-          <Layers className={`${iconSize} opacity-90`} />
+        <span className={`${badge} ${trackBadge}`} title="Track">
+          <Layers className={`${iconSize} opacity-80`} />
           {track}
         </span>
       )}
-      <span
-        className={`inline-flex items-center rounded-full font-medium ${sizeClass} ${baseBadge}`}
-        title="Semester"
-      >
-        <CalendarDays className={`${iconSize} opacity-80`} />
+      <span className={`${badge} ${baseBadge}`} title="Semester">
+        <CalendarDays className={`${iconSize} opacity-70`} />
         {semester}
       </span>
     </div>

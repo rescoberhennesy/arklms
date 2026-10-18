@@ -37,7 +37,7 @@
   --color-neutral-950: #0a0a0a;  /* sidebar bg */
 
   /* ---------- Semantic surfaces ---------- */
-  --color-background:        var(--color-neutral-50);
+    --color-background:        #faf8f7;
   --color-surface:           var(--color-neutral-0);
   --color-surface-muted:     var(--color-neutral-100);
   --color-surface-elevated:  var(--color-neutral-0);
@@ -88,7 +88,7 @@
   --duration-slow: 300ms;
 
   /* ---------- Typography ---------- */
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, monospace;
 
   --tracking-tightest: -0.04em;

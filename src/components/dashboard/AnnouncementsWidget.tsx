@@ -1,25 +1,20 @@
 // src/components/dashboard/AnnouncementsWidget.tsx
 //
-// Cross-class announcements widget for the dashboard.
-//
-// Renders the latest N announcements (pinned-first, then newest)
-// across all the user's classes. Each row clicks through to the class
-// detail page. Cap N = 5 (enforced upstream by the action's `limit`).
+// Cross-class announcements widget (latest N, pinned first). Each row
+// links to the class page.
 
 'use client';
 
 import Link from 'next/link';
 import { useMemo } from 'react';
-import { Megaphone, Pin } from 'lucide-react';
+import { Pin } from 'lucide-react';
 import type { RecentAnnouncementItem } from '@/lib/types/dashboard';
 
 interface AnnouncementsWidgetProps {
   items: RecentAnnouncementItem[];
-  // The base path each row links to — the row appends /{classId} to it.
   classesBasePath: '/student/classes' | '/teacher/classes';
 }
 
-// "2h ago" / "3d ago" formatter, with "just now" for sub-minute.
 function formatRelativeAge(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < 60_000) return 'just now';
@@ -33,9 +28,6 @@ function formatRelativeAge(iso: string): string {
   return `${months}mo ago`;
 }
 
-// Trim the body to a one-line preview. Strips newlines + common markdown
-// glyphs so a markdown-formatted announcement still reads OK in a single
-// line of preview text.
 function previewBody(body: string, maxChars = 110): string {
   const flat = body
     .replace(/\r\n|\n|\r/g, ' ')
@@ -46,75 +38,60 @@ function previewBody(body: string, maxChars = 110): string {
   return flat.slice(0, maxChars - 1).trimEnd() + '…';
 }
 
-export default function AnnouncementsWidget({
-  items,
-  classesBasePath,
-}: AnnouncementsWidgetProps) {
+function initials(name: string | null): string {
+  if (!name) return '•';
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join('');
+}
+
+export default function AnnouncementsWidget({ items, classesBasePath }: AnnouncementsWidgetProps) {
   const rows = useMemo(() => items, [items]);
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <Megaphone className="h-4 w-4 text-slate-500" />
-          Announcements
-        </h2>
-        {rows.length > 0 && (
-          <span className="text-xs text-slate-500">
-            {rows.length} recent
-          </span>
-        )}
+        <h2 className="text-base font-extrabold text-zinc-900">Announcements</h2>
+        {rows.length > 0 && <span className="text-xs text-zinc-400">{rows.length} recent</span>}
       </header>
 
       {rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-          <div className="text-2xl">📭</div>
-          <p className="mt-1 text-sm font-medium text-slate-700">
-            No announcements yet.
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            New posts from your classes will appear here.
-          </p>
+        <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-6 text-center">
+          <p className="text-sm font-semibold text-zinc-700">No announcements yet.</p>
+          <p className="mt-0.5 text-xs text-zinc-500">New posts from your classes will appear here.</p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="space-y-1">
           {rows.map((item) => (
             <li key={item.id}>
               <Link
                 href={`${classesBasePath}/${item.classId}`}
-                className="group block rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition hover:border-red-300 hover:bg-red-50/40"
+                className="group flex items-start gap-3 rounded-xl p-2.5 transition hover:bg-zinc-50"
               >
-                <div className="flex items-start gap-2">
-                  <span
-                    className="mt-1 h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: item.classColor }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      {item.pinned && (
-                        <Pin
-                          className="h-3 w-3 shrink-0 text-amber-500"
-                          aria-label="Pinned"
-                        />
-                      )}
-                      <span className="truncate text-xs font-semibold text-slate-700 group-hover:text-red-700">
-                        {item.className}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-slate-400">
-                        · {formatRelativeAge(item.createdAt)}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-slate-600">
-                      {previewBody(item.body)}
-                    </p>
-                    {item.authorName && (
-                      <p className="mt-0.5 truncate text-[11px] text-slate-400">
-                        — {item.authorName}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-[11px] font-bold text-white">
+                  {initials(item.authorName)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    {item.pinned && <Pin className="h-3 w-3 shrink-0 text-zinc-500" aria-label="Pinned" />}
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: item.classColor }}
+                      aria-hidden
+                    />
+                    <span className="truncate text-[13px] font-bold text-zinc-900 group-hover:text-red-700">
+                      {item.className}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-zinc-400">· {formatRelativeAge(item.createdAt)}</span>
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 block text-[13px] text-zinc-600">{previewBody(item.body)}</span>
+                  {item.authorName && (
+                    <span className="mt-0.5 block truncate text-[11px] text-zinc-400">{item.authorName}</span>
+                  )}
+                </span>
               </Link>
             </li>
           ))}

@@ -1,8 +1,3 @@
-import {
-  BookOpen,
-  Calendar as CalendarIcon,
-  ListChecks,
-} from 'lucide-react';
 import { listMyClasses } from '@/lib/actions/classes';
 import {
   getTeacherCalendarItems,
@@ -21,7 +16,6 @@ import TeacherTodoWidget from '@/components/dashboard/TeacherTodoWidget';
 import ClassDeadlinesWidget from '@/components/dashboard/ClassDeadlinesWidget';
 import AnnouncementsWidget from '@/components/dashboard/AnnouncementsWidget';
 import DashboardBanner from '@/components/dashboard/DashboardBanner';
-import StatCardsRow from '@/components/dashboard/StatCardsRow';
 import RichClassCard from '@/components/dashboard/RichClassCard';
 import QuickActionsRow from '@/components/dashboard/QuickActionsRow';
 import Link from 'next/link';
@@ -55,7 +49,7 @@ export default async function TeacherDashboardPage() {
   const monthStart = isoMonthStart(now.getFullYear(), now.getMonth());
   const monthEnd = isoMonthEnd(now.getFullYear(), now.getMonth());
 
-const [
+  const [
     classesResult,
     calendarResult,
     todoResult,
@@ -107,7 +101,7 @@ const [
       <DashboardBanner
         greeting={greetingForHour(now.getHours())}
         userName={userName}
-        subtitle="Ready to keep teaching? (˶>⩊<˶)"
+        subtitle="Ready to keep teaching?"
         todayLabel={todayLabel}
         todayDayOfMonth={now.getDate()}
         showCreateClass
@@ -120,28 +114,24 @@ const [
         deadlineItems={deadlineItemsSafe}
         todoItems={todoItems}
         personalTasks={personalTasks}
-      /> 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* LEFT: Your Classes → Class Deadlines → Quick Actions */}
-        <div className="space-y-6 lg:col-span-2">
+      />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        {/* LEFT: Your classes → Class deadlines → Quick actions */}
+        <div className="min-w-0 space-y-6">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">Your classes</h2>
-              <Link
-                href="/teacher/classes"
-                className="text-sm font-medium text-red-600 hover:text-red-700"
-              >
+              <h2 className="text-lg font-extrabold tracking-tight text-zinc-900">Your classes</h2>
+              <Link href="/teacher/classes" className="text-sm font-bold text-red-700 hover:text-red-800">
                 View all →
               </Link>
             </div>
             {previewClasses.length === 0 ? (
-              <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
-                <p className="text-sm text-slate-600">
-                  You haven&apos;t created any classes yet.
-                </p>
+              <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center">
+                <p className="text-sm text-zinc-600">You haven&apos;t created any classes yet.</p>
                 <Link
                   href="/teacher/classes?create=1"
-                  className="mt-3 inline-block text-sm font-medium text-red-600 hover:text-red-700"
+                  className="mt-3 inline-block text-sm font-bold text-red-700 hover:text-red-800"
                 >
                   Create your first class →
                 </Link>
@@ -160,8 +150,8 @@ const [
           <QuickActionsRow />
         </div>
 
-        {/* RIGHT: Calendar → To-do (grading) → Announcements */}
-        <aside className="space-y-4 lg:col-span-1">
+        {/* RIGHT: Calendar → To-do → Announcements */}
+        <aside className="space-y-5">
           <CalendarWidget
             initialData={calendarData}
             fetcher={getTeacherCalendarItems}
@@ -169,10 +159,7 @@ const [
             classesBasePath="/teacher/classes"
           />
           <TeacherTodoWidget items={todoItems} personalTasks={personalTasks} />
-          <AnnouncementsWidget
-            items={announcements}
-            classesBasePath="/teacher/classes"
-          />
+          <AnnouncementsWidget items={announcements} classesBasePath="/teacher/classes" />
         </aside>
       </div>
     </div>

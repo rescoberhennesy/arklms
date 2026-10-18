@@ -26,8 +26,7 @@ import { listModulesWithLessons } from '@/lib/actions/modules';
 import { listActivitiesForTeacher } from '@/lib/actions/activities';
 import { getGradebookView } from '@/lib/actions/gradebook';
 import { createClient } from '@/lib/supabase/server';
-import ClassCover from '@/components/dashboard/ClassCover';
-import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
+import ClassHeader from '@/components/dashboard/ClassHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,45 +113,31 @@ export default async function ClassDetailPage({
       <SetPageTitle title={klass.name} />
       <Link
         href="/teacher/classes"
-        className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+        className="inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900"
       >
         <ChevronLeft size={16} />
         Back to classes
       </Link>
 
       {/* Header */}
-      <ClassCover
-        url={klass.cover_photo_url}
+      <ClassHeader
+        name={klass.name}
+        section={klass.section}
+        gradeLevel={klass.grade_level}
+        track={klass.track}
+        semester={klass.semester}
         color={klass.color}
-        className="rounded-xl px-6 py-6 text-white shadow-sm"
-      >
-        <Link
-          href={`/teacher/classes/${klass.id}/settings`}
-          className="absolute right-4 top-4 z-10 rounded-full bg-white/20 p-2 text-white shadow-sm backdrop-blur-sm transition hover:bg-white/30"
-          aria-label="Class settings"
-          title="Class settings"
-        >
-          <Settings className="h-4 w-4" />
-        </Link>
-        <div className="relative">
-          {/* Title — gets the most visual weight. Anchors the banner. */}
-          <h1 className="text-3xl font-bold leading-tight drop-shadow-sm">
-            {klass.name}
-          </h1>
-
-          {/* Metadata badge row — section, grade, track, semester all live
-              here as scannable pills. Replaces the old inline section
-              subtitle and lone semester pill. */}
-          <div className="mt-3">
-            <ClassMetaBadges
-              section={klass.section}
-              gradeLevel={klass.grade_level}
-              track={klass.track}
-              semester={klass.semester}
-            />
-          </div>
-        </div>
-      </ClassCover>
+        coverPhotoUrl={klass.cover_photo_url}
+        actions={
+          <Link
+            href={`/teacher/classes/${klass.id}/settings`}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-[13px] font-bold text-white transition hover:bg-white/10"
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </Link>
+        }
+      />
 
       {/* Tabs */}
       <nav className="border-b border-gray-200">
@@ -198,7 +183,7 @@ export default async function ClassDetailPage({
           <ModulesTab classId={klass.id} initialModules={modules} />
         )}
 
-                {tab === 'activities' && (
+        {tab === 'activities' && (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0">
               <ActivitiesTab

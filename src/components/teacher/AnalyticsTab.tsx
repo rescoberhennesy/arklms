@@ -22,8 +22,12 @@ export default function AnalyticsTab({ classId, studentStats, activities }: Prop
   const [sub, setSub] = useState<SubTab>('students');
 
   return (
-    <div className="space-y-4">
-      <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+    <div className="space-y-5">
+      <div
+        role="tablist"
+        aria-label="Analytics view"
+        className="inline-flex gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+      >
         <SubTabButton
           active={sub === 'students'}
           onClick={() => setSub('students')}
@@ -38,12 +42,8 @@ export default function AnalyticsTab({ classId, studentStats, activities }: Prop
         />
       </div>
 
-      {sub === 'students' && (
-        <StudentWatchPanel classId={classId} initialData={studentStats} />
-      )}
-      {sub === 'activities' && (
-        <ActivityDiagnosticsPanel classId={classId} activities={activities} />
-      )}
+      {sub === 'students' && <StudentWatchPanel classId={classId} initialData={studentStats} />}
+      {sub === 'activities' && <ActivityDiagnosticsPanel classId={classId} activities={activities} />}
     </div>
   );
 }
@@ -62,11 +62,13 @@ function SubTabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+      className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm transition ${
         active
-          ? 'bg-red-600 text-white shadow-sm'
-          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+          ? 'bg-red-600 font-semibold text-white shadow-[0_4px_12px_rgba(220,38,38,0.25)]'
+          : 'font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
       }`}
     >
       {icon}

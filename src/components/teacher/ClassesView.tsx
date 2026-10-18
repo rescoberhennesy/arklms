@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Plus, Check, Search } from 'lucide-react';
+import { Plus, Check, Search, BookOpen, SearchX } from 'lucide-react';
 import { ClassCard } from './ClassCard';
 import { ClassFormModal } from './ClassFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -36,6 +36,8 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'active', label: 'Active' },
   { key: 'archived', label: 'Archived' },
 ];
+
+const GRID_CLASS = 'grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3';
 
 export function ClassesView({
   initialClasses,
@@ -176,47 +178,53 @@ export function ClassesView({
     });
   }, [classes, filter, query]);
 
-  // For the All view, we still want active-first then archived. The base
-  // ordering from listMyClasses already does that (is_archived asc), so
-  // `filtered` preserves it. Reorder is only saved for the active-only view
-  // to keep behaviour predictable — see handleReorderGuard below.
+  // Reorder is only saved for the active-only view (or All with nothing archived)
+  // to keep behaviour predictable.
   const reorderEnabled = filter === 'active' || (filter === 'all' && archivedCount === 0);
+
+  const subtitle =
+    `${activeCount} active ${activeCount === 1 ? 'class' : 'classes'}` +
+    (archivedCount > 0 ? ` · ${archivedCount} archived` : '');
 
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Classes</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            {activeCount} active{archivedCount > 0 && `, ${archivedCount} archived`}
-          </p>
+          <h1 className="text-[28px] font-extrabold tracking-tight text-stone-900">
+            My classes
+          </h1>
+          <p className="mt-1 text-sm text-stone-500">{subtitle}</p>
         </div>
         <button
           type="button"
           onClick={() => setFormState({ kind: 'create' })}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-[0_6px_16px_rgba(220,38,38,0.22)] transition-all hover:bg-red-700 active:scale-[0.98]"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-[18px] w-[18px]" strokeWidth={2.4} />
           Create class
         </button>
       </div>
-{/* Toolbar: search + filter pills (grouped together on the left) */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+      {/* Toolbar: search (left) + segmented filter (right) */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-md">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-stone-400" />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search classes…"
-            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            placeholder="Search by name, section, or code"
+            aria-label="Search classes"
+            className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-3 text-sm text-stone-900 placeholder:text-stone-400 transition-shadow focus:border-red-400 focus:outline-none focus:ring-4 focus:ring-red-500/10"
           />
         </div>
 
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5"></div>
-
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="tablist"
+          aria-label="Filter classes"
+          className="inline-flex w-fit items-center gap-1 rounded-xl bg-stone-100 p-1"
+        >
           {FILTERS.map((f) => {
             const isActive = filter === f.key;
             const count =
@@ -229,19 +237,21 @@ export function ClassesView({
               <button
                 key={f.key}
                 type="button"
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => setFilter(f.key)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg border bg-white px-3.5 py-1.5 text-sm font-medium transition-colors',
+                  'inline-flex items-center gap-1.5 rounded-[9px] px-3.5 py-2 text-[13px] transition-all',
                   isActive
-                    ? 'border-red-500 text-red-600 ring-1 ring-red-500'
-                    : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50',
+                    ? 'bg-white font-bold text-red-700 shadow-[0_1px_3px_rgba(28,25,23,0.08)]'
+                    : 'font-semibold text-stone-600 hover:text-stone-900',
                 )}
               >
                 {f.label}
                 <span
                   className={cn(
-                    'text-xs',
-                    isActive ? 'text-red-500/80' : 'text-gray-400',
+                    'rounded-full px-1.5 text-[11px] font-semibold',
+                    isActive ? 'bg-red-50 text-red-700' : 'text-stone-400',
                   )}
                 >
                   {count}
@@ -254,31 +264,30 @@ export function ClassesView({
 
       {/* Empty states */}
       {classes.length === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-          <h3 className="text-base font-medium text-gray-900">No classes yet</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Create your first class to get started.
-          </p>
-        </div>
+        <EmptyState
+          icon={<BookOpen className="h-6 w-6" />}
+          title="No classes yet"
+          message="Use Create class above to set up your first class."
+        />
       )}
 
       {classes.length > 0 && filtered.length === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-          <h3 className="text-base font-medium text-gray-900">
-            {query ? 'No classes match your search' : `No ${filter} classes`}
-          </h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {query
+        <EmptyState
+          icon={<SearchX className="h-6 w-6" />}
+          title={query ? 'No classes match your search' : `No ${filter} classes`}
+          message={
+            query
               ? 'Try a different keyword or clear the search.'
-              : 'Switch filter to see other classes.'}
-          </p>
-        </div>
+              : 'Switch the filter to see other classes.'
+          }
+        />
       )}
 
       {/* Grid */}
       {filtered.length > 0 && (
         <SortableClassGrid
           items={filtered}
+          className={GRID_CLASS}
           onReorder={reorderEnabled ? handleReorder : () => {}}
           disabled={!reorderEnabled}
           renderItem={(cls) =>
@@ -330,11 +339,34 @@ export function ClassesView({
       />
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
-          <Check className="h-4 w-4 text-green-400" />
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-stone-900 px-4 py-3 text-sm font-medium text-white shadow-xl"
+        >
+          <Check className="h-4 w-4 text-emerald-400" />
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  message,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-stone-300 bg-white px-6 py-14 text-center">
+      <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+        {icon}
+      </span>
+      <h3 className="text-base font-bold text-stone-900">{title}</h3>
+      <p className="mt-1 text-sm text-stone-500">{message}</p>
     </div>
   );
 }

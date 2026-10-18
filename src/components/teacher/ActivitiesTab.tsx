@@ -22,13 +22,10 @@ import {
   Trash2,
   GripVertical,
   Users,
-  AlertCircle,
-  Copy,
   CopyPlus,
+  Copy,
   MoreHorizontal,
   ExternalLink,
-  ClipboardList,
-  ListChecks,
 } from 'lucide-react';
 import {
   reorderActivities,
@@ -76,15 +73,7 @@ function computeCardStatus(a: ActivityWithAllSubmissions, now: number): Activity
   return 'closed';
 }
 
-const STATUS_PILL_CLASS: Record<ActivityCardStatus, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  scheduled: 'bg-blue-50 text-blue-700',
-  open: 'bg-green-50 text-green-700',
-  past_due: 'bg-amber-50 text-amber-700',
-  closed: 'bg-gray-100 text-gray-600',
-};
-
-const STATUS_PILL_LABEL: Record<ActivityCardStatus, string> = {
+const STATUS_LABEL: Record<ActivityCardStatus, string> = {
   draft: 'Draft',
   scheduled: 'Scheduled',
   open: 'Open',
@@ -100,6 +89,10 @@ const FILTER_LABEL: Record<CompletionFilter, string> = {
 };
 
 const FILTER_KEYS = Object.keys(FILTER_LABEL) as CompletionFilter[];
+
+// Shared column layout for the header row and every activity row (md and up).
+const ROW_GRID =
+  'md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_96px] md:items-center md:gap-4';
 
 function isCompletionFilter(v: string | null): v is CompletionFilter {
   return v !== null && (FILTER_KEYS as string[]).includes(v);
@@ -127,6 +120,14 @@ function activityHasUngraded(a: ActivityWithAllSubmissions): boolean {
   return a.submissions.some((s: SubmissionWithGrade) => s.grade === null);
 }
 
+function formatDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+}
+
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleString('en-PH', {
     month: 'short',
@@ -136,28 +137,26 @@ function formatShortDate(iso: string): string {
   });
 }
 
+/** Second line under the due date. Grey by default; red only when < 24h left. */
 function dueHint(
   a: ActivityWithAllSubmissions,
   status: ActivityCardStatus,
   now: number,
-): { text: string; className: string } | null {
-  if (status === 'draft') return null;
-  if (status === 'scheduled') return { text: `Opens ${formatShortDate(a.startAt)}`, className: 'text-blue-700' };
-  if (status === 'past_due') return { text: 'Past due · late allowed', className: 'text-amber-700' };
-  if (status === 'closed') return { text: 'Closed', className: 'text-gray-500' };
+): { text: string; urgent: boolean } {
+  if (status === 'draft') return { text: formatTime(a.dueAt), urgent: false };
+  if (status === 'scheduled') return { text: `Opens ${formatShortDate(a.startAt)}`, urgent: false };
+  if (status === 'past_due') return { text: 'Past due · late allowed', urgent: false };
+  if (status === 'closed') return { text: 'Closed', urgent: false };
   const msLeft = new Date(a.dueAt).getTime() - now;
   const hours = Math.floor(msLeft / 3_600_000);
   if (hours < 24) {
     return {
       text: hours <= 0 ? 'Due within the hour' : `${hours} hour${hours === 1 ? '' : 's'} left`,
-      className: 'font-semibold text-red-700',
+      urgent: true,
     };
   }
   const days = Math.ceil(msLeft / 86_400_000);
-  return {
-    text: `${days} day${days === 1 ? '' : 's'} left`,
-    className: days <= 7 ? 'font-semibold text-amber-700' : 'text-gray-500',
-  };
+  return { text: `${days} day${days === 1 ? '' : 's'} left`, urgent: false };
 }
 
 export default function ActivitiesTab({
@@ -280,14 +279,18 @@ export default function ActivitiesTab({
   const termLabel = MODULE_TERM_LABELS[activeTerm];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       )}
 
-      {/* Term tabs + actions */}
+      {/* Term switcher + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" aria-label="Grading period" className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+                <div
+          role="tablist"
+          aria-label="Grading period"
+          className="inline-flex gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+        >
           {MODULE_TERMS.map((t) => {
             const active = t === activeTerm;
             return (
@@ -297,28 +300,23 @@ export default function ActivitiesTab({
                 role="tab"
                 aria-selected={active}
                 onClick={() => selectTerm(t)}
-                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition ${
-                  active ? 'bg-red-600 font-semibold text-white' : 'font-medium text-gray-700 hover:bg-gray-50'
+                className={`rounded-lg px-5 py-2 text-sm transition ${
+                  active
+                    ? 'bg-red-600 font-semibold text-white shadow-[0_4px_12px_rgba(220,38,38,0.25)]'
+                    : 'font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
                 }`}
               >
                 {MODULE_TERM_LABELS[t]}
-                <span
-                  className={`rounded-full px-1.5 text-[11px] font-semibold ${
-                    active ? 'bg-white text-red-600' : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {termCounts.get(t) ?? 0}
-                </span>
               </button>
             );
           })}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
+                    <button
             type="button"
             onClick={() => setCopyModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
           >
             <CopyPlus className="h-4 w-4" />
             Copy from another class
@@ -333,33 +331,38 @@ export default function ActivitiesTab({
         </div>
       </div>
 
-      {/* One list card: filters in the header, activities as rows */}
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-2.5">
-          <div role="tablist" aria-label="Filter activities" className="flex flex-wrap gap-1">
-            {FILTER_KEYS.map((key) => {
-              const active = filter === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setFilter(key)}
-                  className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
-                    active ? 'bg-gray-900 font-semibold text-white' : 'font-medium text-gray-600 hover:bg-gray-100'
-                  }`}
+            {/* Filters + table in one card */}
+      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+        <div
+          role="tablist"
+          aria-label="Filter activities"
+          className="flex flex-wrap gap-x-5 gap-y-2 border-b border-zinc-100 px-5 py-3.5 text-sm"
+        >
+          {FILTER_KEYS.map((key) => {
+            const active = filter === key;
+            const count = filterCounts[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(key)}
+                className={`transition ${active ? 'font-semibold text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}`}
+              >
+                {FILTER_LABEL[key]}{' '}
+                <span
+                  className={
+                    key === 'has_ungraded' && count > 0
+                      ? 'text-red-600'
+                      : 'text-zinc-400'
+                  }
                 >
-                  {FILTER_LABEL[key]} <span className={active ? 'text-white/70' : 'text-gray-400'}>{filterCounts[key]}</span>
-                </button>
-              );
-            })}
-          </div>
-          {visible.length > 1 && (
-            <span className="text-xs text-gray-400">
-              {filter === 'all' ? 'Drag to reorder' : 'Switch to All to reorder'}
-            </span>
-          )}
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {visible.length === 0 ? (
@@ -370,18 +373,27 @@ export default function ActivitiesTab({
             onCopy={() => setCopyModalOpen(true)}
           />
         ) : (
-          <TermList
-            term={activeTerm}
-            classId={classId}
-            activities={visible}
-            roster={roster}
-            rosterSize={rosterSize}
-            submitterIdsByActivity={submitterIdsByActivity}
-            canReorder={filter === 'all'}
-            onReordered={(next) => handleTermReordered(activeTerm, next)}
-            onActivityRemoved={handleActivityRemoved}
-            onError={setError}
-          />
+          <>
+            <div className={`hidden border-b border-zinc-100 bg-zinc-50/60 px-5 py-2.5 text-xs font-medium text-zinc-400 ${ROW_GRID}`}>
+              <span>Title</span>
+              <span>Due</span>
+              <span>Submitted</span>
+              <span>Status</span>
+              <span className="sr-only">Actions</span>
+            </div>
+            <TermList
+              term={activeTerm}
+              classId={classId}
+              activities={visible}
+              roster={roster}
+              rosterSize={rosterSize}
+              submitterIdsByActivity={submitterIdsByActivity}
+              canReorder={filter === 'all'}
+              onReordered={(next) => handleTermReordered(activeTerm, next)}
+              onActivityRemoved={handleActivityRemoved}
+              onError={setError}
+            />
+          </>
         )}
       </section>
 
@@ -396,7 +408,7 @@ export default function ActivitiesTab({
 }
 
 // ===========================================================================
-// Empty state (inside the list card)
+// Empty state
 // ===========================================================================
 
 function EmptyState({
@@ -411,34 +423,30 @@ function EmptyState({
   onCopy: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
-        <ClipboardList className="h-7 w-7" />
-      </div>
+        <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       {filterActive ? (
         <>
-          <h3 className="text-lg font-bold text-gray-900">No matching activities in {termLabel}</h3>
-          <p className="max-w-md text-sm text-gray-600">Nothing in this term matches the current filter.</p>
+          <h3 className="text-base font-semibold text-zinc-900">No matching activities in {termLabel}</h3>
+          <p className="max-w-md text-sm text-zinc-500">Nothing in this term matches the current filter.</p>
           <button
             type="button"
             onClick={onShowAll}
-            className="mt-1 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="mt-2 text-sm font-semibold text-zinc-900 underline-offset-4 hover:underline"
           >
             Show all activities
           </button>
         </>
       ) : (
         <>
-          <h3 className="text-lg font-bold text-gray-900">No activities in {termLabel} yet</h3>
-          <p className="max-w-md text-sm text-gray-600">
+          <h3 className="text-base font-semibold text-zinc-900">No activities in {termLabel} yet</h3>
+          <p className="max-w-md text-sm text-zinc-500">
             Create an activity or quiz with the button above, or reuse ones you already made in another class.
           </p>
           <button
             type="button"
             onClick={onCopy}
-            className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="mt-2 text-sm font-semibold text-zinc-900 underline-offset-4 hover:underline"
           >
-            <CopyPlus className="h-4 w-4" />
             Copy from another class
           </button>
         </>
@@ -504,7 +512,7 @@ function TermList({
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={activities.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-        <ul className="divide-y divide-gray-100">
+                <ul className="divide-y divide-zinc-100">
           {activities.map((a) => (
             <ActivityRow
               key={a.id}
@@ -592,7 +600,6 @@ function ActivityRow({
   const showRoster = activity.published && now >= new Date(activity.startAt).getTime() && rosterSize > 0;
   const submittedFromRoster = roster.filter((r) => submitterIds.has(r.student_id)).length;
   const missingStudents = showRoster ? roster.filter((r) => !submitterIds.has(r.student_id)) : [];
-  const submittedPct = rosterSize > 0 ? Math.round((submittedFromRoster / rosterSize) * 100) : 0;
   const allGraded = submissionCount > 0 && ungradedCount === 0;
 
   const href = `/teacher/classes/${classId}/activities/${activity.id}`;
@@ -626,109 +633,97 @@ function ActivityRow({
     }
   }
 
-  const primary =
-    ungradedCount > 0
-      ? { label: 'Grade now', className: 'bg-red-600 text-white hover:bg-red-700' }
-      : { label: isDraft ? 'Edit' : 'Open', className: 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50' };
+  // Status column: red only when something needs grading.
+  let statusNode: React.ReactNode;
+  if (ungradedCount > 0) {
+    statusNode = <span className="font-semibold text-red-600">{ungradedCount} to grade</span>;
+  } else if (allGraded) {
+    statusNode = <span className="text-zinc-400">Graded</span>;
+  } else {
+    statusNode = <span className="text-zinc-400">{STATUS_LABEL[status]}</span>;
+  }
 
   return (
-    <li ref={setNodeRef} style={style} className={isDraft ? 'bg-gray-50/70' : 'bg-white'}>
-      <div className="flex flex-wrap items-center gap-4 px-4 py-4">
-        {canReorder && (
-          <button
-            ref={setActivatorNodeRef}
-            {...attributes}
-            {...listeners}
-            type="button"
-            className="-ml-1 cursor-grab rounded p-0.5 text-gray-300 hover:bg-gray-100 hover:text-gray-500 active:cursor-grabbing"
-            aria-label="Drag to reorder"
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-        )}
-
-        <div
-          aria-hidden="true"
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            isDraft ? 'bg-gray-100 text-gray-500' : isQuiz ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'
-          }`}
-        >
-          {isQuiz ? <ListChecks className="h-5 w-5" /> : <ClipboardList className="h-5 w-5" />}
-        </div>
-
-        <div className="min-w-[220px] flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={href}
-              className={`truncate text-[15px] font-semibold hover:text-red-600 ${isDraft ? 'text-gray-700' : 'text-gray-900'}`}
+    <li ref={setNodeRef} style={style} className="group">
+            <div className={`relative flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 transition hover:bg-zinc-50/70 ${ROW_GRID}`}>
+        {/* Title */}
+        <div className="relative min-w-0 flex-1 basis-full md:basis-auto">
+          {canReorder && (
+            <button
+              ref={setActivatorNodeRef}
+              {...attributes}
+              {...listeners}
+              type="button"
+              className="absolute -left-6 top-1/2 z-10 -translate-y-1/2 cursor-grab rounded p-0.5 text-zinc-300 opacity-0 transition hover:text-zinc-500 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+              aria-label="Drag to reorder"
             >
-              {activity.title}
-            </Link>
-            <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${STATUS_PILL_CLASS[status]}`}>
-              {STATUS_PILL_LABEL[status]}
-            </span>
-          </div>
-          <p className="mt-0.5 text-[13px] text-gray-500">
-            {isQuiz ? 'Quiz' : 'Activity'} · Due {formatShortDate(activity.dueAt)}
-            {hint && (
-              <>
-                {' · '}
-                <span className={hint.className}>{hint.text}</span>
-              </>
-            )}
-            {' · '}
-            {activity.maxPoints} pts
+              <GripVertical className="h-4 w-4" />
+            </button>
+          )}
+          {/* Stretched link: clicking anywhere on the row opens the activity */}
+          <Link
+            href={href}
+            className={`block truncate text-[15px] font-semibold after:absolute after:inset-0 after:content-[''] hover:text-red-600 ${
+              isDraft ? 'text-zinc-500' : 'text-zinc-900'
+            }`}
+          >
+            {activity.title}
+          </Link>
+          <p className="mt-0.5 text-[13px] text-zinc-400">
+            {isQuiz ? 'Quiz' : 'Activity'} · {activity.maxPoints} pts
           </p>
         </div>
 
-        <div className="w-full sm:w-44">
-          {isDraft ? (
-            <p className="text-xs text-gray-500">Not published yet</p>
-          ) : showRoster ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-gray-600">
-                  <b className="text-gray-900">{submittedFromRoster}</b> of {rosterSize} submitted
-                </span>
-                {ungradedCount > 0 ? (
-                  <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                    {ungradedCount} to grade
-                  </span>
-                ) : allGraded ? (
-                  <span className="font-semibold text-green-700">✓</span>
-                ) : null}
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                <div
-                  className={`h-full rounded-full ${allGraded && submittedFromRoster === rosterSize ? 'bg-green-500' : 'bg-red-500'}`}
-                  style={{ width: `${submittedPct}%` }}
-                />
-              </div>
-            </div>
+        {/* Due */}
+        <div className="text-sm">
+          <p className="text-zinc-700">{formatDay(activity.dueAt)}</p>
+          <p className={`text-xs ${hint.urgent ? 'font-semibold text-red-600' : 'text-zinc-400'}`}>{hint.text}</p>
+        </div>
+
+        {/* Submitted */}
+        <div className="text-sm text-zinc-700">
+          {showRoster ? (
+            `${submittedFromRoster} / ${rosterSize}`
           ) : (
-            <p className="text-xs text-gray-500">{rosterSize === 0 ? 'No students yet' : 'Not open yet'}</p>
+            <span className="text-zinc-400">—</span>
           )}
         </div>
 
-        <div className="relative flex items-center gap-2" ref={menuRef}>
-          <Link href={href} className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition ${primary.className}`}>
-            {primary.label}
-          </Link>
+        {/* Status */}
+        <div className="text-[13px]">{statusNode}</div>
+
+        {/* Actions */}
+        <div className="relative z-10 ml-auto flex items-center justify-end gap-1" ref={menuRef}>
+          {ungradedCount > 0 && (
+            <Link
+              href={href}
+              className="rounded-md px-2 py-1.5 text-[13px] font-bold text-red-600 transition hover:bg-red-50"
+            >
+              Grade
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="More actions"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-800"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
 
           {menuOpen && (
-            <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-              <Link href={href} role="menuitem" className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                <ExternalLink className="h-4 w-4 text-gray-400" />
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+            >
+              <Link
+                href={href}
+                role="menuitem"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <ExternalLink className="h-4 w-4 text-zinc-400" />
                 Open
               </Link>
               {showRoster && (
@@ -739,9 +734,9 @@ function ActivityRow({
                     setExpanded((v) => !v);
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
                 >
-                  <Users className="h-4 w-4 text-gray-400" />
+                  <Users className="h-4 w-4 text-zinc-400" />
                   {expanded ? 'Hide missing students' : 'Show missing students'}
                 </button>
               )}
@@ -750,12 +745,12 @@ function ActivityRow({
                 role="menuitem"
                 onClick={handleDuplicate}
                 disabled={duplicating}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
               >
-                <Copy className="h-4 w-4 text-gray-400" />
+                <Copy className="h-4 w-4 text-zinc-400" />
                 {duplicating ? 'Duplicating…' : 'Duplicate in this class'}
               </button>
-              <div className="my-1 border-t border-gray-100" />
+              <div className="my-1 border-t border-zinc-100" />
               <button
                 type="button"
                 role="menuitem"
@@ -763,7 +758,7 @@ function ActivityRow({
                   setMenuOpen(false);
                   setConfirmDelete(true);
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
@@ -774,20 +769,19 @@ function ActivityRow({
       </div>
 
       {expanded && showRoster && (
-        <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-3">
+        <div className="px-1 pb-4">
           {missingStudents.length === 0 ? (
-            <p className="text-xs text-green-700">✓ Everyone submitted. Nice.</p>
+            <p className="text-xs text-zinc-500">Everyone submitted.</p>
           ) : (
             <>
-              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-red-700">
-                <AlertCircle className="h-3.5 w-3.5" />
+              <p className="mb-1.5 text-xs font-semibold text-zinc-700">
                 {missingStudents.length} student{missingStudents.length === 1 ? '' : 's'} have not submitted
-              </div>
+              </p>
               <ul className="space-y-0.5">
                 {missingStudents.map((s) => (
-                  <li key={s.student_id} className="flex items-center justify-between gap-3 text-xs text-gray-700">
-                    <span className="font-medium text-gray-900">{s.full_name ?? 'Unknown'}</span>
-                    <span className="text-gray-500">{s.email ?? '—'}</span>
+                  <li key={s.student_id} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-zinc-900">{s.full_name ?? 'Unknown'}</span>
+                    <span className="text-zinc-400">{s.email ?? '—'}</span>
                   </li>
                 ))}
               </ul>

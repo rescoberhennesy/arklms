@@ -1,14 +1,20 @@
 // src/components/teacher/StudentWatchPanel.tsx
 'use client';
 
-import { useState, useTransition } from 'react';
-import { Sparkles, Loader2, AlertCircle, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import { useMemo, useState, useTransition } from 'react';
+import { AlertCircle, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import type {
   ClassStudentStatsResult,
   RiskLevel,
   StudentStats,
   Trend,
 } from '@/lib/actions/analytics';
+import {
+  ANALYTICS_CARD,
+  SummaryCard,
+  AiActionCard,
+  AiResultCard,
+} from './AnalyticsSideCards';
 
 interface Props {
   classId: string;
@@ -25,22 +31,12 @@ type ClassInsightDraft = {
   bright_spots: string;
 };
 
-const RISK_STYLES: Record<RiskLevel, { row: string; pill: string; label: string }> = {
-  at_risk: {
-    row: 'bg-red-50/40',
-    pill: 'bg-red-100 text-red-800',
-    label: 'At risk',
-  },
-  watch: {
-    row: 'bg-amber-50/40',
-    pill: 'bg-amber-100 text-amber-800',
-    label: 'Watch',
-  },
-  safe: {
-    row: '',
-    pill: 'bg-green-100 text-green-800',
-    label: 'On track',
-  },
+type RiskFilter = 'all' | 'at_risk' | 'watch';
+
+const RISK_STYLES: Record<RiskLevel, { pill: string; label: string; bar: string }> = {
+  at_risk: { pill: 'bg-red-50 text-red-700', label: 'At risk', bar: 'bg-red-500' },
+  watch: { pill: 'bg-amber-50 text-amber-700', label: 'On watch', bar: 'bg-amber-500' },
+  safe: { pill: 'bg-green-50 text-green-700', label: 'On track', bar: 'bg-green-500' },
 };
 
 function fmtPct(p: number | null): string {
@@ -53,8 +49,8 @@ function fmtRate(r: number | null): string {
 function TrendIcon({ trend }: { trend: Trend }) {
   if (trend === 'improving') return <TrendingUp className="h-4 w-4 text-green-600" />;
   if (trend === 'declining') return <TrendingDown className="h-4 w-4 text-red-600" />;
-  if (trend === 'stable') return <Minus className="h-4 w-4 text-gray-400" />;
-  return <span className="text-xs text-gray-400">—</span>;
+  if (trend === 'stable') return <Minus className="h-4 w-4 text-zinc-400" />;
+  return <span className="text-xs text-zinc-300">—</span>;
 }
 
 export default function StudentWatchPanel({ classId, initialData }: Props) {
@@ -62,6 +58,7 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
   const [insight, setInsight] = useState<ClassInsightDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [filter, setFilter] = useState<RiskFilter>('all');
 
   function handleGenerate() {
     setError(null);
@@ -84,100 +81,148 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
     });
   }
 
+  // Lowest overall first, so the students who need help are on top.
+  const rows = useMemo(() => {
+    const list = filter === 'all' ? data.stats : data.stats.filter((s) => s.risk === filter);
+    return [...list].sort((a, b) => (a.overallAvgPct ?? 101) - (b.overallAvgPct ?? 101));
+  }, [data.stats, filter]);
+
   if (data.studentCount === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
+      <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-500">
         No students enrolled in this class yet.
       </div>
     );
   }
 
+  const filters: { key: RiskFilter; label: string; count: number; alert?: boolean }[] = [
+    { key: 'all', label: 'All', count: data.studentCount },
+    { key: 'at_risk', label: 'At risk', count: data.atRiskCount, alert: data.atRiskCount > 0 },
+    { key: 'watch', label: 'On watch', count: data.watchCount },
+  ];
+
   return (
-    <div className="space-y-4">
-      {/* Rollup cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <RollupCard label="Students" value={String(data.studentCount)} />
-        <RollupCard label="Class average" value={fmtPct(data.classAvgPct)} />
-        <RollupCard label="At risk" value={String(data.atRiskCount)} tone="red" />
-        <RollupCard label="On watch" value={String(data.watchCount)} tone="amber" />
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+      {/* Main column */}
+      <div className="min-w-0 space-y-4">
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {insight && <InsightCard insight={insight} />}
+
+        <section className={`overflow-hidden ${ANALYTICS_CARD}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3.5">
+            <div role="tablist" aria-label="Filter students" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+              {filters.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={filter === f.key ? 'font-semibold text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}
+                >
+                  {f.label} <span className={f.alert ? 'text-red-600' : 'text-zinc-400'}>{f.count}</span>
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-zinc-400">Lowest overall first</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-zinc-100 bg-zinc-50/70">
+                <tr className="text-left text-xs font-medium text-zinc-400">
+                  <th className="px-5 py-2.5 font-medium">Student</th>
+                  <th className="px-3 py-2.5 font-medium">Risk</th>
+                  <th className="px-3 py-2.5 font-medium">Overall</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Activities</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Quizzes</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Submitted</th>
+                  <th className="px-5 py-2.5 text-center font-medium">Trend</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">
+                      No students in this group.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((s) => <StudentRow key={s.studentId} s={s} />)
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
-      {/* AI button + result */}
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-gray-600">
-          AI reads these numbers and suggests interventions. Numbers above are computed, not AI-generated.
-        </p>
-        <button
-          type="button"
+      {/* Side column */}
+      <aside className="space-y-4 lg:sticky lg:top-20">
+        <SummaryCard
+          rows={[
+            { label: 'Students', value: String(data.studentCount), sub: 'Enrolled in this class' },
+            { label: 'Class average', value: fmtPct(data.classAvgPct), sub: 'Across graded work' },
+            { label: 'At risk', value: String(data.atRiskCount), tone: data.atRiskCount > 0 ? 'red' : undefined },
+            { label: 'On watch', value: String(data.watchCount), tone: data.watchCount > 0 ? 'amber' : undefined },
+          ]}
+        />
+        <AiActionCard
+          title="AI insights"
+          text="Reads the numbers and suggests interventions. The numbers themselves are computed, not AI-generated."
+          buttonLabel={insight ? 'Regenerate insights' : 'Generate insights'}
           onClick={handleGenerate}
-          disabled={pending}
-          className="inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-        >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {insight ? 'Regenerate insights' : 'Generate insights'}
-        </button>
-      </div>
-
-      {error && (
-        <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
-          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {insight && <InsightCard insight={insight} />}
-
-      {/* Student table */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Student</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Risk</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Overall</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Activities</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Quizzes</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Submitted</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Trend</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.stats.map((s) => (
-              <StudentRow key={s.studentId} s={s} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+          pending={pending}
+        />
+      </aside>
     </div>
   );
 }
 
 function StudentRow({ s }: { s: StudentStats }) {
   const styles = RISK_STYLES[s.risk];
+  const overall = s.overallAvgPct;
   return (
-    <tr className={`border-b border-gray-100 ${styles.row}`}>
-      <td className="px-3 py-2">
-        <div className="font-medium text-gray-900">{s.fullName ?? 'Unknown'}</div>
-        <div className="text-xs text-gray-500">{s.email}</div>
+    <tr className="transition hover:bg-zinc-50/70">
+      <td className="px-5 py-3.5">
+        <div className="font-semibold text-zinc-900">{s.fullName ?? 'Unknown'}</div>
+        <div className="max-w-[260px] truncate text-xs text-zinc-400">{s.email}</div>
       </td>
-      <td className="px-3 py-2">
+      <td className="px-3 py-3.5">
         <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${styles.pill}`}
+          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${styles.pill}`}
           title={s.riskReasons.join('; ')}
         >
           {styles.label}
         </span>
       </td>
-      <td className="px-3 py-2 text-right font-semibold text-gray-900">{fmtPct(s.overallAvgPct)}</td>
-      <td className="px-3 py-2 text-right text-gray-700">{fmtPct(s.assignmentAvgPct)}</td>
-      <td className="px-3 py-2 text-right text-gray-700">{fmtPct(s.quizAvgPct)}</td>
-      <td className="px-3 py-2 text-right text-gray-700">
+      <td className="px-3 py-3.5">
+        <div className="flex min-w-[130px] items-center gap-2.5">
+          <span className="font-bold text-zinc-900">{fmtPct(overall)}</span>
+          {overall !== null && (
+            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+              <span
+                className={`block h-full rounded-full ${styles.bar}`}
+                style={{ width: `${Math.max(2, Math.min(100, overall))}%` }}
+              />
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="px-3 py-3.5 text-right text-zinc-700">{fmtPct(s.assignmentAvgPct)}</td>
+      <td className="px-3 py-3.5 text-right text-zinc-700">{fmtPct(s.quizAvgPct)}</td>
+      <td className="px-3 py-3.5 text-right text-zinc-700">
         {fmtRate(s.submissionRate)}
-        <span className="ml-1 text-xs text-gray-400">
+        <span className="ml-1 text-xs text-zinc-400">
           ({s.dueCount - s.missingCount}/{s.dueCount})
         </span>
       </td>
-      <td className="px-3 py-2 text-center">
+      <td className="px-5 py-3.5 text-center">
         <div className="inline-flex items-center justify-center" title={s.trend}>
           <TrendIcon trend={s.trend} />
         </div>
@@ -186,61 +231,32 @@ function StudentRow({ s }: { s: StudentStats }) {
   );
 }
 
-function RollupCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'red' | 'amber';
-}) {
-  const toneClass =
-    tone === 'red'
-      ? 'text-red-700'
-      : tone === 'amber'
-        ? 'text-amber-700'
-        : 'text-gray-900';
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
-      <div className={`mt-1 text-2xl font-bold ${toneClass}`}>{value}</div>
-    </div>
-  );
-}
-
 function InsightCard({ insight }: { insight: ClassInsightDraft }) {
   return (
-    <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-4">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-purple-700">
-        <Sparkles className="h-4 w-4" />
-        AI insight
-      </div>
-      <p className="text-sm text-gray-800">{insight.summary}</p>
+    <AiResultCard title="AI insight">
+      <p className="text-sm text-zinc-800">{insight.summary}</p>
 
       {insight.atRiskNotes.length > 0 && (
-        <div className="mt-3 space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-            At-risk students
-          </div>
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-bold uppercase tracking-[0.08em] text-zinc-400">At-risk students</p>
           {insight.atRiskNotes.map((n, i) => (
-            <div key={i} className="rounded-md border border-purple-100 bg-white p-3 text-sm">
-              <div className="font-semibold text-gray-900">{n.studentName}</div>
-              <div className="mt-1 text-gray-700">{n.observation}</div>
-              <div className="mt-1 text-gray-700">
-                <span className="font-medium text-purple-700">Try:</span> {n.suggestion}
-              </div>
+            <div key={i} className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-3 text-sm">
+              <p className="font-semibold text-zinc-900">{n.studentName}</p>
+              <p className="mt-1 text-zinc-700">{n.observation}</p>
+              <p className="mt-1 text-zinc-700">
+                <span className="font-semibold text-red-700">Try:</span> {n.suggestion}
+              </p>
             </div>
           ))}
         </div>
       )}
 
       {insight.bright_spots && (
-        <div className="mt-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-900">
+        <div className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-900">
           <span className="font-semibold">Bright spots: </span>
           {insight.bright_spots}
         </div>
       )}
-    </div>
+    </AiResultCard>
   );
 }
