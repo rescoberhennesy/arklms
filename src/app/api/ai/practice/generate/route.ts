@@ -66,10 +66,13 @@ const ACCEPTED_MIMES = new Set([
   'text/plain',
   'text/markdown',
 ]);
+// Where teacher lesson files live. Change these if your names differ.
+const LESSON_ATTACHMENTS_TABLE = 'lesson_attachments';
+const LESSON_ATTACHMENTS_BUCKET = 'lesson-attachments';
 
 // UI offers exactly these three counts. Stricter than the DB's 1-25 check
 // constraint so a tampered client can't bypass the UI.
-const ALLOWED_COUNTS = [5, 10, 15] as const;
+const ALLOWED_COUNTS = [5, 10, 15, 20] as const;
 type AllowedCount = (typeof ALLOWED_COUNTS)[number];
 
 function isAllowedCount(n: number): n is AllowedCount {
@@ -92,43 +95,49 @@ function isSourceKind(s: string): s is PracticeSourceKind {
 // reasonable mix. Roughly: half mc_single, with a sprinkle of the others.
 // Easy leans toward true_false; hard leans toward short_answer.
 
+const PRACTICE_KIND_NAMES = ['mc_single', 'mc_multi', 'true_false', 'short_answer'] as const;
+type PracticeKindName = (typeof PRACTICE_KIND_NAMES)[number];
+
 function buildMixForCount(
   count: AllowedCount,
   difficulty: PracticeDifficulty,
+  kinds: PracticeKindName[],
 ): QuestionMix {
-  // Distributions chosen to feel varied without being random:
   // [mc_single, mc_multi, true_false, short_answer]
-  const profiles: Record<PracticeDifficulty, Record<5 | 10 | 15, [number, number, number, number]>> = {
-    easy: {
-      5:  [2, 0, 2, 1],
-      10: [4, 1, 3, 2],
-      15: [6, 2, 4, 3],
-    },
-    medium: {
-      5:  [2, 1, 1, 1],
-      10: [4, 2, 2, 2],
-      15: [6, 3, 3, 3],
-    },
-    hard: {
-      5:  [2, 1, 0, 2],
-      10: [3, 2, 1, 4],
-      15: [5, 3, 1, 6],
-    },
-    mixed: {
-      5:  [2, 1, 1, 1],
-      10: [4, 2, 2, 2],
-      15: [5, 3, 3, 4],
-    },
+    const profiles: Record<PracticeDifficulty, Record<AllowedCount, [number, number, number, number]>> = {
+    easy:   { 5: [2, 0, 2, 1], 10: [4, 1, 3, 2], 15: [6, 2, 4, 3], 20: [8, 3, 5, 4] },
+    medium: { 5: [2, 1, 1, 1], 10: [4, 2, 2, 2], 15: [6, 3, 3, 3], 20: [8, 4, 4, 4] },
+    hard:   { 5: [2, 1, 0, 2], 10: [3, 2, 1, 4], 15: [5, 3, 1, 6], 20: [6, 4, 2, 8] },
+    mixed:  { 5: [2, 1, 1, 1], 10: [4, 2, 2, 2], 15: [5, 3, 3, 4], 20: [7, 4, 4, 5] },
   };
   const [s, m, tf, sa] = profiles[difficulty][count];
+  const nums: Record<PracticeKindName, number> = {
+    mc_single: s,
+    mc_multi: m,
+    true_false: tf,
+    short_answer: sa,
+  };
+
+  // Drop the types the student didn't pick, then hand those questions
+  // to the picked types (biggest share first) so the total stays the same.
+  let leftover = 0;
+  for (const k of PRACTICE_KIND_NAMES) {
+    if (!kinds.includes(k)) {
+      leftover += nums[k];
+      nums[k] = 0;
+    }
+  }
+  const order = [...kinds].sort((a, b) => nums[b] - nums[a]);
+  for (let i = 0; leftover > 0; i++, leftover--) {
+    nums[order[i % order.length]]++;
+  }
+
   const mix: QuestionMix = {};
-  if (s > 0) mix.mc_single = s;
-  if (m > 0) mix.mc_multi = m;
-  if (tf > 0) mix.true_false = tf;
-  if (sa > 0) mix.short_answer = sa;
+  for (const k of PRACTICE_KIND_NAMES) {
+    if (nums[k] > 0) mix[k] = nums[k];
+  }
   return mix;
 }
-
 // --------------------------------------------------------------------------
 // Difficulty directive — appended to the quiz generator user prompt
 // --------------------------------------------------------------------------
@@ -304,11 +313,22 @@ export async function POST(req: NextRequest) {
 
   const requestedCountNum = Number(requestedCountRaw);
   if (!Number.isInteger(requestedCountNum) || !isAllowedCount(requestedCountNum)) {
-    const e = AIErrors.badInput('requestedCount must be 5, 10, or 15');
+        const e = AIErrors.badInput('requestedCount must be 5, 10, 15, or 20');
     return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
   }
   const requestedCount: AllowedCount = requestedCountNum;
 
+    // Question types picked by the student (defaults to all four).
+  const kindsRaw = (form.get('kinds') as string | null)?.trim() ?? '';
+  const kinds: PracticeKindName[] = kindsRaw
+    ? kindsRaw
+        .split(',')
+        .map((k) => k.trim())
+        .filter((k): k is PracticeKindName => (PRACTICE_KIND_NAMES as readonly string[]).includes(k))
+    : [...PRACTICE_KIND_NAMES];
+  if (kinds.length === 0) {
+    return NextResponse.json({ error: 'Pick at least one question type.' }, { status: 400 });
+  }
   // 4. Validate source-kind-specific inputs
   if (sourceKind === 'lesson' && !sourceLessonId) {
     const e = AIErrors.badInput('sourceLessonId is required when sourceKind is "lesson"');
@@ -365,6 +385,8 @@ export async function POST(req: NextRequest) {
   let lessonTitle: string | undefined;
   let lessonBody: string | undefined;
   let resolvedClassId: string | null = null;
+  // Teacher-uploaded lesson files (PDF/DOCX/TXT/MD) sent to Gemini alongside the text.
+  const lessonFiles: { data: Blob; mimeType: string; displayName: string }[] = [];
 
   if (sourceKind === 'lesson') {
     const { data: lesson, error: lessonErr } = await supabase
@@ -408,12 +430,57 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    lessonTitle = lesson.title as string;
+        lessonTitle = lesson.title as string;
     lessonBody = (lesson.body as string | null) ?? undefined;
 
-    if (!lessonBody || lessonBody.trim().length === 0) {
-      const e = AIErrors.badInput('this lesson has no content to practice from');
-      return NextResponse.json({ error: e.userMessage }, { status: e.statusCode });
+        // Pull the lesson's attachments so PDF-only lessons work too.
+    const { data: atts, error: attsErr } = await supabase
+      .from(LESSON_ATTACHMENTS_TABLE)
+      .select('file_name, mime_type, file_path')
+      .eq('lesson_id', lesson.id);
+    if (attsErr) {
+      console.error('[practice] lesson attachments query failed:', attsErr.message);
+    }
+
+    const mimeFromName = (name: string): string => {
+      const ext = name.toLowerCase().split('.').pop() ?? '';
+      if (ext === 'pdf') return 'application/pdf';
+      if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      if (ext === 'txt') return 'text/plain';
+      if (ext === 'md') return 'text/markdown';
+      return '';
+    };
+
+    for (const a of atts ?? []) {
+      if (lessonFiles.length >= MAX_FILES) break;
+      const fileName = (a.file_name as string) ?? 'lesson-file';
+      const mime =
+        String(a.mime_type ?? '').toLowerCase() || mimeFromName(fileName);
+      if (!ACCEPTED_MIMES.has(mime)) continue; // skip images, slides, etc.
+
+      const { data: blob, error: dlErr } = await supabase.storage
+        .from(LESSON_ATTACHMENTS_BUCKET)
+        .download(a.file_path as string);
+      if (dlErr || !blob) {
+        console.error('[practice] attachment download failed:', a.file_path, dlErr?.message);
+        continue;
+      }
+      if (blob.size > MAX_FILE_SIZE) continue;
+
+      lessonFiles.push({ data: blob, mimeType: mime, displayName: fileName });
+    }
+
+    const hasBody = !!lessonBody && lessonBody.trim().length > 0;
+    if (!hasBody) lessonBody = undefined;
+
+    if (!hasBody && lessonFiles.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'This lesson has no text or readable files (PDF, DOCX, TXT) to practice from yet. Try another lesson or upload your own file.',
+        },
+        { status: 400 },
+      );
     }
   }
 
@@ -432,17 +499,15 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
-  // 8. Upload files to Gemini (only when sourceKind === 'upload')
+  // 8. Upload files to Gemini: the student's own uploads and/or the lesson's files
   let uploaded: UploadedFile[] = [];
-  if (rawFiles.length > 0) {
+  const toUpload = [
+    ...rawFiles.map((f) => ({ data: f as Blob, mimeType: f.type, displayName: f.name })),
+    ...lessonFiles,
+  ];
+  if (toUpload.length > 0) {
     try {
-      uploaded = await uploadFilesToGemini(
-        rawFiles.map((f) => ({
-          data: f,
-          mimeType: f.type,
-          displayName: f.name,
-        })),
-      );
+      uploaded = await uploadFilesToGemini(toUpload);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await logUsage(supabase, {
@@ -452,14 +517,14 @@ export async function POST(req: NextRequest) {
         errorMessage: `file upload failed: ${message}`,
       });
       return NextResponse.json(
-        { error: 'Could not upload your file. Please try again.' },
+        { error: 'Could not read the lesson files. Please try again.' },
         { status: 502 },
       );
     }
   }
 
   // 9. Build mix + prompt, call Gemini
-  const mix = buildMixForCount(requestedCount, difficulty);
+    const mix = buildMixForCount(requestedCount, difficulty, kinds);
 
   let draft: QuizGeneratorDraft;
   let modelUsed = '';

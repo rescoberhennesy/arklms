@@ -19,6 +19,8 @@
   --color-primary-800: #991b1b;
   --color-primary-900: #7f1d1d;
   --color-primary-950: #450a0a;
+  --color-red-600: #b91c1c; /* was #dc2626 */
+  --color-red-700: #991b1b; /* hover, was #b91c1c */
 
   /* ---------- Neutral (refined, not pure black) ---------- */
   --color-neutral-0:   #ffffff;

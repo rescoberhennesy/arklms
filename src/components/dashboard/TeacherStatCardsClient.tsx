@@ -44,7 +44,7 @@ export default function TeacherStatCardsClient({
           label="Pending tasks"
           value={pendingCount}
           icon={ListChecks}
-          dark
+          alert={pendingCount > 0}
           onClick={() => setOpen('pending')}
         />
       </div>
@@ -70,33 +70,33 @@ function StatCard({
   icon: Icon,
   href,
   onClick,
-  dark = false,
+  alert = false,
 }: {
   label: string;
   value: number;
   icon: LucideIcon;
   href?: string;
   onClick?: () => void;
-  dark?: boolean;
+  /** Shows the number in red when something needs attention. */
+  alert?: boolean;
 }) {
-  const className = `flex w-full items-center gap-4 rounded-2xl p-5 text-left transition ${
-    dark
-      ? 'bg-zinc-900 text-white hover:bg-zinc-800'
-      : 'border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-zinc-300 hover:shadow-md'
-  }`;
+  const className =
+    'flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-zinc-300 hover:shadow-md';
 
   const content = (
     <>
-      <span
-        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
-          dark ? 'bg-red-600 text-white' : 'bg-red-50 text-red-600'
-        }`}
-      >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0">
-        <span className={`block text-[13px] ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>{label}</span>
-        <span className="block text-[28px] font-extrabold leading-tight">{value}</span>
+        <span className="block text-[13px] text-zinc-500">{label}</span>
+        <span
+          className={`block text-[28px] font-extrabold leading-tight ${
+            alert ? 'text-red-600' : 'text-zinc-900'
+          }`}
+        >
+          {value}
+        </span>
       </span>
     </>
   );

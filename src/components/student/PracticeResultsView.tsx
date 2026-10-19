@@ -2,19 +2,8 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  Check,
-  X,
-  Trophy,
-  RotateCw,
-  Sparkles,
-} from 'lucide-react';
-import type {
-  PracticeAttempt,
-  PracticeQuestion,
-  PracticeSession,
-} from '@/lib/types/practice';
+import { ArrowLeft, Check, X, RotateCw, Sparkles, Lightbulb } from 'lucide-react';
+import type { PracticeAttempt, PracticeQuestion, PracticeSession } from '@/lib/types/practice';
 import { PRACTICE_QUESTION_KIND_LABELS } from '@/lib/types/practice';
 
 interface Props {
@@ -24,19 +13,13 @@ interface Props {
 }
 
 // Render the student's submitted answer in a readable form per kind.
-function formatStudentAnswer(
-  q: PracticeQuestion,
-  answer: unknown,
-): string {
+function formatStudentAnswer(q: PracticeQuestion, answer: unknown): string {
   if (!answer || typeof answer !== 'object') return '—';
-
   switch (q.questionKind) {
     case 'mc_single': {
       const a = answer as { selected: number };
       const options = (q.config as { options: string[] }).options;
-      if (typeof a.selected !== 'number' || a.selected < 0 || a.selected >= options.length) {
-        return '(no answer)';
-      }
+      if (typeof a.selected !== 'number' || a.selected < 0 || a.selected >= options.length) return '(no answer)';
       return options[a.selected];
     }
     case 'mc_multi': {
@@ -69,7 +52,10 @@ function formatCorrectAnswer(q: PracticeQuestion): string {
     }
     case 'mc_multi': {
       const c = q.config as { options: string[]; correct: number[] };
-      return c.correct.map((i) => c.options[i]).filter(Boolean).join(', ');
+      return c.correct
+        .map((i) => c.options[i])
+        .filter(Boolean)
+        .join(', ');
     }
     case 'true_false': {
       const c = q.config as { correct: boolean };
@@ -88,65 +74,98 @@ export default function PracticeResultsView({ session, questions, attempt }: Pro
       ? Math.round((attempt.score / attempt.maxScore) * 100)
       : 0;
 
-  // Map responses by questionId for quick lookup
   const responsesByQ = new Map(attempt.responses.map((r) => [r.questionId, r]));
-
-  const scoreColor =
-    pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-red-600';
-  const scoreBg =
-    pct >= 80 ? 'bg-emerald-50 border-emerald-200' : pct >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200';
-
   const correctCount = attempt.responses.filter((r) => r.correct).length;
+  const wrongCount = questions.length - correctCount;
+
+  const tone =
+    pct >= 80
+      ? { ring: '#10b981', text: 'text-emerald-400', msg: 'Great work!' }
+      : pct >= 50
+        ? { ring: '#f59e0b', text: 'text-amber-400', msg: 'Good effort. Review the ones you missed.' }
+        : { ring: '#ef4444', text: 'text-red-400', msg: 'Keep going. The explanations below will help.' };
+
+  // Score ring geometry
+  const R = 42;
+  const C = 2 * Math.PI * R;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-4 sm:p-6">
+    <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-8">
       <Link
         href={`/student/practice/${session.id}`}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+        className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-zinc-500 transition hover:text-zinc-900"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to session
+        Back to practice set
       </Link>
 
       {/* Score card */}
-      <div className={`rounded-xl border p-5 shadow-sm ${scoreBg}`}>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Your score
-            </p>
-            <p className={`text-4xl font-bold ${scoreColor}`}>{pct}%</p>
-            <p className="mt-1 text-sm text-gray-600">
-              {correctCount} of {questions.length} correct · {attempt.score}/{attempt.maxScore} points
-            </p>
+      <section className="relative overflow-hidden rounded-3xl bg-zinc-900 p-6 text-white sm:p-8">
+        <svg aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 h-72 w-72" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="49" fill="none" stroke="#ffffff" strokeOpacity="0.07" />
+        </svg>
+
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
+          <div className="relative h-32 w-32 shrink-0">
+            <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
+              <circle cx="50" cy="50" r={R} fill="none" stroke="#27272a" strokeWidth="9" />
+              <circle
+                cx="50"
+                cy="50"
+                r={R}
+                fill="none"
+                stroke={tone.ring}
+                strokeWidth="9"
+                strokeLinecap="round"
+                strokeDasharray={C}
+                strokeDashoffset={C - (C * pct) / 100}
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[30px] font-extrabold">{pct}%</span>
           </div>
-          <Trophy className={`h-12 w-12 ${scoreColor}`} />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            href={`/student/practice/${session.id}`}
-            className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50"
-          >
-            <RotateCw className="h-4 w-4" />
-            Retake
-          </Link>
-          <Link
-            href="/student/practice"
-            className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50"
-          >
-            <Sparkles className="h-4 w-4" />
-            All sessions
-          </Link>
-        </div>
-      </div>
 
-      {/* Per-question review */}
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-400">{session.title}</p>
+            <p className={`mt-1.5 text-2xl font-extrabold ${tone.text}`}>{tone.msg}</p>
+            <p className="mt-1 text-sm text-zinc-300">
+              {attempt.score}/{attempt.maxScore} points
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link
+                href={`/student/practice/${session.id}`}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-red-600 px-5 text-sm font-bold text-white transition hover:bg-red-700"
+              >
+                <RotateCw className="h-4 w-4" />
+                Retake
+              </Link>
+              <Link
+                href="/student/practice"
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-zinc-700 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800"
+              >
+                <Sparkles className="h-4 w-4" />
+                All practice sets
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 sm:w-[260px]">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3.5">
+              <p className="text-[11px] text-zinc-400">Correct</p>
+              <p className="text-2xl font-extrabold text-emerald-400">{correctCount}</p>
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3.5">
+              <p className="text-[11px] text-zinc-400">Missed</p>
+              <p className="text-2xl font-extrabold text-red-400">{wrongCount}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Review */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-gray-700">
-          Review
-        </h2>
+        <h2 className="text-[15px] font-extrabold text-zinc-900">Review your answers</h2>
 
-        <ul className="space-y-3">
+        <ul className="grid gap-3 lg:grid-cols-2">
           {questions.map((q, idx) => {
             const r = responsesByQ.get(q.id);
             const correct = r?.correct ?? false;
@@ -156,51 +175,56 @@ export default function PracticeResultsView({ session, questions, attempt }: Pro
             return (
               <li
                 key={q.id}
-                className={`rounded-xl border p-4 shadow-sm ${
-                  correct ? 'border-emerald-200 bg-white' : 'border-red-200 bg-white'
-                }`}
+                className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
               >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                <div className="flex items-start gap-3.5">
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
                       correct ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
                     }`}
+                    aria-label={correct ? 'Correct' : 'Incorrect'}
                   >
-                    {correct ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                  </div>
+                    {correct ? <Check className="h-4 w-4" strokeWidth={3} /> : <X className="h-4 w-4" strokeWidth={3} />}
+                  </span>
+
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-semibold text-gray-500">
-                        Q{idx + 1}
-                      </span>
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="font-bold text-zinc-500">Q{idx + 1}</span>
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-semibold text-zinc-700">
                         {PRACTICE_QUESTION_KIND_LABELS[q.questionKind]}
                       </span>
-                      <span className="text-[11px] text-gray-500">
+                      <span className="text-zinc-500">
                         {r?.points ?? 0}/{q.points} pts
                       </span>
                     </div>
-                    <p className="text-sm font-medium text-gray-900">{q.prompt}</p>
+                    <p className="text-[15px] font-semibold leading-snug text-zinc-900">{q.prompt}</p>
 
-                    <div className="mt-3 space-y-1.5 text-sm">
-                      <div>
-                        <span className="text-xs font-semibold text-gray-500">Your answer: </span>
-                        <span className={correct ? 'text-emerald-700' : 'text-red-700'}>
+                    <div className="mt-3 grid gap-2 xl:grid-cols-2">
+                      <div
+                        className={`rounded-xl border px-3 py-2 ${
+                          correct ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'
+                        }`}
+                      >
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">Your answer</p>
+                        <p className={`text-sm font-medium ${correct ? 'text-emerald-800' : 'text-red-800'}`}>
                           {studentAnswerText}
-                        </span>
+                        </p>
                       </div>
                       {!correct && (
-                        <div>
-                          <span className="text-xs font-semibold text-gray-500">Correct answer: </span>
-                          <span className="text-emerald-700">{correctAnswerText}</span>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">Correct answer</p>
+                          <p className="text-sm font-medium text-emerald-800">{correctAnswerText}</p>
                         </div>
                       )}
                     </div>
 
                     {q.explanation && (
-                      <div className="mt-3 rounded-md bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
-                        <span className="font-semibold">Why: </span>
-                        {q.explanation}
+                      <div className="mt-3 flex items-start gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 text-[13px] leading-relaxed text-zinc-700">
+                        <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
+                        <span>
+                          <span className="font-bold text-zinc-900">Why: </span>
+                          {q.explanation}
+                        </span>
                       </div>
                     )}
                   </div>
