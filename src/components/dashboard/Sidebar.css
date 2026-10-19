@@ -1,5 +1,5 @@
 /* ============================================
-   Sidebar — dark theme (school red accent)
+   Sidebar — dark theme, red used only as accent
    ============================================ */
 .sidebar {
   width: 264px;
@@ -21,22 +21,25 @@
 .sidebar-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 22px 20px 18px;
+  gap: 14px;
+  padding: 26px 20px 22px;
   border-bottom: 1px solid #1c1c1f;
-  margin-bottom: 10px;
 }
 .sidebar.collapsed .sidebar-header {
   justify-content: center;
-  padding: 22px 0 18px;
+  padding: 26px 0 22px;
 }
 .logo-container {
-  width: 46px;
-  height: 46px;
+  width: 56px;
+  height: 56px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.sidebar.collapsed .logo-container {
+  width: 50px;
+  height: 50px;
 }
 .logo-img {
   width: 100%;
@@ -46,28 +49,51 @@
 .logo-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 .logo-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -0.01em;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 .logo-subtitle {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11.5px;
+  font-weight: 600;
   color: #a1a1aa;
-  line-height: 1.3;
+  line-height: 1.35;
+}
+/* --- Term chip --- */
+.sidebar-term {
+  margin: 14px 20px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #161618;
+  border: 1px solid #232326;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sidebar-term-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+.sidebar-term-sub {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e4e4e7;
 }
 
 /* --- Nav --- */
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 14px 24px;
+  padding: 12px 14px 16px;
   scrollbar-color: #27272a transparent;
 }
 .nav-section + .nav-section {
@@ -76,11 +102,11 @@
 .section-label {
   margin: 0 0 4px;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #71717a;
+  color: #52525b;
 }
 .section-divider {
   height: 1px;
@@ -105,7 +131,7 @@
   border-radius: 12px;
   color: #a1a1aa;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
   transition:
     background 0.15s ease,
@@ -115,12 +141,28 @@
   background: #18181b;
   color: #ffffff;
 }
+.nav-item:focus-visible {
+  outline: 2px solid #ef4444;
+  outline-offset: 2px;
+}
+
+/* Active: charcoal pill, white text, red icon (no red block, no glow) */
 .nav-item.active {
-  background: #dc2626;
+  background: #1c1c1f;
   color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 8px 20px -6px rgba(220, 38, 38, 0.45);
 }
+.nav-item.active .nav-icon {
+  color: #ef4444;
+}
+.nav-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  flex-shrink: 0;
+}
+
 .sidebar.collapsed .nav-item {
   justify-content: center;
   padding: 11px 0;
@@ -132,7 +174,9 @@
   flex-shrink: 0;
 }
 .nav-icon {
-  transition: transform 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
 }
 .nav-item:hover .nav-icon {
   transform: scale(1.06);
@@ -152,20 +196,15 @@
   padding: 0 6px;
   box-sizing: border-box;
   border-radius: 999px;
-  background: #dc2626;
+  background: #b91c1c;
   color: #ffffff;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-/* On the red active pill, flip the badge so it stays visible */
-.nav-item.active .nav-badge {
-  background: #ffffff;
-  color: #b91c1c;
 }
 /* Collapsed sidebar: badge sits on the icon */
 .nav-badge--on-icon {
@@ -179,5 +218,141 @@
   box-shadow: 0 0 0 2px #0c0c0d;
 }
 .nav-item.active .nav-badge--on-icon {
-  box-shadow: 0 0 0 2px #dc2626;
+  box-shadow: 0 0 0 2px #1c1c1f;
+}
+
+/* --- Collapsed hover/focus label --- */
+.nav-tooltip {
+  position: fixed;
+  z-index: 60;
+  transform: translateY(-50%);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #18181b;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow:
+    0 10px 30px -10px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.06);
+  animation: nav-tooltip-in 0.12s ease-out;
+}
+.nav-tooltip::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  transform: translateY(-50%) rotate(45deg);
+  border-radius: 2px;
+}
+@keyframes nav-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(-4px, -50%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+}
+
+/* --- Coming up --- */
+.sidebar-upcoming {
+  margin: 0 14px 16px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #161618;
+  border: 1px solid #232326;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sidebar-upcoming-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+.sidebar-upcoming-head a {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #a1a1aa;
+  text-decoration: none;
+}
+.sidebar-upcoming-head a:hover {
+  color: #ffffff;
+}
+.upcoming-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  border-radius: 10px;
+}
+.upcoming-row:hover .upcoming-title {
+  color: #ffffff;
+}
+.upcoming-date {
+  width: 38px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: #0c0c0d;
+  border: 1px solid #27272a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.upcoming-month {
+  font-size: 8px;
+  font-weight: 800;
+  color: #a1a1aa;
+}
+.upcoming-month.is-next {
+  color: #ef4444;
+}
+.upcoming-day {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+}
+.upcoming-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.upcoming-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e4e4e7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
+}
+.upcoming-sub {
+  font-size: 11px;
+  color: #71717a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Short screens: drop the card so the nav never gets cramped */
+@media (max-height: 760px) {
+  .sidebar-upcoming {
+    display: none;
+  }
 }
