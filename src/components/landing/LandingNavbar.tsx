@@ -28,7 +28,8 @@ export default function LandingNavbar() {
         scopes: 'email openid profile User.Read',
         redirectTo: callbackUrl,
         queryParams: {
-          prompt: 'select_account',
+          // Always ask for credentials, even if a Microsoft session exists
+          prompt: 'login',
         },
       },
     })

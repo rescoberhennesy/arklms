@@ -36,7 +36,7 @@ function validateSemester(value: unknown): Semester {
 }
 function validateTrack(value: unknown): import('@/types/class').Track | null {
   if (value == null) return null;
-  if (value === 'ABM' || value === 'HUMSS' || value === 'H.E' || value === 'ICT') {
+  if (value === 'ASSH' || value === 'BE' || value === 'H&T' || value === 'ICT') {
     return value;
   }
   throw new Error('Invalid track');

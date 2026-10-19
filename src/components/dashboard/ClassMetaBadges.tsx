@@ -5,17 +5,17 @@ import type { GradeLevel, Semester, Track } from '@/types/class';
 // Color theming for each track. Distinct accent per track so a teacher
 // scanning a list of classes can recognize tracks by color, not just text.
 const TRACK_COLORS_ON_DARK: Record<Track, string> = {
-  ABM: 'bg-emerald-500/25 ring-1 ring-inset ring-emerald-200/40 text-white backdrop-blur-sm',
-  HUMSS: 'bg-rose-500/25 ring-1 ring-inset ring-rose-200/40 text-white backdrop-blur-sm',
-  'H.E': 'bg-amber-500/25 ring-1 ring-inset ring-amber-200/40 text-white backdrop-blur-sm',
+  BE: 'bg-emerald-500/25 ring-1 ring-inset ring-emerald-200/40 text-white backdrop-blur-sm',
+  ASSH: 'bg-rose-500/25 ring-1 ring-inset ring-rose-200/40 text-white backdrop-blur-sm',
+  'H&T': 'bg-amber-500/25 ring-1 ring-inset ring-amber-200/40 text-white backdrop-blur-sm',
   ICT: 'bg-sky-500/25 ring-1 ring-inset ring-sky-200/40 text-white backdrop-blur-sm',
 };
 
 // Light-surface equivalents: flat tinted chips, no ring.
 const TRACK_COLORS_ON_LIGHT: Record<Track, string> = {
-  ABM: 'bg-emerald-50 text-emerald-700',
-  HUMSS: 'bg-rose-50 text-rose-700',
-  'H.E': 'bg-amber-50 text-amber-800',
+  BE: 'bg-emerald-50 text-emerald-700',
+  ASSH: 'bg-rose-50 text-rose-700',
+  'H&T': 'bg-amber-50 text-amber-800',
   ICT: 'bg-sky-50 text-sky-700',
 };
 

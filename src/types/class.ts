@@ -10,11 +10,11 @@ export type Semester = '1st Semester' | '2nd Semester';
 
 export type JoinRequestStatus = 'pending' | 'approved' | 'rejected';
 
-export type Track = 'ABM' | 'HUMSS' | 'H.E' | 'ICT';
+export type Track = 'ASSH' | 'BE' | 'H&T' | 'ICT';
 
 export type GradeLevel = 'Grade 11' | 'Grade 12';
 
-export const TRACKS: Track[] = ['ABM', 'HUMSS', 'H.E', 'ICT'];
+export const TRACKS: Track[] = ['ASSH', 'BE', 'H&T', 'ICT'];
 
 export const GRADE_LEVELS: GradeLevel[] = ['Grade 11', 'Grade 12'];
 
@@ -163,16 +163,16 @@ export type InviteExpirationHours = number | null;
  * 10 pastel colors for class cards. Each is a Tailwind-friendly hex string.
  */
 export const CLASS_COLORS = [
-  '#FCA5A5', // red-300
-  '#FDBA74', // orange-300
-  '#FCD34D', // amber-300
-  '#86EFAC', // green-300
-  '#67E8F9', // cyan-300
-  '#93C5FD', // blue-300
-  '#C4B5FD', // violet-300
-  '#F0ABFC', // fuchsia-300
-  '#F9A8D4', // pink-300
-  '#D6D3D1', // stone-300
+  '#DC2626', // Ark Red (default)
+  '#B91C1C', // Crimson
+  '#881337', // Wine
+  '#F87171', // Coral
+  '#FCA5A5', // Blush
+  '#27272A', // Charcoal
+  '#52525B', // Graphite
+  '#64748B', // Slate
+  '#A8A29E', // Stone
+  '#D6CFC7', // Sand
 ] as const;
 
 export const DEFAULT_CLASS_COLOR = CLASS_COLORS[0];
