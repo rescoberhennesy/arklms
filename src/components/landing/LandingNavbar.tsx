@@ -1,18 +1,17 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LandingNavbar() {
-  const searchParams = useSearchParams()
-
   const handleLogin = async () => {
     const supabase = createClient()
     // Clear any stale session before starting fresh OAuth
     await supabase.auth.signOut()
 
-    // Carry ?next=... through OAuth so /auth/callback can redirect back
-    const rawNext = searchParams.get('next')
+    // Carry ?next=... through OAuth so /auth/callback can redirect back.
+    // Read it at click time (not via useSearchParams) so landing pages can be
+    // statically prerendered.
+    const rawNext = new URLSearchParams(window.location.search).get('next')
     const safeNext =
       rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
         ? rawNext
