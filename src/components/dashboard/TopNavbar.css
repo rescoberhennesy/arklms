@@ -248,3 +248,12 @@
     padding-right: 12px;
   }
 }
+
+/* Small phones: avatar only in the profile chip */
+@media (max-width: 480px) {
+  .profile-chip-name,
+  .profile-chip-email,
+  .profile-chip .role-pill {
+    display: none;
+  }
+}

@@ -1071,3 +1071,100 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   LANDING — MOBILE FIXES
+   (outside @layer so these override the layered landing styles)
+   ============================================================ */
+
+/* Never let anything make the landing page wider than the screen.
+   `clip` (not `hidden`) so sticky elements keep working. */
+.app-root {
+  overflow-x: clip;
+}
+
+/* Tablets and phones */
+@media (max-width: 800px) {
+  .step-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .footer-inner {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding-bottom: 40px;
+  }
+}
+
+/* Phones */
+@media (max-width: 640px) {
+  /* Navbar */
+  .nav-inner {
+    padding: 10px 16px;
+  }
+  .nav-logo {
+    height: 40px;
+  }
+  .nav-login-btn {
+    padding: 8px 20px;
+    font-size: 14px;
+  }
+
+  /* Hero */
+  .hero-slider {
+    height: 460px;
+  }
+  .hero-inner {
+    padding: 0 20px;
+  }
+  .hero-content h1 {
+    font-size: 34px;
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+  }
+  .hero-content p {
+    font-size: 15px;
+  }
+  .hero-arrow {
+    display: none; /* swipe/dots are enough on phones */
+  }
+
+  /* Sections */
+  .home-strands,
+  .home-steps {
+    padding: 48px 0;
+  }
+  .home-strands-inner,
+  .home-steps-inner {
+    padding: 0 16px;
+  }
+  .home-strands-inner h2,
+  .home-steps-inner h2 {
+    font-size: 24px;
+    margin-bottom: 28px;
+  }
+  .step-card {
+    padding: 24px 20px;
+  }
+
+  /* Program popover: open below the card instead of floating off-screen */
+  .strand-popover {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: none;
+    margin-top: 10px;
+    animation: none;
+  }
+  .strand-popover::before {
+    display: none;
+  }
+}
+
+/* Small phones: one program card per row */
+@media (max-width: 420px) {
+  .strand-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}

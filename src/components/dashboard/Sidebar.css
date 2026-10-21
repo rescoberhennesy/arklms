@@ -356,3 +356,82 @@
     display: none;
   }
 }
+
+/* ============================================
+   Phones: sidebar becomes a slide-out drawer
+   ============================================ */
+.sidebar-backdrop {
+  display: none;
+}
+.sidebar-close {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .sidebar,
+  .sidebar.collapsed {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 60;
+    width: min(300px, 86vw);
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.45);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.5);
+    animation: sidebar-fade-in 0.2s ease-out;
+  }
+
+  .sidebar-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #a1a1aa;
+    cursor: pointer;
+  }
+  .sidebar-close:hover {
+    background: #18181b;
+    color: #ffffff;
+  }
+
+  /* Slightly smaller header in the drawer */
+  .sidebar-header {
+    padding: 18px 16px 16px;
+  }
+  .logo-container {
+    width: 48px;
+    height: 48px;
+  }
+  .logo-title {
+    font-size: 18px;
+  }
+}
+
+@keyframes sidebar-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
