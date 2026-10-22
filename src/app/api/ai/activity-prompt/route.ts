@@ -4,7 +4,8 @@
 // Question / prompt section. Teacher/admin only. Does NOT save anything to
 // the activity: returns Markdown the teacher reviews and saves.
 //
-// Fields: activityId, count (1-10), style, focus, includePoints ("true"/"false"),
+// Fields: activityId, count (1-10; matching = number of pairs, 3-10), style,
+//         focus, includePoints ("true"/"false"),
 //         files[] (0-5 PDF/DOCX, <=20 MB each)
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -21,6 +22,7 @@ import {
   buildActivityPromptUserPrompt,
   validateActivityPromptDraft,
   renderActivityPromptMarkdown,
+  isActivityQuestionStyle,
   type ActivityQuestionStyle,
 } from '@/lib/ai/prompts/activityPrompt';
 
@@ -29,14 +31,7 @@ export const runtime = 'nodejs';
 const FEATURE = 'activity_prompt';
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const STYLES: ActivityQuestionStyle[] = [
-  'identification',
-  'true_false',
-  'multiple_choice',
-  'essay',
-  'problem',
-  'mixed',
-];
+const DEFAULT_STYLE: ActivityQuestionStyle = 'mc_single';
 
 const ALLOWED_MIME = new Set([
   'application/pdf',
@@ -100,13 +95,14 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   const activityId = (form.get('activityId') as string | null)?.trim();
   if (!activityId) return bad('activityId is required');
 
-  const countRaw = Number(form.get('count'));
-  const count = Number.isInteger(countRaw) ? Math.min(10, Math.max(1, countRaw)) : 5;
+  const styleRaw = ((form.get('style') as string | null) ?? '').trim();
+  const style: ActivityQuestionStyle = isActivityQuestionStyle(styleRaw) ? styleRaw : DEFAULT_STYLE;
+  const isMatching = style === 'matching';
 
-  const styleRaw = form.get('style') as string | null;
-  const style: ActivityQuestionStyle = STYLES.includes(styleRaw as ActivityQuestionStyle)
-    ? (styleRaw as ActivityQuestionStyle)
-    : 'mixed';
+  // count = number of questions, or number of pairs for matching
+  const minCount = isMatching ? 3 : 1;
+  const countRaw = Number(form.get('count'));
+  const count = Number.isInteger(countRaw) ? Math.min(10, Math.max(minCount, countRaw)) : 5;
 
   const focus = ((form.get('focus') as string | null) ?? '').trim().slice(0, 500);
   const includePoints = form.get('includePoints') === 'true';
@@ -205,7 +201,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
     } catch {
       throw AIErrors.geminiFailed('model returned non-JSON output');
     }
-    const draft = validateActivityPromptDraft(raw, count);
+    // Matching is a single set; everything else is one item per question.
+    const draft = validateActivityPromptDraft(raw, isMatching ? 1 : count);
 
     await logUsage(supabase, {
       userId: user.id,
@@ -224,6 +221,7 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
       draft.questions ?? [],
       Number(act.max_points) || 0,
       includePoints,
+      style,
     );
     return NextResponse.json({ markdown, count: draft.questions?.length ?? 0 });
   } catch (err) {

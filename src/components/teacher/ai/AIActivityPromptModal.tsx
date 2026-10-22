@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Loader2, Paperclip, FileText, X } from 'lucide-react';
 import Modal from '@/components/shared/Modal';
 import {
+  ACTIVITY_QUESTION_STYLES,
   ACTIVITY_QUESTION_STYLE_LABELS,
+  ACTIVITY_STYLE_DIRECTIONS,
   type ActivityQuestionStyle,
 } from '@/lib/ai/prompts/activityPrompt';
 
@@ -23,7 +25,7 @@ interface Props {
 }
 
 const inputClass =
-  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:opacity-60';
+  'w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-purple-400 focus:outline-none focus:ring-4 focus:ring-purple-500/10 disabled:opacity-60';
 
 export default function AIActivityPromptModal({
   open,
@@ -33,7 +35,7 @@ export default function AIActivityPromptModal({
   onGenerated,
 }: Props) {
   const [countInput, setCountInput] = useState('5');
-  const [style, setStyle] = useState<ActivityQuestionStyle>('mixed');
+  const [style, setStyle] = useState<ActivityQuestionStyle>('mc_single');
   const [focus, setFocus] = useState('');
   const [includePoints, setIncludePoints] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
@@ -43,14 +45,16 @@ export default function AIActivityPromptModal({
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  const isMatching = style === 'matching';
+  const minCount = isMatching ? 3 : 1;
   const count = Number(countInput);
-  const countValid = Number.isInteger(count) && count >= 1 && count <= 10;
+  const countValid = Number.isInteger(count) && count >= minCount && count <= 10;
 
   // Reset each time it opens
   useEffect(() => {
     if (open) {
       setCountInput('5');
-      setStyle('mixed');
+      setStyle('mc_single');
       setFocus('');
       setIncludePoints(true);
       setFiles([]);
@@ -164,10 +168,29 @@ export default function AIActivityPromptModal({
         }}
         className="space-y-4"
       >
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
           <div>
-            <label htmlFor="aiq-count" className="mb-1 block text-xs font-semibold text-gray-700">
-              Number of questions <span className="font-normal text-gray-400">(1–10)</span>
+            <label htmlFor="aiq-style" className="mb-1 block text-xs font-semibold text-zinc-700">
+              Question style
+            </label>
+            <select
+              id="aiq-style"
+              value={style}
+              onChange={(e) => setStyle(e.target.value as ActivityQuestionStyle)}
+              disabled={loading}
+              className={inputClass}
+            >
+              {ACTIVITY_QUESTION_STYLES.map((s) => (
+                <option key={s} value={s}>
+                  {ACTIVITY_QUESTION_STYLE_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="aiq-count" className="mb-1 block text-xs font-semibold text-zinc-700">
+              {isMatching ? 'Number of pairs' : 'Number of items'}{' '}
+              <span className="font-normal text-zinc-400">({minCount}–10)</span>
             </label>
             <input
               id="aiq-count"
@@ -180,29 +203,17 @@ export default function AIActivityPromptModal({
               className={`${inputClass} ${countValid ? '' : 'border-red-300'}`}
             />
           </div>
-          <div>
-            <label htmlFor="aiq-style" className="mb-1 block text-xs font-semibold text-gray-700">
-              Question style
-            </label>
-            <select
-              id="aiq-style"
-              value={style}
-              onChange={(e) => setStyle(e.target.value as ActivityQuestionStyle)}
-              disabled={loading}
-              className={inputClass}
-            >
-              {(Object.keys(ACTIVITY_QUESTION_STYLE_LABELS) as ActivityQuestionStyle[]).map((s) => (
-                <option key={s} value={s}>
-                  {ACTIVITY_QUESTION_STYLE_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
+        {/* What students will be told for this style */}
+        <p className="rounded-xl bg-purple-50/60 px-3 py-2 text-xs text-purple-900">
+          <span className="font-semibold">Directions students will see:</span>{' '}
+          {ACTIVITY_STYLE_DIRECTIONS[style]}
+        </p>
+
         <div>
-          <label htmlFor="aiq-focus" className="mb-1 block text-xs font-semibold text-gray-700">
-            Notes for the AI <span className="font-normal text-gray-400">(optional)</span>
+          <label htmlFor="aiq-focus" className="mb-1 block text-xs font-semibold text-zinc-700">
+            Notes for the AI <span className="font-normal text-zinc-400">(optional)</span>
           </label>
           <textarea
             id="aiq-focus"
@@ -217,11 +228,11 @@ export default function AIActivityPromptModal({
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold text-gray-700">
-            Source files <span className="font-normal text-gray-400">(optional)</span>
+          <p className="mb-1 text-xs font-semibold text-zinc-700">
+            Source files <span className="font-normal text-zinc-400">(optional)</span>
           </p>
           <label
-            className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-600 hover:border-purple-400 hover:bg-purple-50 ${
+            className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 px-3 py-3 text-xs text-zinc-600 hover:border-purple-400 hover:bg-purple-50 ${
               loading || files.length >= MAX_FILES ? 'pointer-events-none opacity-60' : ''
             }`}
           >
@@ -243,15 +254,15 @@ export default function AIActivityPromptModal({
               {files.map((f, i) => (
                 <li
                   key={`${f.name}-${i}`}
-                  className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1 text-xs"
+                  className="flex items-center gap-2 rounded-lg border border-zinc-200 px-2 py-1 text-xs"
                 >
                   <FileText className="h-3.5 w-3.5 shrink-0 text-purple-600" />
-                  <span className="flex-1 truncate text-gray-700">{f.name}</span>
+                  <span className="flex-1 truncate text-zinc-700">{f.name}</span>
                   <button
                     type="button"
                     onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
                     disabled={loading}
-                    className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
                     aria-label={`Remove ${f.name}`}
                   >
                     <X className="h-3 w-3" />
@@ -260,29 +271,29 @@ export default function AIActivityPromptModal({
               ))}
             </ul>
           )}
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-zinc-500">
             With files, questions are based only on them. Without files, the
-            AI uses the activity title, instructions and your focus.
+            AI uses the activity title, instructions and your notes.
           </p>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <label className="flex items-center gap-2 text-sm text-zinc-700">
           <input
             type="checkbox"
             checked={includePoints}
             onChange={(e) => setIncludePoints(e.target.checked)}
             disabled={loading}
-            className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
           />
-          Show points per question (adds up to the activity's max points)
+          Show points per question (adds up to the activity&apos;s max points)
         </label>
 
         {hasExisting && (
-          <fieldset className="rounded-lg border border-gray-200 p-3">
-            <legend className="px-1 text-xs font-semibold text-gray-700">
-              There's already a prompt
+          <fieldset className="rounded-xl border border-zinc-200 p-3">
+            <legend className="px-1 text-xs font-semibold text-zinc-700">
+              There are already questions
             </legend>
-            <div className="flex flex-wrap gap-4 text-sm text-gray-700">
+            <div className="flex flex-wrap gap-4 text-sm text-zinc-700">
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -291,7 +302,7 @@ export default function AIActivityPromptModal({
                   onChange={() => setMode('append')}
                   disabled={loading}
                 />
-                Add below it
+                Add below them
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -301,35 +312,35 @@ export default function AIActivityPromptModal({
                   onChange={() => setMode('replace')}
                   disabled={loading}
                 />
-                Replace it
+                Replace them
               </label>
             </div>
           </fieldset>
         )}
 
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-zinc-500">
           Nothing is saved yet. The questions go into the editor so you can
-          review and edit them, then click Save.
+          review and edit them, then save.
         </p>
 
-        <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-zinc-100 pt-4">
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={loading || !countValid}
-            className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
               <>

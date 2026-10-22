@@ -184,7 +184,9 @@ export default async function ClassDetailPage({
         )}
 
         {tab === 'activities' && (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          // Side panel only on extra-wide screens; below the list otherwise,
+          // so the list always gets enough room.
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
             <div className="min-w-0">
               <ActivitiesTab
                 classId={klass.id}
@@ -192,7 +194,7 @@ export default async function ClassDetailPage({
                 roster={activitiesRoster}
               />
             </div>
-            <aside className="lg:sticky lg:top-4">
+            <aside className="min-w-0 xl:sticky xl:top-20">
               <TeacherProgressStrip classId={klass.id} activities={activities} />
             </aside>
           </div>

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ClipboardList, ListChecks } from 'lucide-react';
+import { ClipboardList, ListChecks, CalendarDays } from 'lucide-react';
 import { type ActivityWithStudentState, type ActivityStatus } from '@/lib/types/activities';
 import { type ModuleTerm, MODULE_TERMS, MODULE_TERM_LABELS } from '@/lib/types/modules';
 import { cn } from '@/lib/utils/cn';
@@ -12,8 +12,6 @@ interface StudentActivitiesTabProps {
   classId: string;
   activities: ActivityWithStudentState[];
 }
-
-const ROW_GRID = 'md:grid md:grid-cols-[minmax(0,1fr)_150px_80px_130px_112px] md:items-center md:gap-4';
 
 const NEUTRAL = 'bg-zinc-100 text-zinc-700';
 const STATUS_PILL: Record<ActivityStatus, { className: string; dot: string; label: string }> = {
@@ -60,12 +58,13 @@ function isModuleTerm(v: string | null): v is ModuleTerm {
   return v !== null && (MODULE_TERMS as readonly string[]).includes(v);
 }
 
-function formatDueDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-}
-
-function formatDueTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+function formatDue(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 /** Colored "due" pill for things still to do. Null when not relevant. */
@@ -183,9 +182,9 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
         })}
       </div>
 
-      {/* Table card */}
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
-        <div role="tablist" aria-label="Filter activities" className="flex flex-wrap gap-1 border-b border-zinc-100 px-5 py-3">
+      {/* List card. @container = rows adapt to THIS card's width. */}
+      <section className="@container rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
+        <div role="tablist" aria-label="Filter activities" className="flex flex-wrap gap-1 border-b border-zinc-100 px-4 py-3 @2xl:px-5">
           {FILTER_KEYS.map((key) => {
             const active = filter === key;
             return (
@@ -224,26 +223,11 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
               : `Nothing under "${FILTER_LABEL[filter]}" in ${MODULE_TERM_LABELS[activeTerm]}.`}
           </div>
         ) : (
-          <>
-            {/* Column headers (desktop) */}
-            <div
-              className={cn(
-                'hidden border-b border-zinc-100 bg-zinc-50/60 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 md:grid',
-                ROW_GRID,
-              )}
-            >
-              <span className="pl-12">Title</span>
-              <span>Due</span>
-              <span>Score</span>
-              <span>Status</span>
-              <span className="sr-only">Action</span>
-            </div>
-            <ul className="divide-y divide-zinc-100">
-              {visible.map((a) => (
-                <ActivityRow key={a.id} activity={a} classId={classId} />
-              ))}
-            </ul>
-          </>
+          <ul className="divide-y divide-zinc-100">
+            {visible.map((a) => (
+              <ActivityRow key={a.id} activity={a} classId={classId} />
+            ))}
+          </ul>
         )}
       </section>
     </div>
@@ -270,15 +254,24 @@ function ActivityRow({ activity, classId }: { activity: ActivityWithStudentState
         ? { label: 'See score', primary: false }
         : { label: 'View', primary: false };
 
-  return (
-    <li
-      className={cn(
-        'relative flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 transition hover:bg-zinc-50/70',
-        ROW_GRID,
+  const pills = (
+    <>
+      {due && (
+        <span className={cn('inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold', due.className)}>
+          {due.text}
+        </span>
       )}
-    >
-      {/* Title (icon + text) */}
-      <div className="flex min-w-0 basis-full items-center gap-3 md:basis-auto">
+      <span className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold', pill.className)}>
+        <span className={cn('h-1.5 w-1.5 rounded-full', pill.dot)} />
+        {pill.label}
+      </span>
+    </>
+  );
+
+  return (
+    <li className="relative">
+      <div className="flex items-start gap-3 px-4 py-4 transition hover:bg-zinc-50/70 @2xl:items-center @2xl:px-5">
+        {/* Type icon */}
         <span
           className={cn(
             'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
@@ -287,57 +280,46 @@ function ActivityRow({ activity, classId }: { activity: ActivityWithStudentState
         >
           {isQuiz ? <ListChecks className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
         </span>
-        <div className="min-w-0">
+
+        {/* Title + meta (+ pills under it when narrow) */}
+        <div className="min-w-0 flex-1">
           <Link
             href={href}
-            className="block truncate text-[15px] font-bold text-zinc-900 after:absolute after:inset-0 after:content-[''] hover:text-red-700"
+            className="line-clamp-2 text-[15px] font-bold text-zinc-900 after:absolute after:inset-0 after:content-[''] hover:text-red-700 @2xl:line-clamp-1"
           >
             {activity.title}
           </Link>
-          <p className="mt-0.5 truncate text-[13px] text-zinc-500">
-            {isQuiz ? 'Quiz' : 'Activity'}
-            {activity.allowLate && isTodo && activity.status !== 'late_window' && ' · late accepted'}
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] text-zinc-500">
+            <span>
+              {isQuiz ? 'Quiz' : 'Activity'} ·{' '}
+              {activity.grade ? (
+                <span className="font-semibold text-zinc-900">
+                  {activity.grade.score}
+                  <span className="font-normal text-zinc-400"> / {activity.maxPoints}</span>
+                </span>
+              ) : (
+                `${activity.maxPoints} pts`
+              )}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Due {formatDue(activity.dueAt)}
+            </span>
+            {activity.allowLate && isTodo && activity.status !== 'late_window' && <span>late accepted</span>}
           </p>
+
+          {/* Narrow: pills under the title */}
+          <div className="mt-2 flex flex-wrap items-center gap-2 @2xl:hidden">{pills}</div>
         </div>
-      </div>
 
-      {/* Due */}
-      <div className="text-[13px]">
-        <span className="font-medium text-zinc-800">{formatDueDate(activity.dueAt)}</span>
-        <span className="ml-1 text-zinc-500 md:ml-0 md:block">{formatDueTime(activity.dueAt)}</span>
-        {due && (
-          <span className={cn('mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', due.className)}>
-            {due.text}
-          </span>
-        )}
-      </div>
+        {/* Wide: pills on the right */}
+        <div className="hidden shrink-0 items-center justify-end gap-2 @2xl:flex">{pills}</div>
 
-      {/* Score */}
-      <div className="text-[13px]">
-        {activity.grade ? (
-          <span className="font-semibold text-zinc-900">
-            {activity.grade.score}
-            <span className="font-normal text-zinc-400"> / {activity.maxPoints}</span>
-          </span>
-        ) : (
-          <span className="text-zinc-500">{activity.maxPoints} pts</span>
-        )}
-      </div>
-
-      {/* Status */}
-      <div>
-        <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', pill.className)}>
-          <span className={cn('h-1.5 w-1.5 rounded-full', pill.dot)} />
-          {pill.label}
-        </span>
-      </div>
-
-      {/* Action */}
-      <div className="ml-auto md:ml-0 md:text-right">
+        {/* Action */}
         <Link
           href={href}
           className={cn(
-            'relative z-10 inline-flex min-h-9 items-center justify-center rounded-xl px-4 text-sm font-semibold transition',
+            'relative z-10 inline-flex min-h-9 shrink-0 items-center justify-center rounded-xl px-3.5 text-sm font-semibold transition',
             action.primary
               ? 'bg-red-600 text-white shadow-[0_4px_12px_rgba(220,38,38,0.22)] hover:bg-red-700'
               : 'border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50',

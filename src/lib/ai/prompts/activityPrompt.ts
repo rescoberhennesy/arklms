@@ -5,30 +5,51 @@
 // route renders to Markdown. The teacher reviews and saves it.
 
 export type ActivityQuestionStyle =
-  | 'identification'
+  | 'mc_single'
+  | 'mc_multi'
   | 'true_false'
-  | 'multiple_choice'
+  | 'true_false_modified'
+  | 'identification'
   | 'essay'
-  | 'problem'
-  | 'mixed';
+  | 'matching';
 
 export const ACTIVITY_QUESTION_STYLES: ActivityQuestionStyle[] = [
-  'identification',
+  'mc_single',
+  'mc_multi',
   'true_false',
-  'multiple_choice',
+  'true_false_modified',
+  'identification',
   'essay',
-  'problem',
-  'mixed',
+  'matching',
 ];
 
 export const ACTIVITY_QUESTION_STYLE_LABELS: Record<ActivityQuestionStyle, string> = {
-  identification: 'Identification',
+  mc_single: 'Multiple choice (single answer)',
+  mc_multi: 'Multiple choice (multiple answers)',
   true_false: 'True or False',
-  multiple_choice: 'Multiple choice',
-  essay: 'Essay / explain',
-  problem: 'Problem solving (with computations)',
-  mixed: 'Mixed',
+  true_false_modified: 'True or False (modified)',
+  identification: 'Identification',
+  essay: 'Essay',
+  matching: 'Matching type',
 };
+
+/** Standard directions shown above the generated set. */
+export const ACTIVITY_STYLE_DIRECTIONS: Record<ActivityQuestionStyle, string> = {
+  mc_single: 'Choose the letter of the correct answer.',
+  mc_multi:
+    'Choose all the letters of the correct answers. Each item may have more than one correct answer.',
+  true_false: 'Write TRUE if the statement is correct and FALSE if it is not.',
+  true_false_modified:
+    'Write TRUE if the statement is correct. If it is false, change the word or phrase in bold to make the statement correct.',
+  identification: 'Identify the term or concept being described.',
+  essay: 'Answer each question in complete sentences.',
+  matching:
+    'Match each item in Column A with the correct item in Column B. Write the letter of your answer.',
+};
+
+export function isActivityQuestionStyle(v: string): v is ActivityQuestionStyle {
+  return (ACTIVITY_QUESTION_STYLES as string[]).includes(v);
+}
 
 export interface ActivityPromptInput {
   activityTitle: string;
@@ -55,35 +76,45 @@ see them.
 RULES:
 - Write exactly the requested number of questions unless the source material
   truly cannot support that many (then write fewer; never pad).
+  EXCEPTION: for matching, write exactly ONE question that contains the
+  requested number of pairs.
 - If source files are attached, base EVERY question only on them. Do not add
   outside facts. Without files, base questions on the activity title,
   instructions and the teacher's focus note, using standard SHS-level content.
 - Match the requested style:
-  - identification: a description, definition or clue; the student writes
-    the exact term, name or concept being described. Phrase it as a
-    statement or "What is…/Who is…" question with ONE correct term.
+  - mc_single: a question or incomplete statement, then exactly four choices,
+    each on its own line, labeled "a.", "b.", "c.", "d.". Exactly ONE choice is
+    correct; distractors must be plausible and drawn from related concepts.
+  - mc_multi: a question, then 4 to 6 choices on their own lines labeled "a.",
+    "b.", "c.", … At least two and at most (choices − 1) are correct. End the
+    question line with "(Choose all that apply.)".
   - true_false: a single clear statement that is either true or false.
-    Mix true and false statements (roughly half each). Avoid "always/never"
-    traps and double negatives.
-  - multiple_choice: a question or incomplete statement, then exactly four
-    choices on separate lines labeled "a.", "b.", "c.", "d." Only one choice
-    is correct; distractors must be plausible. Do not mark the answer.
-  - essay: explain, compare, justify or apply; needs a paragraph answer.
-  - problem: realistic computation problems with all needed given values
-    (use Philippine peso amounts where money is involved); ask students to
-    show their solution.
-  - mixed: a balanced mix of the styles above. Start each question with its
-    type in bold brackets, e.g. "**[Identification]**", "**[True or False]**",
-    "**[Multiple choice]**", "**[Essay]**", "**[Problem solving]**".
+    Mix true and false (roughly half each). Avoid "always/never" traps and
+    double negatives.
+  - true_false_modified: a single statement with exactly ONE key word or short
+    phrase in bold (**like this**). The statement is either true, or false
+    because of the bold part only (changing it would make it true). Mix true
+    and false (roughly half each). Never bold more than one part.
+  - identification: a description, definition or clue; the student writes the
+    exact term, name or concept. Phrase it as a statement or "What is…/Who
+    is…". Exactly ONE correct term.
+  - essay: explain, compare, justify, analyze or apply; needs a paragraph
+    answer. Be specific about what a complete answer covers.
+  - matching: ONE question. First line: "Column A". Then one line per item
+    written as "(1) item", "(2) item", … Then a line "Column B". Then one line
+    per match written as "(a) match", "(b) match", … Column B must be
+    SHUFFLED so (1) does not match (a), and so on. Every item has exactly one
+    match. Keep Column B entries short (under ~15 words) and similar in style.
 - Questions must be clear, self-contained and answerable. No trick questions.
 - Write ONLY the questions. Never include answers, hints, or an answer key.
-- Light markdown is allowed inside a question (bold, line breaks for given
-  values or choices). No headings, no numbering of the questions themselves
+- Do not write a "Directions:" line; directions are added for you.
+- Light markdown is allowed inside a question (bold, line breaks for choices
+  or given values). No headings, no numbering of the questions themselves
   (numbering is added for you).
 - Match the language of the source/instructions (English or Filipino).
 - If points are requested, give each question a whole-number "points" value
   and make them add up EXACTLY to the activity's max points, weighting harder
-  questions higher.
+  questions higher. For matching, the single question gets all the points.
 
 TEACHER'S REQUEST: if the teacher adds a request (topic, difficulty, scenario,
 language, format of specific items), follow it as long as it does not break
@@ -114,12 +145,15 @@ export const ACTIVITY_PROMPT_RESPONSE_SCHEMA = {
 } as const;
 
 export function buildActivityPromptUserPrompt(input: ActivityPromptInput): string {
+  const isMatching = input.style === 'matching';
   const lines = [
     'Write activity questions per the system instructions.',
     '',
     `ACTIVITY TITLE: ${input.activityTitle}`,
-    `NUMBER OF QUESTIONS: ${input.count}`,
-    `QUESTION STYLE: ${input.style}`,
+    isMatching
+      ? `NUMBER OF PAIRS: ${input.count} (write ONE matching question with ${input.count} pairs)`
+      : `NUMBER OF QUESTIONS: ${input.count}`,
+    `QUESTION STYLE: ${input.style} (${ACTIVITY_QUESTION_STYLE_LABELS[input.style]})`,
     `SUBMISSION TYPE: ${input.submissionTypeLabel}`,
     `MAX POINTS: ${input.maxPoints}`,
     `POINTS PER QUESTION: ${input.includePoints ? 'yes, must sum to max points' : 'no'}`,
@@ -154,8 +188,11 @@ export function validateActivityPromptDraft(raw: unknown, maxCount: number): Act
     if (!q || typeof q !== 'object') continue;
     const item = q as Record<string, unknown>;
     if (typeof item.text !== 'string') continue;
-    const text = item.text.trim().replace(/^\d+[.)]\s+/, ''); // strip stray numbering
-    if (!text || text.length > 2000) continue;
+    const text = item.text
+      .trim()
+      .replace(/^\d+[.)]\s+/, '') // strip stray numbering
+      .replace(/^\*?directions:?\*?.*\n/i, ''); // strip a stray directions line
+    if (!text || text.length > 3000) continue;
     const points =
       typeof item.points === 'number' && Number.isFinite(item.points) && item.points > 0
         ? Math.round(item.points)
@@ -169,17 +206,37 @@ export function validateActivityPromptDraft(raw: unknown, maxCount: number): Act
 }
 
 /** Numbered Markdown list. Points shown only if they add up to maxPoints.
- *  Extra lines (choices, given values) stay inside the item as line breaks. */
+ *  Extra lines (choices, given values) stay inside the item as line breaks.
+ *  Pass `style` to add the standard "Directions:" line on top. */
 export function renderActivityPromptMarkdown(
   questions: { text: string; points?: number }[],
   maxPoints: number,
   includePoints: boolean,
+  style?: ActivityQuestionStyle,
 ): string {
   const sum = questions.reduce((acc, q) => acc + (q.points ?? 0), 0);
   const showPoints =
     includePoints && questions.every((q) => q.points) && Math.abs(sum - maxPoints) < 0.001;
 
-  return questions
+  const directions = style ? `**Directions:** ${ACTIVITY_STYLE_DIRECTIONS[style]}\n\n` : '';
+
+  // Matching is one set: render it as a block, not a numbered item.
+  if (style === 'matching') {
+    const body = questions
+      .map((q) => {
+        const prefix = showPoints ? `**(${q.points} pts)**  \n` : '';
+        const lines = q.text
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => (/^column [ab]$/i.test(l) ? `**${l}**` : l));
+        return prefix + lines.join('  \n');
+      })
+      .join('\n\n');
+    return directions + body;
+  }
+
+  const list = questions
     .map((q, i) => {
       const prefix = showPoints ? `**(${q.points} pts)** ` : '';
       const lines = q.text
@@ -191,4 +248,6 @@ export function renderActivityPromptMarkdown(
       return `${i + 1}. ${prefix}${body}`;
     })
     .join('\n\n');
+
+  return directions + list;
 }

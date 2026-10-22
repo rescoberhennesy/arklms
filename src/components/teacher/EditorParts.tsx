@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  ChevronDown,
   Eye,
   EyeOff,
   Loader2,
@@ -190,36 +189,24 @@ export function EditorTabs<T extends string>({
 }
 
 // ---------------------------------------------------------------------------
-// Collapsible settings row with a one-line summary
+// Settings group — always open, so no setting is hidden from teachers.
+// (Kept the old name/props so the editors don't need to change; `summary`
+// and `defaultOpen` are now ignored.)
 // ---------------------------------------------------------------------------
 
 export function SettingsDisclosure({
   title,
-  summary,
   children,
-  defaultOpen = false,
 }: {
   title: string;
-  summary: string;
+  summary?: string;
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-t border-zinc-100">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 py-3 text-left"
-      >
-        <span className="shrink-0 text-sm font-semibold text-zinc-800">{title}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
-          <span className="truncate">{summary}</span>
-          <ChevronDown className={`h-4 w-4 shrink-0 transition ${open ? 'rotate-180' : ''}`} />
-        </span>
-      </button>
-      {open && <div className="space-y-3 pb-4">{children}</div>}
+    <div className="space-y-3 border-t border-zinc-100 py-4">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">{title}</p>
+      {children}
     </div>
   );
 }
