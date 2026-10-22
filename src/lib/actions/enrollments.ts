@@ -339,10 +339,11 @@ export async function decideJoinRequest(
 }
 export async function listClassRoster(
   classId: string,
-): Promise <
+): Promise<
   Array<{
     student_id: string;
     full_name: string | null;
+    username: string | null;
     email: string | null;
     avatar_url: string | null;
     enrolled_at: string;
@@ -355,7 +356,7 @@ export async function listClassRoster(
     .select(
       `
         enrolled_at, student_id,
-        student:student_id ( full_name, email, avatar_url, last_active_at )
+        student:student_id ( full_name, username, email, avatar_url, last_active_at )
       `,
     )
     .eq('class_id', classId)
@@ -367,6 +368,7 @@ export async function listClassRoster(
     .map((row: any) => ({
       student_id: row.student_id,
       full_name: row.student?.full_name ?? null,
+      username: row.student?.username ?? null,
       email: row.student?.email ?? null,
       avatar_url: row.student?.avatar_url ?? null,
       enrolled_at: row.enrolled_at,

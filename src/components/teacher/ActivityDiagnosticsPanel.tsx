@@ -14,6 +14,7 @@ import {
   AiResultCard,
   type SummaryRow,
 } from './AnalyticsSideCards';
+import { ScoreDistributionChart } from './AnalyticsCharts';
 
 interface Props {
   classId: string;
@@ -26,7 +27,6 @@ type ReteachDraft = {
 };
 
 type QuizDiag = Extract<ActivityDiagnostics, { kind: 'quiz' }>;
-type AssignmentDiag = Extract<ActivityDiagnostics, { kind: 'assignment' }>;
 
 // Teacher-facing labels for stored question kinds.
 const KIND_LABEL: Record<string, string> = {
@@ -132,7 +132,7 @@ export default function ActivityDiagnosticsPanel({ classId, activities }: Props)
           },
           { label: 'Graded', value: String(diag.gradedCount) },
           { label: 'Mean score', value: fmtPct(diag.meanScorePct) },
-          { label: 'Pass rate', value: fmtRate(diag.passRate) },
+          { label: 'Pass rate', value: fmtRate(diag.passRate), sub: 'Scored 75% or higher' },
         ]
     : null;
 
@@ -189,8 +189,26 @@ export default function ActivityDiagnosticsPanel({ classId, activities }: Props)
           </div>
         )}
 
-        {diag && diag.kind === 'quiz' && <QuizQuestionList diag={diag} />}
-        {diag && diag.kind === 'assignment' && <AssignmentDistribution diag={diag} />}
+        {diag && diag.kind === 'quiz' && (
+          <>
+            <ScoreDistributionChart
+              title="Score distribution"
+              subtitle="Submitted attempts"
+              pcts={diag.scorePcts}
+              emptyText="No submitted attempts yet."
+            />
+            <QuizQuestionList diag={diag} />
+          </>
+        )}
+
+        {diag && diag.kind === 'assignment' && (
+          <ScoreDistributionChart
+            title="Score distribution"
+            subtitle="Graded submissions only"
+            pcts={diag.scorePcts}
+            emptyText="No graded submissions yet."
+          />
+        )}
       </div>
 
       {/* Side column */}
@@ -309,46 +327,6 @@ function QuizQuestionList({ diag }: { diag: QuizDiag }) {
                     />
                   </div>
                 )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Activity (assignment): score distribution
-// ---------------------------------------------------------------------------
-
-function AssignmentDistribution({ diag }: { diag: AssignmentDiag }) {
-  const maxCount = Math.max(1, ...diag.distribution.map((d) => d.count));
-  return (
-    <section className={`${ANALYTICS_CARD} p-5`}>
-      <h3 className="text-[15px] font-bold text-zinc-900">Score distribution</h3>
-      <p className="mb-4 text-xs text-zinc-400">Graded submissions only</p>
-      {diag.gradedCount === 0 ? (
-        <p className="py-6 text-center text-sm text-zinc-500">No graded submissions yet.</p>
-      ) : (
-        <ul className="space-y-3">
-          {diag.distribution.map((d) => {
-            const barColor =
-              d.bucket === '0-59' ? 'bg-red-500' : d.bucket === '60-69' ? 'bg-amber-500' : 'bg-green-500';
-            return (
-              <li key={d.bucket}>
-                <div className="flex items-baseline justify-between text-sm">
-                  <span className="font-semibold text-zinc-800">{d.bucket}%</span>
-                  <span className="text-xs text-zinc-500">
-                    {d.count} {d.count === 1 ? 'student' : 'students'}
-                  </span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-100">
-                  <div
-                    className={`h-full rounded-full ${barColor}`}
-                    style={{ width: `${d.count === 0 ? 0 : Math.max(2, (d.count / maxCount) * 100)}%` }}
-                  />
-                </div>
               </li>
             );
           })}

@@ -36,7 +36,7 @@ export async function getClassPeople(
     const { data: classRow, error: classErr } = await supabase
       .from('classes')
       .select(
-        'teacher:profiles!classes_teacher_id_fkey(id, full_name, email, avatar_url)',
+        'teacher:profiles!classes_teacher_id_fkey(id, full_name, email, avatar_url, username)',
       )
       .eq('id', classId)
       .maybeSingle();
@@ -52,7 +52,7 @@ export async function getClassPeople(
     const { data: enrollRows, error: enrollErr } = await supabase
       .from('class_enrollments')
       .select(
-        'student:profiles!class_enrollments_student_id_fkey(id, full_name, email, avatar_url)',
+        'student:profiles!class_enrollments_student_id_fkey(id, full_name, email, avatar_url, username)',
       )
       .eq('class_id', classId)
       .order('enrolled_at', { ascending: true });

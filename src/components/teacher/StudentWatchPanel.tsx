@@ -15,6 +15,7 @@ import {
   AiActionCard,
   AiResultCard,
 } from './AnalyticsSideCards';
+import { ClassTrendChart, ScoreDistributionChart, Sparkline } from './AnalyticsCharts';
 
 interface Props {
   classId: string;
@@ -59,6 +60,9 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [filter, setFilter] = useState<RiskFilter>('all');
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  const selectedStudent = data.stats.find((s) => s.studentId === selectedStudentId) ?? null;
 
   function handleGenerate() {
     setError(null);
@@ -87,6 +91,11 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
     return [...list].sort((a, b) => (a.overallAvgPct ?? 101) - (b.overallAvgPct ?? 101));
   }, [data.stats, filter]);
 
+  const overallPcts = useMemo(
+    () => data.stats.map((s) => s.overallAvgPct).filter((v): v is number => v !== null),
+    [data.stats],
+  );
+
   if (data.studentCount === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-500">
@@ -114,6 +123,21 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
 
         {insight && <InsightCard insight={insight} />}
 
+        {/* Charts */}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <ClassTrendChart
+            timeline={data.timeline}
+            studentScores={selectedStudent?.scores}
+            studentName={selectedStudent?.fullName}
+          />
+          <ScoreDistributionChart
+            title="Grade distribution"
+            subtitle="Each student's overall average"
+            pcts={overallPcts}
+            emptyText="No graded work yet."
+          />
+        </div>
+
         <section className={`overflow-hidden ${ANALYTICS_CARD}`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3.5">
             <div role="tablist" aria-label="Filter students" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
@@ -130,7 +154,7 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
                 </button>
               ))}
             </div>
-            <span className="text-xs text-zinc-400">Lowest overall first</span>
+            <span className="text-xs text-zinc-400">Lowest overall first · click a name to compare</span>
           </div>
 
           <div className="overflow-x-auto">
@@ -154,7 +178,16 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((s) => <StudentRow key={s.studentId} s={s} />)
+                  rows.map((s) => (
+                    <StudentRow
+                      key={s.studentId}
+                      s={s}
+                      selected={s.studentId === selectedStudentId}
+                      onSelect={() =>
+                        setSelectedStudentId((cur) => (cur === s.studentId ? null : s.studentId))
+                      }
+                    />
+                  ))
                 )}
               </tbody>
             </table>
@@ -184,14 +217,32 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
   );
 }
 
-function StudentRow({ s }: { s: StudentStats }) {
+function StudentRow({
+  s,
+  selected,
+  onSelect,
+}: {
+  s: StudentStats;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const styles = RISK_STYLES[s.risk];
   const overall = s.overallAvgPct;
   return (
-    <tr className="transition hover:bg-zinc-50/70">
+    <tr className={`transition ${selected ? 'bg-zinc-100/80' : 'hover:bg-zinc-50/70'}`}>
       <td className="px-5 py-3.5">
-        <div className="font-semibold text-zinc-900">{s.fullName ?? 'Unknown'}</div>
-        <div className="max-w-[260px] truncate text-xs text-zinc-400">{s.email}</div>
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+          className="text-left"
+          title={selected ? 'Hide from chart' : 'Compare on chart'}
+        >
+          <div className={`font-semibold ${selected ? 'text-red-700' : 'text-zinc-900'}`}>
+            {s.fullName ?? 'Unknown'}
+          </div>
+          <div className="max-w-[260px] truncate text-xs text-zinc-400">{s.email}</div>
+        </button>
       </td>
       <td className="px-3 py-3.5">
         <span
@@ -222,8 +273,9 @@ function StudentRow({ s }: { s: StudentStats }) {
           ({s.dueCount - s.missingCount}/{s.dueCount})
         </span>
       </td>
-      <td className="px-5 py-3.5 text-center">
-        <div className="inline-flex items-center justify-center" title={s.trend}>
+      <td className="px-5 py-3.5">
+        <div className="flex items-center justify-center gap-2" title={s.trend}>
+          <Sparkline values={s.scores} trend={s.trend} />
           <TrendIcon trend={s.trend} />
         </div>
       </td>

@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 interface RosterEntry {
   student_id: string;
   full_name: string | null;
+  username: string | null;
   email: string | null;
   avatar_url: string | null;
   enrolled_at: string;
@@ -121,6 +122,7 @@ export function StudentsTab({
             {
               student_id: request.student_id,
               full_name: request.student_full_name,
+              username: null,
               email: request.student_email,
               avatar_url: request.student_avatar_url,
               enrolled_at: new Date().toISOString(),
@@ -251,7 +253,10 @@ export function StudentsTab({
     aria-label={`View ${s.full_name ?? s.email ?? 'student'}'s profile`}
   >
     <PersonAvatar id={s.student_id} name={s.full_name ?? s.email ?? 'Student'} url={s.avatar_url} size={32} />
-    <span className="text-sm font-medium text-gray-900 group-hover:underline">{s.full_name ?? '—'}</span>
+        <span className="min-w-0">
+      <span className="block text-sm font-medium text-gray-900 group-hover:underline">{s.full_name ?? '—'}</span>
+      {s.username && <span className="block text-xs text-gray-500">@{s.username}</span>}
+    </span>
   </button>
 </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.email ?? '—'}</td>
@@ -304,6 +309,7 @@ export function StudentsTab({
         <ProfileCard
           id={selected.student_id}
           name={selected.full_name ?? selected.email ?? 'Student'}
+          username={selected.username}
           avatarUrl={selected.avatar_url}
           roleLabel="Student"
           viewerRole="teacher"
