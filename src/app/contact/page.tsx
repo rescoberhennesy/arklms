@@ -13,7 +13,7 @@ export default function ContactPage() {
           <div className="contact-hero-inner">
             <h1>Contact</h1>
             <p>
-              Get in touch with ARK Technological Institute. We're most
+              Get in touch with ARK Technological Institute Education System Inc.. We're most
               responsive on Facebook.
             </p>
           </div>
@@ -44,7 +44,7 @@ export default function ContactPage() {
 </div>
                 <h3>Main Facebook Page</h3>
                 <p>
-                  Follow ARK Technological Institute for announcements, events,
+                  Follow ARK Technological Institute Education System Inc. for announcements, events,
                   and enrollment updates.
                 </p>
                 <span className="contact-card-link">

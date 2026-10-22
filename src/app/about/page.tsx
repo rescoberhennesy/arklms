@@ -12,7 +12,7 @@ export default function AboutPage() {
         <section className="about-hero">
           <div className="about-hero-inner">
             <h1>About</h1>
-            <p>Learn about ARK Technological Institute and the A-LMS platform.</p>
+            <p>Learn about ARK Technological Institute Education System Inc. and the A-LMS platform.</p>
           </div>
         </section>
 
@@ -26,7 +26,7 @@ export default function AboutPage() {
               </div>
               <h2>ARK Technological Institute Education System Inc.</h2>
               <p>
-                ARK Technological Institute is an educational institution based in Lucena City, Quezon, Philippines, offering Senior High School and TESDA technical-vocational programs.
+                ARK Technological Institute Education System Inc. is an educational institution based in Lucena City, Quezon, Philippines, offering Senior High School and TESDA technical-vocational programs.
                 Under DepEd’s Strengthened Senior High School Curriculum, the school offers programs in two tracks: the Academic Track, with Arts, Social Science, and Humanities (ASSH) 
                 and Business and Entrepreneurship (BE), and the Technical-Professional (Tech-Pro) Track, with Hospitality and Tourism (H&T) 
                 and ICT Support and Computer Programming (ICT). These programs prepare students for both higher education and the workforce.
@@ -42,7 +42,7 @@ export default function AboutPage() {
               <div className="about-institution-photo-accent" />
               <img
                 src="/lastt.jpg"
-                alt="ARK Technological Institute"
+                alt="ARK Technological Institute Education System Inc."
                 className="about-institution-photo"
               />
             </div>

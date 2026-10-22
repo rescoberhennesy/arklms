@@ -13,14 +13,14 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL('https://arklms.institute'),
   title: {
-    default: 'ARK LMS | ARK Technological Institute',
+    default: 'ARK LMS | ARK Technological Institute Education System Inc.',
     template: '%s | ARK LMS',
   },
   description:
     'The official Learning Management System of ARK Technological Institute Education System Inc. Access your classes, lessons, activities, quizzes, and grades in one place.',
   applicationName: 'ARK LMS',
   openGraph: {
-    title: 'ARK LMS | ARK Technological Institute',
+    title: 'ARK LMS | ARK Technological Institute Education System Inc.',
     description:
       'Access your classes, lessons, activities, quizzes, and grades in one place.',
     url: 'https://arklms.institute',
