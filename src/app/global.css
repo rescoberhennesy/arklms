@@ -1168,3 +1168,14 @@ html, body {
     gap: 14px;
   }
 }
+
+/* Dashboard loader: wait a moment before appearing so fast loads don't flash */
+.loading-fade {
+  opacity: 0;
+  animation: loading-fade-in 0.2s ease-out 0.25s forwards;
+}
+@keyframes loading-fade-in {
+  to {
+    opacity: 1;
+  }
+}
