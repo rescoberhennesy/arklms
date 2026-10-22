@@ -249,7 +249,7 @@ export default function ActivityAttachmentsPanel({
               ) : (
                 <Paperclip className="h-4 w-4" />
               )}
-              {isUploading ? 'Uploading…' : 'Attach reference files'}
+              {isUploading ? 'Uploading…' : 'Attach file'}
               <span className="font-normal text-zinc-400">· optional, up to 25 MB each</span>
             </label>
           ) : null
@@ -258,7 +258,7 @@ export default function ActivityAttachmentsPanel({
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-800">
                 <Paperclip className="h-4 w-4 text-zinc-500" />
-                Reference files
+                Attached files
                 <span className="font-normal text-zinc-400">({attachments.length})</span>
               </p>
               {canEdit && (

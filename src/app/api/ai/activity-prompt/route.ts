@@ -23,6 +23,7 @@ import {
   validateActivityPromptDraft,
   renderActivityPromptMarkdown,
   isActivityQuestionStyle,
+  renderActivityAnswerKeyMarkdown,
   type ActivityQuestionStyle,
 } from '@/lib/ai/prompts/activityPrompt';
 
@@ -102,7 +103,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   // count = number of questions, or number of pairs for matching
   const minCount = isMatching ? 3 : 1;
   const countRaw = Number(form.get('count'));
-  const count = Number.isInteger(countRaw) ? Math.min(10, Math.max(minCount, countRaw)) : 5;
+    const maxCount = isMatching ? 10 : 20;
+  const count = Number.isInteger(countRaw) ? Math.min(maxCount, Math.max(minCount, countRaw)) : 5;
 
   const focus = ((form.get('focus') as string | null) ?? '').trim().slice(0, 500);
   const includePoints = form.get('includePoints') === 'true';
@@ -223,7 +225,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
       includePoints,
       style,
     );
-    return NextResponse.json({ markdown, count: draft.questions?.length ?? 0 });
+        const answerKey = renderActivityAnswerKeyMarkdown(draft.questions ?? [], style);
+    return NextResponse.json({ markdown, answerKey, count: draft.questions?.length ?? 0 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[ai/activity-prompt] generation failed:', message);

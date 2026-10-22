@@ -11,7 +11,8 @@ export type ActivityQuestionStyle =
   | 'true_false_modified'
   | 'identification'
   | 'essay'
-  | 'matching';
+  | 'matching'
+  | 'mixed';
 
 export const ACTIVITY_QUESTION_STYLES: ActivityQuestionStyle[] = [
   'mc_single',
@@ -21,6 +22,7 @@ export const ACTIVITY_QUESTION_STYLES: ActivityQuestionStyle[] = [
   'identification',
   'essay',
   'matching',
+  'mixed',
 ];
 
 export const ACTIVITY_QUESTION_STYLE_LABELS: Record<ActivityQuestionStyle, string> = {
@@ -31,6 +33,7 @@ export const ACTIVITY_QUESTION_STYLE_LABELS: Record<ActivityQuestionStyle, strin
   identification: 'Identification',
   essay: 'Essay',
   matching: 'Matching type',
+  mixed: 'Mixed',
 };
 
 /** Standard directions shown above the generated set. */
@@ -45,6 +48,7 @@ export const ACTIVITY_STYLE_DIRECTIONS: Record<ActivityQuestionStyle, string> = 
   essay: 'Answer each question in complete sentences.',
   matching:
     'Match each item in Column A with the correct item in Column B. Write the letter of your answer.',
+    mixed: 'Answer each item as directed. The type of each item is shown in brackets.',
 };
 
 export function isActivityQuestionStyle(v: string): v is ActivityQuestionStyle {
@@ -65,7 +69,7 @@ export interface ActivityPromptInput {
 
 export interface ActivityPromptDraft {
   errorMessage?: string;
-  questions?: { text: string; points?: number }[];
+  questions?: { text: string; points?: number; answer?: string }[];
 }
 
 export const ACTIVITY_PROMPT_SYSTEM_INSTRUCTION = `
@@ -105,8 +109,22 @@ RULES:
     per match written as "(a) match", "(b) match", … Column B must be
     SHUFFLED so (1) does not match (a), and so on. Every item has exactly one
     match. Keep Column B entries short (under ~15 words) and similar in style.
+      - mixed: a balanced mix of mc_single, true_false, identification and essay
+    (never matching). Start each question with its type in bold brackets,
+    e.g. "**[Multiple choice]**", "**[True or False]**",
+    "**[Identification]**", "**[Essay]**".
 - Questions must be clear, self-contained and answerable. No trick questions.
-- Write ONLY the questions. Never include answers, hints, or an answer key.
+- Never put answers or hints inside "text". Put the correct answer for each
+  question in its separate "answer" field (only the teacher sees it):
+  - mc_single: the letter and the choice, e.g. "b. Short-term scheduler"
+  - mc_multi: all correct letters, e.g. "a, c, d"
+  - true_false: "TRUE" or "FALSE"
+  - true_false_modified: "TRUE", or "FALSE – " plus the word/phrase that
+    replaces the bold part, e.g. "FALSE – short-term scheduler"
+  - identification: the exact term (accepted variants after a slash)
+  - essay: 2–4 key points a complete answer should cover, separated by "; "
+  - matching: every pair, e.g. "1-c, 2-a, 3-d, 4-b"
+  - mixed: use the format for that item's type
 - Do not write a "Directions:" line; directions are added for you.
 - Light markdown is allowed inside a question (bold, line breaks for choices
   or given values). No headings, no numbering of the questions themselves
@@ -118,7 +136,7 @@ RULES:
 
 TEACHER'S REQUEST: if the teacher adds a request (topic, difficulty, scenario,
 language, format of specific items), follow it as long as it does not break
-the rules above. Never include answers or an answer key, even if asked.
+the rules above. Never put answers inside the question text, even if asked.
 
 ESCAPE HATCH: if the source is unreadable, empty, or unrelated to school
 work, set errorMessage to one sentence and return no questions.
@@ -137,6 +155,7 @@ export const ACTIVITY_PROMPT_RESPONSE_SCHEMA = {
         properties: {
           text: { type: 'string' },
           points: { type: 'integer' },
+          answer: { type: 'string' },
         },
         required: ['text'],
       },
@@ -183,7 +202,7 @@ export function validateActivityPromptDraft(raw: unknown, maxCount: number): Act
   }
   if (!Array.isArray(obj.questions)) throw new Error('AI output missing questions');
 
-  const questions: { text: string; points?: number }[] = [];
+  const questions: { text: string; points?: number; answer?: string }[] = [];
   for (const q of obj.questions) {
     if (!q || typeof q !== 'object') continue;
     const item = q as Record<string, unknown>;
@@ -197,7 +216,8 @@ export function validateActivityPromptDraft(raw: unknown, maxCount: number): Act
       typeof item.points === 'number' && Number.isFinite(item.points) && item.points > 0
         ? Math.round(item.points)
         : undefined;
-    questions.push({ text, points });
+        const answer = typeof item.answer === 'string' && item.answer.trim() ? item.answer.trim() : undefined;
+    questions.push({ text, points, answer });
     if (questions.length >= maxCount) break;
   }
 
@@ -250,4 +270,14 @@ export function renderActivityPromptMarkdown(
     .join('\n\n');
 
   return directions + list;
+}
+
+/** Teacher-only answer key as Markdown. */
+export function renderActivityAnswerKeyMarkdown(
+  questions: { answer?: string }[],
+  style?: ActivityQuestionStyle,
+): string {
+  if (questions.every((q) => !q.answer)) return '';
+  if (style === 'matching') return questions[0]?.answer ?? '';
+  return questions.map((q, i) => `${i + 1}. ${q.answer || '—'}`).join('\n');
 }

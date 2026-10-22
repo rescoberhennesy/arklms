@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import {
   getActivityForTeacher,
+  getActivityAnswerKey,
   listActivityAttachments,
 } from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
@@ -78,7 +79,10 @@ export default async function ActivityDetailPage({ params }: PageProps) {
   }
 
   // Assignment branch
-  const attachments = await listActivityAttachments(activityId);
+    const [attachments, answerKey] = await Promise.all([
+    listActivityAttachments(activityId),
+    getActivityAnswerKey(activityId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -95,6 +99,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         activity={activity}
         classId={classId}
         initialAttachments={attachments}
+        initialAnswerKey={answerKey}
       />
     </div>
   );

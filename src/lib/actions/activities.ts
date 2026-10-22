@@ -1734,3 +1734,25 @@ export async function listMySubmissions(): Promise<LockerSubmissionRow[]> {
       };
     });
 }
+
+export async function getActivityAnswerKey(activityId: string): Promise<string> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('activity_answer_keys')
+    .select('body')
+    .eq('activity_id', activityId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load answer key: ${error.message}`);
+  return (data as { body: string } | null)?.body ?? '';
+}
+
+export async function saveActivityAnswerKey(activityId: string, body: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('activity_answer_keys')
+    .upsert(
+      { activity_id: activityId, body, updated_at: new Date().toISOString() },
+      { onConflict: 'activity_id' },
+    );
+  if (error) throw new Error(`Failed to save answer key: ${error.message}`);
+}

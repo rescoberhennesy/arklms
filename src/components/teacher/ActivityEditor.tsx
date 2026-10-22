@@ -8,6 +8,7 @@ import {
   Save,
   Loader2,
   Sparkles,
+  Lock,
   CheckCheck,
   Paperclip,
   Plus,
@@ -21,6 +22,7 @@ import {
   setActivityTerm,
   setActivityPublished,
   deleteActivity,
+  saveActivityAnswerKey,
   returnAllGrades,
 } from '@/lib/actions/activities';
 import {
@@ -51,6 +53,7 @@ interface ActivityEditorProps {
   activity: ActivityWithAllSubmissions;
   classId: string;
   initialAttachments: ActivityAttachment[];
+  initialAnswerKey: string;
 }
 
 type UpdatePatch = Parameters<typeof updateActivity>[1];
@@ -100,6 +103,7 @@ export default function ActivityEditor({
   activity,
   classId,
   initialAttachments,
+  initialAnswerKey,
 }: ActivityEditorProps) {
   const router = useRouter();
   const activitiesHref = `/teacher/classes/${classId}?tab=activities`;
@@ -120,6 +124,11 @@ export default function ActivityEditor({
   const [savedPrompt, setSavedPrompt] = useState(activity.prompt);
   const [promptEditing, setPromptEditing] = useState(false);
   const isPromptDirty = prompt !== savedPrompt;
+    // Answer key (teacher-only)
+  const [answerKey, setAnswerKey] = useState(initialAnswerKey);
+  const [savedAnswerKey, setSavedAnswerKey] = useState(initialAnswerKey);
+  const [answerKeyEditing, setAnswerKeyEditing] = useState(false);
+  const isAnswerKeyDirty = answerKey !== savedAnswerKey;
 
   // Settings
   const [maxPoints, setMaxPoints] = useState(String(activity.maxPoints));
@@ -157,11 +166,17 @@ export default function ActivityEditor({
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
 
-  function handleAiQuestions(markdown: string, mode: 'replace' | 'append') {
+    function handleAiQuestions(markdown: string, mode: 'replace' | 'append', key: string) {
     setPrompt((current) =>
       mode === 'append' && current.trim() ? `${current.trim()}\n\n${markdown}` : markdown,
     );
     setPromptEditing(true);
+    if (key.trim()) {
+      setAnswerKey((current) =>
+        mode === 'append' && current.trim() ? `${current.trim()}\n\n${key}` : key,
+      );
+      setAnswerKeyEditing(true);
+    }
   }
 
   // ---- Sync with server data without clobbering in-progress edits ----
@@ -276,6 +291,11 @@ export default function ActivityEditor({
       setSavedPrompt(prompt);
     }
     setPromptEditing(false);
+        if (isAnswerKeyDirty) {
+      await saveActivityAnswerKey(activity.id, answerKey);
+      setSavedAnswerKey(answerKey);
+    }
+    setAnswerKeyEditing(false);
 
     if (settingsPatch) {
       await updateActivity(activity.id, settingsPatch);
@@ -348,6 +368,24 @@ export default function ActivityEditor({
         setError(e instanceof Error ? e.message : 'Failed to save questions.');
       }
     });
+  }
+
+    function handleSaveAnswerKey() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await saveActivityAnswerKey(activity.id, answerKey);
+        setSavedAnswerKey(answerKey);
+        setAnswerKeyEditing(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to save answer key.');
+      }
+    });
+  }
+
+  function handleCancelAnswerKey() {
+    setAnswerKey(savedAnswerKey);
+    setAnswerKeyEditing(false);
   }
 
   function handleCancelPrompt() {
@@ -536,7 +574,7 @@ export default function ActivityEditor({
           isPending={busy}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
           {/* LEFT: one content card */}
           <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)] lg:col-span-2">
             {/* Instructions */}
@@ -619,6 +657,47 @@ export default function ActivityEditor({
                 </button>
               ) : (
                 <AddButton label="Add questions or tasks" onClick={() => setPromptEditing(true)} />
+              )}
+            </div>
+
+                        {/* Answer key (teacher-only) */}
+            <div className="border-t border-zinc-100 bg-amber-50/30 p-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[15px] font-bold text-zinc-900">Answer key</h2>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                    <Lock className="h-3 w-3" />
+                    Only you can see this
+                  </span>
+                </div>
+                {answerKeyEditing && (
+                  <InlineSaveBar
+                    dirty={isAnswerKeyDirty}
+                    busy={busy}
+                    onCancel={handleCancelAnswerKey}
+                    onSave={handleSaveAnswerKey}
+                  />
+                )}
+              </div>
+              {answerKeyEditing ? (
+                <MarkdownEditor
+                  value={answerKey}
+                  onChange={setAnswerKey}
+                  placeholder="e.g. 1. b  2. TRUE  3. Short-term scheduler"
+                  rows={5}
+                  disabled={busy}
+                />
+              ) : savedAnswerKey.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setAnswerKeyEditing(true)}
+                  className="block w-full cursor-text rounded-lg px-2 py-2 text-left transition hover:bg-amber-50"
+                  aria-label="Edit answer key"
+                >
+                  <MarkdownContent body={savedAnswerKey} />
+                </button>
+              ) : (
+                <AddButton label="Add answer key" onClick={() => setAnswerKeyEditing(true)} />
               )}
             </div>
 

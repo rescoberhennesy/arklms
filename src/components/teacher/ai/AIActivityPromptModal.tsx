@@ -21,7 +21,7 @@ interface Props {
   activityId: string;
   hasExisting: boolean;
   onClose: () => void;
-  onGenerated: (markdown: string, mode: Mode) => void;
+    onGenerated: (markdown: string, mode: Mode, answerKey: string) => void;
 }
 
 const inputClass =
@@ -48,7 +48,8 @@ export default function AIActivityPromptModal({
   const isMatching = style === 'matching';
   const minCount = isMatching ? 3 : 1;
   const count = Number(countInput);
-  const countValid = Number.isInteger(count) && count >= minCount && count <= 10;
+    const maxCount = isMatching ? 10 : 20;
+  const countValid = Number.isInteger(count) && count >= minCount && count <= maxCount;
 
   // Reset each time it opens
   useEffect(() => {
@@ -125,7 +126,7 @@ export default function AIActivityPromptModal({
         signal: controller.signal,
       });
 
-      let json: { markdown?: string; error?: string } = {};
+      let json: { markdown?: string; answerKey?: string; error?: string } = {};
       try {
         json = await res.json();
       } catch {
@@ -138,7 +139,7 @@ export default function AIActivityPromptModal({
         return;
       }
 
-      onGenerated(json.markdown, hasExisting ? mode : 'replace');
+            onGenerated(json.markdown, hasExisting ? mode : 'replace', json.answerKey ?? '');
       onClose();
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
@@ -190,7 +191,7 @@ export default function AIActivityPromptModal({
           <div>
             <label htmlFor="aiq-count" className="mb-1 block text-xs font-semibold text-zinc-700">
               {isMatching ? 'Number of pairs' : 'Number of items'}{' '}
-              <span className="font-normal text-zinc-400">({minCount}–10)</span>
+              <span className="font-normal text-zinc-400">({minCount}–{maxCount})</span>
             </label>
             <input
               id="aiq-count"
