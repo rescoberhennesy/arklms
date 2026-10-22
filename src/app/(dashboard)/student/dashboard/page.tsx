@@ -13,15 +13,10 @@ import { listMyActivePersonalTasks } from '@/lib/actions/personalTasks';
 import { listRecentAnnouncementsAcrossClasses } from '@/lib/actions/announcements';
 import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import { createClient } from '@/lib/supabase/server';
+import { manilaGreeting, manilaShortDate, manilaDay, manilaYearMonth } from '@/lib/manilaTime';
 import StudentDashboardView from '@/components/student/StudentDashboardView';
 
 export const dynamic = 'force-dynamic';
-
-function greetingForHour(hour: number): string {
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
 
 async function getUserDisplayName(): Promise<string> {
   const supabase = await createClient();
@@ -41,8 +36,9 @@ async function getUserDisplayName(): Promise<string> {
 
 export default async function StudentDashboardPage() {
   const now = new Date();
-  const monthStart = isoMonthStart(now.getFullYear(), now.getMonth());
-  const monthEnd = isoMonthEnd(now.getFullYear(), now.getMonth());
+  const { year, month } = manilaYearMonth(now);
+  const monthStart = isoMonthStart(year, month);
+  const monthEnd = isoMonthEnd(year, month);
 
   let enrolledClasses;
   let pendingRequests;
@@ -88,18 +84,12 @@ export default async function StudentDashboardPage() {
   const activeClasses = enrolledClasses.filter((c) => !c.is_archived);
   const previewClasses = activeClasses.slice(0, 6);
 
-  const todayLabel = now.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-
   return (
     <StudentDashboardView
-      greeting={greetingForHour(now.getHours())}
+      greeting={manilaGreeting(now)}
       userName={userName}
-      todayLabel={todayLabel}
-      todayDayOfMonth={now.getDate()}
+      todayLabel={manilaShortDate(now)}
+      todayDayOfMonth={manilaDay(now)}
       stats={stats}
       pendingRequestsCount={pendingRequests.length}
       previewClasses={previewClasses}

@@ -11,6 +11,7 @@ import TeacherStatCardsClient from '@/components/dashboard/TeacherStatCardsClien
 import { listRecentAnnouncementsAcrossClasses } from '@/lib/actions/announcements';
 import { isoMonthStart, isoMonthEnd } from '@/lib/utils/calendar';
 import { createClient } from '@/lib/supabase/server';
+import { manilaGreeting, manilaShortDate, manilaDay, manilaYearMonth } from '@/lib/manilaTime';
 import CalendarWidget from '@/components/dashboard/CalendarWidget';
 import TeacherTodoWidget from '@/components/dashboard/TeacherTodoWidget';
 import ClassDeadlinesWidget from '@/components/dashboard/ClassDeadlinesWidget';
@@ -21,12 +22,6 @@ import QuickActionsRow from '@/components/dashboard/QuickActionsRow';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
-
-function greetingForHour(hour: number): string {
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
 
 async function getUserDisplayName(): Promise<string> {
   const supabase = await createClient();
@@ -46,8 +41,9 @@ async function getUserDisplayName(): Promise<string> {
 
 export default async function TeacherDashboardPage() {
   const now = new Date();
-  const monthStart = isoMonthStart(now.getFullYear(), now.getMonth());
-  const monthEnd = isoMonthEnd(now.getFullYear(), now.getMonth());
+  const { year, month } = manilaYearMonth(now);
+  const monthStart = isoMonthStart(year, month);
+  const monthEnd = isoMonthEnd(year, month);
 
   const [
     classesResult,
@@ -90,20 +86,14 @@ export default async function TeacherDashboardPage() {
   const activeClasses = allClasses.filter((c) => !c.is_archived);
   const previewClasses = activeClasses.slice(0, 6);
 
-  const todayLabel = now.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-
   return (
     <div className="space-y-6">
       <DashboardBanner
-        greeting={greetingForHour(now.getHours())}
+        greeting={manilaGreeting(now)}
         userName={userName}
         subtitle="Ready to keep teaching?"
-        todayLabel={todayLabel}
-        todayDayOfMonth={now.getDate()}
+        todayLabel={manilaShortDate(now)}
+        todayDayOfMonth={manilaDay(now)}
         showCreateClass
       />
 
