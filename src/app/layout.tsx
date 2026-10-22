@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './global.css'
 
+
 const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700', '800'],
@@ -10,10 +11,21 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Ark Learning Management System',
-  description: 'ARK Technological Institute Learning Management System',
-  icons: {
-    icon: '/ark-logo.ico',
+  metadataBase: new URL('https://arklms.institute'),
+  title: {
+    default: 'ARK LMS | ARK Technological Institute',
+    template: '%s | ARK LMS',
+  },
+  description:
+    'The official Learning Management System of ARK Technological Institute Education System Inc. Access your classes, lessons, activities, quizzes, and grades in one place.',
+  applicationName: 'ARK LMS',
+  openGraph: {
+    title: 'ARK LMS | ARK Technological Institute',
+    description:
+      'Access your classes, lessons, activities, quizzes, and grades in one place.',
+    url: 'https://arklms.institute',
+    siteName: 'ARK LMS',
+    type: 'website',
   },
 }
 
