@@ -9,10 +9,9 @@ import {
   FolderOpen,
   ClipboardList,
   ClipboardCheck,
-  BookOpenCheck,  
+  BookOpenCheck,
   BarChart3,
-  MessageCircle,
-  Archive,   
+  Archive,
   type LucideIcon,
 } from 'lucide-react'
 import type { UserRole } from '@/types/user'
@@ -61,7 +60,6 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       items: [
         { label: 'Classes', href: '/teacher/classes', icon: BookOpen },
         { label: 'Calendar', href: '/teacher/calendar', icon: Calendar },
-          { label: 'Messages', href: '/teacher/messages', icon: MessageCircle, badgeKey: 'messages_unread' },
       ],
     },
     {
@@ -91,7 +89,6 @@ export const navigationConfig: Record<UserRole, NavSection[]> = {
       items: [
         { label: 'My Classes', href: '/student/classes', icon: BookOpen },
         { label: 'Calendar', href: '/student/calendar', icon: Calendar },
-          { label: 'Messages', href: '/student/messages', icon: MessageCircle, badgeKey: 'messages_unread' },
         { label: 'AI Practice', href: '/student/practice', icon: BookOpenCheck },
         { label: 'Locker', href: '/student/locker', icon: Archive },
       ],

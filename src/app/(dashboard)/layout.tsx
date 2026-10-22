@@ -5,8 +5,9 @@ import { PageTitleProvider } from '@/context/PageTitleContext'
 import Sidebar from '@/components/dashboard/Sidebar'
 import TopNavbar from '@/components/dashboard/TopNavbar'
 import NextTopLoader from 'nextjs-toploader'
-  import { getUnreadMessageCount } from '@/lib/actions/messages'
+import { getUnreadMessageCount } from '@/lib/actions/messages'
 import NotificationBell from '@/components/dashboard/NotificationBell'
+import MessagesButton from '@/components/dashboard/MessagesButton'
 import { getTeacherUngradedCount } from '@/lib/actions/dashboard'
 import type { Profile } from '@/types/user'
 
@@ -28,7 +29,7 @@ export default async function DashboardLayout({
   if (profileError) console.error('[layout] profile fetch failed:', profileError)
   if (!profile) redirect('/unauthorized')
 
-  // Fetch sidebar badge counts per role. Best-effort: any failure here
+  // Sidebar badge counts per role. Best-effort: any failure here
   // degrades to "no badge" rather than crashing the whole layout.
   // Keep this lightweight — it runs on every dashboard page navigation.
   let badgeCounts: Record<string, number> = {}
@@ -41,9 +42,12 @@ export default async function DashboardLayout({
     }
   }
 
-    if (profile.role === 'teacher' || profile.role === 'student') {
+  // Messages shortcut lives in the top navbar (teacher + student only).
+  const hasMessages = profile.role === 'teacher' || profile.role === 'student'
+  let messagesUnread = 0
+  if (hasMessages) {
     try {
-      badgeCounts = { ...badgeCounts, messages_unread: await getUnreadMessageCount() }
+      messagesUnread = await getUnreadMessageCount()
     } catch (e) {
       console.error('[layout] unread messages count failed:', e)
     }
@@ -56,7 +60,18 @@ export default async function DashboardLayout({
         <div data-app-shell className="flex min-h-screen bg-background">
           <Sidebar role={profile.role} badgeCounts={badgeCounts} />
           <div className="flex-1 flex flex-col min-w-0">
-            <TopNavbar profile={profile} bell={<NotificationBell />} />
+            <TopNavbar
+              profile={profile}
+              bell={<NotificationBell />}
+              messages={
+                hasMessages ? (
+                  <MessagesButton
+                    href={`/${profile.role}/messages`}
+                    unread={messagesUnread}
+                  />
+                ) : null
+              }
+            />
             <main className="flex-1 overflow-auto px-4 sm:px-8 py-6 lg:py-8">
               {children}
             </main>

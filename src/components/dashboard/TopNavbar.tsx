@@ -14,6 +14,8 @@ interface TopNavbarProps {
   // so we keep this component a pure client component (it uses useSidebar
   // and other client hooks) without forcing the bell to client-fetch too.
   bell?: React.ReactNode
+  // Same pattern for the messages shortcut (unread count fetched in layout).
+  messages?: React.ReactNode
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -34,7 +36,7 @@ function getFallbackTitle(pathname: string): string {
   return titleSegment.charAt(0).toUpperCase() + titleSegment.slice(1).replace(/-/g, ' ')
 }
 
-export default function TopNavbar({ profile, bell }: TopNavbarProps) {
+export default function TopNavbar({ profile, bell, messages }: TopNavbarProps) {
   const { toggle } = useSidebar()
   const pathname = usePathname()
   const { title: explicitTitle } = usePageTitle()
@@ -59,6 +61,7 @@ export default function TopNavbar({ profile, bell }: TopNavbarProps) {
 
       {/* Right cluster */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {messages}
         {bell}
         <div className="topnav-divider mx-1" />
         <ProfileDropdown profile={profile} />
