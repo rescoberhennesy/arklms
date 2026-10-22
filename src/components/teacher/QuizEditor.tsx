@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pencil, Save, Loader2, Plus, Lock, Sparkles } from 'lucide-react';
+import { Pencil, Save, Loader2, Plus, Lock, Trash2, Sparkles } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
@@ -19,6 +19,7 @@ import {
   getTeacherQuizView,
   updateQuizConfig,
   createQuizQuestion,
+  deleteQuizQuestion,
 } from '@/lib/actions/quizzes';
 import { type ActivityWithAllSubmissions } from '@/lib/types/activities';
 import {
@@ -161,6 +162,9 @@ export default function QuizEditor({
   const [aiGenOpen, setAiGenOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
+    const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   // ---- Sync with server data without clobbering in-progress edits ----
   const actSig = activitySignature(activity);
@@ -423,6 +427,46 @@ export default function QuizEditor({
     addQuestions(addingKind, Number(addCount) || 1);
   }
 
+    function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function setManySelected(ids: string[], on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await deleteQuizQuestion(id);
+      } catch {
+        failed++;
+      }
+    }
+    exitSelectMode();
+    await refetchQuizView();
+    router.refresh();
+    if (failed > 0) setError(`${failed} question${failed === 1 ? '' : 's'} could not be deleted.`);
+  }
   const totalPoints = quizView.questions.reduce((acc, q) => acc + q.points, 0);
 
   // Consecutive questions of the same kind form one "Test" part.
@@ -637,6 +681,59 @@ export default function QuizEditor({
                   )}
                 </div>
 
+                                {questionCount > 0 && !locked && (
+                  <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2">
+                    {selectMode ? (
+                      <>
+                        <span className="text-sm font-semibold text-zinc-800">
+                          {selected.size} selected
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setManySelected(
+                              quizView.questions.map((q) => q.id),
+                              selected.size !== questionCount,
+                            )
+                          }
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-200"
+                        >
+                          {selected.size === questionCount ? 'Clear all' : 'Select all'}
+                        </button>
+                        <div className="ml-auto flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={exitSelectMode}
+                            className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmBulkDelete(true)}
+                            disabled={selected.size === 0 || busy}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete selected ({selected.size})
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs text-zinc-500">Need to remove several questions?</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectMode(true)}
+                          className="ml-auto rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                        >
+                          Select
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {questionCount > 0 && (
                   <div className="mb-5 space-y-5">
                     {testParts.map((part, pi) => {
@@ -648,6 +745,19 @@ export default function QuizEditor({
                             <h3 className="text-sm font-bold text-zinc-900">
                               Test {toRoman(pi + 1)} – {label}
                             </h3>
+                               {selectMode && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ids = part.items.map(({ q }) => q.id);
+                                  const allOn = ids.every((id) => selected.has(id));
+                                  setManySelected(ids, !allOn);
+                                }}
+                                className="ml-auto mr-2 text-xs font-semibold text-red-700 hover:underline"
+                              >
+                                {part.items.every(({ q }) => selected.has(q.id)) ? 'Unselect part' : 'Select this part'}
+                              </button>
+                            )}
                             <span className="text-xs text-zinc-500">
                               {part.items.length} item{part.items.length === 1 ? '' : 's'} · {part.points} pt
                               {part.points === 1 ? '' : 's'}
@@ -655,7 +765,17 @@ export default function QuizEditor({
                           </div>
                           <ul className="space-y-2">
                             {part.items.map(({ q, index }) => (
-                              <li key={q.id}>
+                                <li key={q.id} className="flex items-center gap-2">
+                                {selectMode && (
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.has(q.id)}
+                                    onChange={() => toggleSelected(q.id)}
+                                    aria-label={`Select question ${index + 1}`}
+                                    className="h-4 w-4 shrink-0 rounded border-zinc-300 text-red-600 focus:ring-red-500"
+                                  />
+                                )}
+                                <div className="min-w-0 flex-1">
                                 <QuestionRow
                                   question={q}
                                   index={index}
@@ -664,7 +784,10 @@ export default function QuizEditor({
                                   onChanged={refetchQuizView}
                                   onError={setError}
                                 />
+                                
+                              </div>
                               </li>
+                              
                             ))}
                           </ul>
                           {isLastPart && !locked && (
@@ -918,6 +1041,16 @@ export default function QuizEditor({
           </div>
         </>
       )}
+
+       <ConfirmDialog
+        open={confirmBulkDelete}
+        title={`Delete ${selected.size} question${selected.size === 1 ? '' : 's'}?`}
+        message="The selected questions will be permanently removed from this quiz. This cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+      />
 
       <ConfirmDialog
         open={confirmDelete}
