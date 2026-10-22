@@ -300,20 +300,20 @@ export function StudentsTab({
         )}
       </section>
 
-      {selected && (
-  <ProfileCard
-    id={selected.student_id}
-    name={selected.full_name ?? selected.email ?? 'Student'}
-    email={selected.email}
-    avatarUrl={selected.avatar_url}
-    roleLabel="Student"
-    details={[
-      { label: 'Last active', value: formatLastActive(selected.last_active_at) },
-      { label: 'Joined', value: new Date(selected.enrolled_at).toLocaleDateString() },
-    ]}
-    onClose={() => setSelected(null)}
-  />
-)}
+            {selected && (
+        <ProfileCard
+          id={selected.student_id}
+          name={selected.full_name ?? selected.email ?? 'Student'}
+          avatarUrl={selected.avatar_url}
+          roleLabel="Student"
+          viewerRole="teacher"
+          details={[
+            { label: 'Last active', value: formatLastActive(selected.last_active_at) },
+            { label: 'Joined', value: new Date(selected.enrolled_at).toLocaleDateString() },
+          ]}
+          onClose={() => setSelected(null)}
+        />
+      )}
 
 
       <ConfirmDialog

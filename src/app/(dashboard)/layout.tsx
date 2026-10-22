@@ -5,6 +5,7 @@ import { PageTitleProvider } from '@/context/PageTitleContext'
 import Sidebar from '@/components/dashboard/Sidebar'
 import TopNavbar from '@/components/dashboard/TopNavbar'
 import NextTopLoader from 'nextjs-toploader'
+  import { getUnreadMessageCount } from '@/lib/actions/messages'
 import NotificationBell from '@/components/dashboard/NotificationBell'
 import { getTeacherUngradedCount } from '@/lib/actions/dashboard'
 import type { Profile } from '@/types/user'
@@ -37,6 +38,14 @@ export default async function DashboardLayout({
       badgeCounts = { teacher_ungraded: ungraded }
     } catch (e) {
       console.error('[layout] teacher badge count failed:', e)
+    }
+  }
+
+    if (profile.role === 'teacher' || profile.role === 'student') {
+    try {
+      badgeCounts = { ...badgeCounts, messages_unread: await getUnreadMessageCount() }
+    } catch (e) {
+      console.error('[layout] unread messages count failed:', e)
     }
   }
 

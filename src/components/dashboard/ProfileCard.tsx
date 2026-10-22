@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Mail, Copy, Check, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { MessageCircle, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { getInitials } from '@/lib/utils/getInitials';
+import { startConversation } from '@/lib/actions/messages';
 
 /* ---------- Avatar with initials fallback ---------- */
 export function PersonAvatar({
@@ -65,25 +67,30 @@ export function PersonAvatar({
 export function ProfileCard({
   id,
   name,
-  email,
+  username,
   avatarUrl,
   roleLabel,
   highlightRole = false,
   details = [],
+  viewerRole,
   onClose,
 }: {
   id: string;
   name: string;
-  email?: string | null;
+  username?: string | null;
   avatarUrl?: string | null;
   roleLabel: string;
   /** red badge (e.g. for Teacher) instead of grey */
   highlightRole?: boolean;
   /** extra rows, e.g. [{ label: 'Joined', value: 'Oct 20, 2026' }] */
   details?: { label: string; value: string }[];
+  /** who is looking at the card — decides where "Send message" goes */
+  viewerRole: 'teacher' | 'student';
   onClose: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -91,14 +98,15 @@ export function ProfileCard({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  async function copyEmail() {
-    if (!email) return;
-    try {
-      await navigator.clipboard.writeText(email);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked — ignore */
+  async function handleMessage() {
+    setBusy(true);
+    setError(null);
+    const res = await startConversation(id);
+    if (res.ok) {
+      router.push(`/${viewerRole}/messages?c=${res.conversationId}`);
+    } else {
+      setError(res.error);
+      setBusy(false);
     }
   }
 
@@ -128,17 +136,19 @@ export function ProfileCard({
           </button>
         </div>
 
+        {/* relative z-10 keeps the avatar above the black header */}
         <div className="relative z-10 -mt-12 flex flex-col items-center px-6 pb-6 text-center">
-          <div className="rounded-full ring-4 ring-white">
+          <div className="rounded-full bg-white ring-4 ring-white">
             <PersonAvatar id={id} name={name} url={avatarUrl} size={96} />
           </div>
 
           <h2 id="profile-card-name" className="mt-3 text-lg font-extrabold text-zinc-900">
             {name}
           </h2>
+          {username && <p className="text-sm text-zinc-500">@{username}</p>}
           <span
             className={cn(
-              'mt-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
+              'mt-2 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
               highlightRole ? 'bg-red-50 text-red-700' : 'bg-zinc-100 text-zinc-700',
             )}
           >
@@ -156,28 +166,16 @@ export function ProfileCard({
             </dl>
           )}
 
-          {email && (
-            <>
-              <p className="mt-3 w-full truncate rounded-xl bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700">{email}</p>
-              <div className="mt-3 grid w-full grid-cols-2 gap-2">
-                <a
-                  href={`mailto:${email}`}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-bold text-white transition hover:bg-zinc-800"
-                >
-                  <Mail className="h-4 w-4" />
-                  Send email
-                </a>
-                <button
-                  type="button"
-                  onClick={copyEmail}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
-                >
-                  {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-                  {copied ? 'Copied' : 'Copy email'}
-                </button>
-              </div>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={handleMessage}
+            disabled={busy}
+            className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-bold text-white transition hover:bg-zinc-800 disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+            Send message
+          </button>
+          {error && <p className="mt-2 text-xs font-semibold text-red-700">{error}</p>}
         </div>
       </div>
     </div>
