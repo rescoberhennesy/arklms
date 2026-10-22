@@ -40,6 +40,8 @@ interface LessonEditorProps {
   classId: string;
 }
 
+type FinishAction = 'draft' | 'publish' | 'save';
+
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
 
 function formatFileSize(bytes: number): string {
@@ -50,6 +52,7 @@ function formatFileSize(bytes: number): string {
 
 export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
   const router = useRouter();
+  const modulesHref = `/teacher/classes/${classId}?tab=modules`;
 
   // Attachments live inside the Lesson Content card (button in its header,
   // file chips under the editor), so the upload logic is shared via a hook.
@@ -70,10 +73,13 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
 
   // Async state
   const [isSaving, startSaving] = useTransition();
-  const [isTogglingPublish, startTogglingPublish] = useTransition();
+  const [isFinishing, startFinishing] = useTransition();
+  const [finishAction, setFinishAction] = useState<FinishAction | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const busy = isSaving || isFinishing;
 
   // AI reviewer state
   const [aiReviewerOpen, setAiReviewerOpen] = useState(false);
@@ -99,26 +105,55 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
     });
   }
 
+  // Saves the body (if changed) and logs any pending AI generation.
+  async function persistBody() {
+    if (!isDirty) return;
+    const bodyToSave = body;
+    await updateLesson(lesson.id, { body: bodyToSave });
+    setSavedBody(bodyToSave);
+    if (pendingAiGenerationId) {
+      // Best-effort: never throws.
+      await markAiGenerationPublished(pendingAiGenerationId, { body: bodyToSave });
+      setPendingAiGenerationId(null);
+    }
+  }
+
+  // Inline "Save" in the Lesson Content card — stays on the page.
   function handleSaveBody() {
     setError(null);
-    const generationId = pendingAiGenerationId;
-    const savedBodyToPublish = body;
     startSaving(async () => {
       try {
-        await updateLesson(lesson.id, { body });
-        setSavedBody(body);
-        if (generationId) {
-          // Best-effort: never throws.
-          await markAiGenerationPublished(generationId, {
-            body: savedBodyToPublish,
-          });
-          setPendingAiGenerationId(null);
-        }
+        await persistBody();
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to save.');
       }
     });
+  }
+
+  // Top buttons — save (and maybe publish), then go back to the Modules tab.
+  function handleFinish(action: FinishAction) {
+    setError(null);
+    setFinishAction(action);
+    startFinishing(async () => {
+      try {
+        await persistBody();
+        if (action === 'publish' && !lesson.published) {
+          await setLessonPublished(lesson.id, true);
+        }
+        router.push(modulesHref);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to save.');
+        setFinishAction(null);
+      }
+    });
+  }
+
+  async function handleUnpublish() {
+    // ConfirmDialog auto-closes on success. Stays on the page so the
+    // teacher can keep editing.
+    await setLessonPublished(lesson.id, false);
+    router.refresh();
   }
 
   // Called by the reviewer modal on accept. Never overwrites:
@@ -158,31 +193,15 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
     }
   }
 
-  function handleTogglePublish() {
-    // Confirm before unpublishing (loses student access)
-    if (lesson.published) {
-      setConfirmUnpublish(true);
-      return;
-    }
-    doTogglePublish(true);
-  }
-
-  function doTogglePublish(next: boolean) {
-    setError(null);
-    startTogglingPublish(async () => {
-      try {
-        await setLessonPublished(lesson.id, next);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to change publish state.');
-      }
-    });
-  }
-
   async function handleDelete() {
     await deleteLesson(lesson.id);
-    router.push(`/teacher/classes/${classId}?tab=modules`);
+    router.push(modulesHref);
   }
+
+  const secondaryBtn =
+    'inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60';
+  const primaryBtn =
+    'inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60';
 
   return (
     <div className="space-y-6">
@@ -193,7 +212,7 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
       )}
 
       {/* Title bar */}
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           {titleEditing ? (
             <input
@@ -213,7 +232,7 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
               className="w-full rounded-md border border-gray-200 px-3 py-2 text-2xl font-bold text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
             />
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold text-gray-900">{lesson.title}</h1>
               <button
                 type="button"
@@ -224,35 +243,80 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
               >
                 <Pencil className="h-4 w-4" />
               </button>
+              {/* Status label (not a button) */}
+              {lesson.published ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                  <Eye className="h-3.5 w-3.5" />
+                  Published
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+                  <EyeOff className="h-3.5 w-3.5" />
+                  Draft
+                </span>
+              )}
             </div>
           )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
           {lesson.published ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800">
-              <Eye className="h-3.5 w-3.5" />
-              Published
-            </span>
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmUnpublish(true)}
+                disabled={busy}
+                className={secondaryBtn}
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                Unpublish
+              </button>
+              <span className="text-xs text-gray-400">or</span>
+              <button
+                type="button"
+                onClick={() => handleFinish('save')}
+                disabled={busy}
+                className={primaryBtn}
+              >
+                {isFinishing && finishAction === 'save' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                Save changes
+              </button>
+            </>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-              <EyeOff className="h-3.5 w-3.5" />
-              Draft
-            </span>
+            <>
+              <button
+                type="button"
+                onClick={() => handleFinish('draft')}
+                disabled={busy}
+                className={secondaryBtn}
+              >
+                {isFinishing && finishAction === 'draft' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                Save as draft
+              </button>
+              <span className="text-xs text-gray-400">or</span>
+              <button
+                type="button"
+                onClick={() => handleFinish('publish')}
+                disabled={busy}
+                className={primaryBtn}
+              >
+                {isFinishing && finishAction === 'publish' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+                Publish
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            onClick={handleTogglePublish}
-            disabled={isTogglingPublish}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition disabled:opacity-60 ${
-              lesson.published
-                ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                : 'bg-red-600 text-white hover:bg-red-700'
-            }`}
-          >
-            {isTogglingPublish && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {lesson.published ? 'Unpublish' : 'Publish'}
-          </button>
         </div>
       </div>
 
@@ -288,7 +352,7 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
               <button
                 type="button"
                 onClick={() => setAiReviewerOpen(true)}
-                disabled={isSaving}
+                disabled={busy}
                 aria-describedby="generate-from-files-tip"
                 className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -311,7 +375,7 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
             <button
               type="button"
               onClick={handleSaveBody}
-              disabled={isSaving || !isDirty}
+              disabled={busy || !isDirty}
               title={isDirty ? 'Save your changes' : 'All changes saved'}
               className={`inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                 isSaving
@@ -345,13 +409,12 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
           onChange={setBody}
           placeholder="Write your lesson content here."
           rows={12}
-          disabled={isSaving}
+          disabled={busy}
         />
 
         <AttachmentStrip attachments={lesson.attachments} att={att} />
       </section>
 
-      {/* AI quality analysis — read-only diagnostic, never mutates the lesson */}
       <FlashcardDeckPanel lessonId={lesson.id} />
 
       {/* Danger zone */}
@@ -385,7 +448,7 @@ export default function LessonEditor({ lesson, classId }: LessonEditorProps) {
         title="Unpublish this lesson?"
         message="Students will lose access to this lesson and its attachments. You can republish it later."
         confirmLabel="Unpublish"
-        onConfirm={async () => doTogglePublish(false)}
+        onConfirm={handleUnpublish}
         onClose={() => setConfirmUnpublish(false)}
       />
 
@@ -428,8 +491,6 @@ function useLessonAttachments({
     if (files.length === 0) return false;
 
     setUploading(true);
-
-    setUploading(true);
     setUploadError(null);
     const problems: string[] = [];
     let uploadedAny = false;
@@ -466,7 +527,7 @@ function useLessonAttachments({
     } finally {
       setUploading(false);
       if (problems.length > 0) setUploadError(problems.join(' '));
-           if (uploadedAny) router.refresh();
+      if (uploadedAny) router.refresh();
     }
     return uploadedAny;
   }
@@ -505,7 +566,7 @@ function useLessonAttachments({
     uploadError,
     clearError: () => setUploadError(null),
     openPicker,
-    uploadFiles, 
+    uploadFiles,
     handleFilesSelected,
     handleDownload,
     removeAttachment,

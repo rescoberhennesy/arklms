@@ -143,14 +143,16 @@ function DeckRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
 
+  const published = deck.deck.published;
+
   async function handleTogglePublish() {
     onError(null);
     startTransition(async () => {
       try {
-        await setDeckPublished(deck.deck.id, !deck.deck.published);
+        await setDeckPublished(deck.deck.id, !published);
         onChanged();
       } catch (e) {
-        onError(e instanceof Error ? e.message : 'Failed to toggle publish');
+        onError(e instanceof Error ? e.message : 'Failed to change publish state');
       }
     });
   }
@@ -189,7 +191,7 @@ function DeckRow({
 
   return (
     <div className="rounded-md border border-gray-200 bg-gray-50/40">
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -240,7 +242,7 @@ function DeckRow({
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h3 className="truncate text-sm font-semibold text-gray-900">
                 {deck.deck.title}
               </h3>
@@ -255,6 +257,18 @@ function DeckRow({
               <span className="text-xs text-gray-500">
                 · {deck.cards.length} {deck.cards.length === 1 ? 'card' : 'cards'}
               </span>
+              {/* Status label (not a button) */}
+              {published ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
+                  <Eye className="h-3 w-3" />
+                  Published
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                  <EyeOff className="h-3 w-3" />
+                  Draft
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -263,28 +277,28 @@ function DeckRow({
           type="button"
           onClick={handleTogglePublish}
           disabled={isPending}
-          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium ${
-            deck.deck.published
-              ? 'bg-green-100 text-green-800 hover:bg-green-200'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          } disabled:opacity-50`}
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 ${
+            published
+              ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              : 'bg-purple-600 text-white hover:bg-purple-700'
+          }`}
         >
-          {deck.deck.published ? (
-            <>
-              <Eye className="h-3 w-3" /> Published
-            </>
+          {isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : published ? (
+            <EyeOff className="h-3 w-3" />
           ) : (
-            <>
-              <EyeOff className="h-3 w-3" /> Draft
-            </>
+            <Eye className="h-3 w-3" />
           )}
+          {published ? 'Unpublish' : 'Publish'}
         </button>
 
         <button
           type="button"
           onClick={() => setConfirmDelete(true)}
-          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+          className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
           aria-label="Delete deck"
+          title="Delete deck"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -368,13 +382,13 @@ function CardList({
       {adding ? (
         <div className="rounded-md border border-purple-200 bg-purple-50/30 p-2">
           <div className="mb-2 grid gap-2 sm:grid-cols-2">
-                        <MarkdownTextarea
+            <MarkdownTextarea
               value={addFront}
               onChange={setAddFront}
               placeholder="Front (question / term)"
               rows={2}
             />
-                        <MarkdownTextarea
+            <MarkdownTextarea
               value={addBack}
               onChange={setAddBack}
               placeholder="Back (answer)"
@@ -467,13 +481,13 @@ function CardEditor({
     return (
       <div className="rounded-md border border-purple-200 bg-purple-50/30 p-2">
         <div className="mb-2 grid gap-2 sm:grid-cols-2">
-                    <MarkdownTextarea
+          <MarkdownTextarea
             value={front}
             onChange={setFront}
             placeholder="Front (question / term)"
             rows={2}
           />
-                    <MarkdownTextarea
+          <MarkdownTextarea
             value={back}
             onChange={setBack}
             placeholder="Back (answer)"
@@ -570,7 +584,7 @@ function AIFlashcardGeneratorModal({
   onGenerated: () => void;
 }) {
   const [title, setTitle] = useState('Flashcards');
-    const [countInput, setCountInput] = useState(String(DEFAULT_CARDS));
+  const [countInput, setCountInput] = useState(String(DEFAULT_CARDS));
   const parsedCount = Number(countInput);
   const countValid =
     Number.isInteger(parsedCount) &&
@@ -701,8 +715,8 @@ function AIFlashcardGeneratorModal({
                 <p className="text-gray-600">{result.sourceNote}</p>
               )}
               <p className="text-xs text-gray-500">
-                Review them below, edit as needed, then publish the deck so
-                students can study.
+                Review them below, edit as needed, then click Publish on the
+                deck so students can study.
               </p>
               <button
                 type="button"
@@ -741,7 +755,7 @@ function AIFlashcardGeneratorModal({
                 />
               </div>
 
-                            <div>
+              <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
                   Number of cards{' '}
                   <span className="font-normal text-gray-400">

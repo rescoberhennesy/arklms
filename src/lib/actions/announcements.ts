@@ -20,6 +20,12 @@ export type AnnouncementComment = {
   author: AnnouncementAuthor | null;
 };
 
+export type AnnouncementLike = {
+  user_id: string;
+  full_name: string | null;
+  created_at: string;
+};
+
 export type Announcement = {
   id: string;
   class_id: string;
@@ -29,6 +35,7 @@ export type Announcement = {
   updated_at: string;
   author: AnnouncementAuthor | null;
   comments: AnnouncementComment[];
+  likes: AnnouncementLike[];
 };
 
 async function requireAuth() {
@@ -55,6 +62,10 @@ export async function listAnnouncements(classId: string): Promise<Announcement[]
       announcement_comments (
         id, announcement_id, body, created_at, updated_at,
         author:author_id ( id, full_name )
+      ),
+      announcement_likes (
+        user_id, created_at,
+        user:user_id ( full_name )
       )
     `)
     .eq('class_id', classId)
@@ -85,6 +96,11 @@ export async function listAnnouncements(classId: string): Promise<Announcement[]
           ? { id: c.author.id, full_name: c.author.full_name }
           : null,
       })),
+    likes: ((row.announcement_likes ?? []) as any[]).map((l: any) => ({
+      user_id: l.user_id,
+      full_name: l.user?.full_name ?? null,
+      created_at: l.created_at,
+    })),
   })) as Announcement[];
 }
 
@@ -185,6 +201,39 @@ export async function setAnnouncementPinned(
   if (error) throw new Error(`Failed to ${pinned ? 'pin' : 'unpin'}: ${error.message}`);
 
   // We don't have class_id at the call site, so look it up.
+  const { data } = await supabase
+    .from('class_announcements')
+    .select('class_id')
+    .eq('id', announcementId)
+    .maybeSingle();
+  revalidateClass(data?.class_id);
+}
+
+// Idempotent: pass the desired state rather than toggling server-side,
+// so double-clicks can't desync the count.
+export async function setAnnouncementLiked(
+  announcementId: string,
+  liked: boolean,
+): Promise<void> {
+  const { supabase, userId } = await requireAuth();
+
+  if (liked) {
+    const { error } = await supabase
+      .from('announcement_likes')
+      .upsert(
+        { announcement_id: announcementId, user_id: userId },
+        { onConflict: 'announcement_id,user_id', ignoreDuplicates: true },
+      );
+    if (error) throw new Error(`Failed to like: ${error.message}`);
+  } else {
+    const { error } = await supabase
+      .from('announcement_likes')
+      .delete()
+      .eq('announcement_id', announcementId)
+      .eq('user_id', userId);
+    if (error) throw new Error(`Failed to unlike: ${error.message}`);
+  }
+
   const { data } = await supabase
     .from('class_announcements')
     .select('class_id')

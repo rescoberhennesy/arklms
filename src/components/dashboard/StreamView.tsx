@@ -26,6 +26,7 @@ import {
 } from '@/lib/actions/announcements';
 import MarkdownContent from './MarkdownContent';
 import MarkdownEditor from './MarkdownEditor';
+import AnnouncementLikes from './AnnouncementLikes';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 
 interface StreamViewProps {
@@ -367,6 +368,13 @@ function AnnouncementCard({
           <MarkdownContent body={announcement.body} />
         )}
       </div>
+
+      <AnnouncementLikes
+        announcementId={announcement.id}
+        likes={announcement.likes}
+        currentUserId={currentUserId}
+        isTeacher={isTeacher}
+      />
 
       <CommentSection
         announcementId={announcement.id}
