@@ -4,6 +4,7 @@ import { SidebarProvider } from '@/context/SidebarContext'
 import { PageTitleProvider } from '@/context/PageTitleContext'
 import Sidebar from '@/components/dashboard/Sidebar'
 import TopNavbar from '@/components/dashboard/TopNavbar'
+import NextTopLoader from 'nextjs-toploader'
 import NotificationBell from '@/components/dashboard/NotificationBell'
 import { getTeacherUngradedCount } from '@/lib/actions/dashboard'
 import type { Profile } from '@/types/user'
@@ -41,6 +42,7 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider>
+      <NextTopLoader color="#b91c1c" height={3} showSpinner={false} />
       <PageTitleProvider>
         <div data-app-shell className="flex min-h-screen bg-background">
           <Sidebar role={profile.role} badgeCounts={badgeCounts} />
