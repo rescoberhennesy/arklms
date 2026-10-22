@@ -12,12 +12,11 @@ import {
   Sparkles,
   Layers,
   Loader2,
-  Eye,
-  EyeOff,
   Trash2,
   Plus,
   Pencil,
   Check,
+  Save,
   Paperclip,
   FileText,
   X,
@@ -143,16 +142,18 @@ function DeckRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const published = deck.deck.published;
+  // "Saved" = confirmed by the teacher and visible to students
+  // (stored as published = true).
+  const saved = deck.deck.published;
 
-  async function handleTogglePublish() {
+  function setSaved(next: boolean) {
     onError(null);
     startTransition(async () => {
       try {
-        await setDeckPublished(deck.deck.id, !published);
+        await setDeckPublished(deck.deck.id, next);
         onChanged();
       } catch (e) {
-        onError(e instanceof Error ? e.message : 'Failed to change publish state');
+        onError(e instanceof Error ? e.message : 'Failed to save deck');
       }
     });
   }
@@ -225,7 +226,7 @@ function DeckRow({
                 type="button"
                 onClick={handleSaveTitle}
                 className="rounded p-1 text-green-600 hover:bg-green-100"
-                aria-label="Save"
+                aria-label="Save title"
               >
                 <Check className="h-3.5 w-3.5" />
               </button>
@@ -258,40 +259,46 @@ function DeckRow({
                 · {deck.cards.length} {deck.cards.length === 1 ? 'card' : 'cards'}
               </span>
               {/* Status label (not a button) */}
-              {published ? (
+              {saved ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
-                  <Eye className="h-3 w-3" />
-                  Published
+                  <Check className="h-3 w-3" />
+                  Saved
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-                  <EyeOff className="h-3 w-3" />
-                  Draft
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                  Not saved
                 </span>
               )}
             </div>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleTogglePublish}
-          disabled={isPending}
-          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 ${
-            published
-              ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              : 'bg-purple-600 text-white hover:bg-purple-700'
-          }`}
-        >
-          {isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : published ? (
-            <EyeOff className="h-3 w-3" />
-          ) : (
-            <Eye className="h-3 w-3" />
-          )}
-          {published ? 'Unpublish' : 'Publish'}
-        </button>
+        {saved ? (
+          <button
+            type="button"
+            onClick={() => setSaved(false)}
+            disabled={isPending}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50"
+          >
+            {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+            Hide from students
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSaved(true)}
+            disabled={isPending || deck.cards.length === 0}
+            title={deck.cards.length === 0 ? 'Add at least one card first' : 'Save this deck'}
+            className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Save className="h-3 w-3" />
+            )}
+            Save
+          </button>
+        )}
 
         <button
           type="button"
@@ -715,8 +722,8 @@ function AIFlashcardGeneratorModal({
                 <p className="text-gray-600">{result.sourceNote}</p>
               )}
               <p className="text-xs text-gray-500">
-                Review them below, edit as needed, then click Publish on the
-                deck so students can study.
+                Review them below, edit as needed, then click Save on the deck
+                so students can study.
               </p>
               <button
                 type="button"

@@ -12,7 +12,7 @@ import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import LessonAttachmentPreview from '@/components/dashboard/LessonAttachmentPreview';
 import {
   type LessonDetail,
-  getAttachmentDownloadData,
+  getAttachmentSignedUrl,
 } from '@/lib/actions/modules';
 
 interface StudentLessonViewProps {
@@ -30,19 +30,19 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  const hasBody = lesson.body.trim().length > 0;
+  const hasAttachments = lesson.attachments.length > 0;
+
   function handleDownload(attachmentId: string) {
     setError(null);
     setPendingId(attachmentId);
     startTransition(async () => {
       try {
-        const { dataUrl, fileName } = await getAttachmentDownloadData(
-          attachmentId,
-        );
-        // Create a temporary <a> with download attribute — this triggers
-        // the browser's native "save as" flow for the data URL.
+        // Short-lived signed link straight to Supabase Storage. The server
+        // marks it as a download, so the browser saves it with its real name.
+        const { url } = await getAttachmentSignedUrl(attachmentId, { download: true });
         const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = fileName;
+        link.href = url;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -59,12 +59,12 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
       <h1 className="text-2xl font-bold text-gray-900">{lesson.title}</h1>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           <span className="flex-1">{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="ml-2 text-red-400 hover:text-red-600"
+            className="text-red-400 hover:text-red-600"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />
@@ -72,17 +72,21 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
         </div>
       )}
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        {lesson.body.trim() ? (
+      {/* Text content — only when the teacher wrote something */}
+      {hasBody && (
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <MarkdownContent body={lesson.body} />
-        ) : (
-          <p className="text-sm italic text-gray-400">
-            This lesson has no content yet.
-          </p>
-        )}
-      </section>
+        </section>
+      )}
 
-      {lesson.attachments.length > 0 && (
+      {/* Truly empty lesson: no text and no files */}
+      {!hasBody && !hasAttachments && (
+        <section className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
+          <p className="text-sm text-gray-500">This lesson has no content yet.</p>
+        </section>
+      )}
+
+      {hasAttachments && (
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-gray-500">
             <Paperclip className="h-3.5 w-3.5" />
