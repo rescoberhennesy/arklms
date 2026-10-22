@@ -3,7 +3,16 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pin, PinOff, Pencil, Trash2, X, Loader2, Plus } from 'lucide-react';
+import {
+  Pin,
+  PinOff,
+  Pencil,
+  Trash2,
+  X,
+  Loader2,
+  Plus,
+  MessageCircle,
+} from 'lucide-react';
 import {
   type Announcement,
   type AnnouncementComment,
@@ -12,12 +21,12 @@ import {
   deleteAnnouncement,
   setAnnouncementPinned,
   createComment,
+  updateComment,
   deleteComment,
 } from '@/lib/actions/announcements';
 import MarkdownContent from './MarkdownContent';
 import MarkdownEditor from './MarkdownEditor';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
-
 
 interface StreamViewProps {
   classId: string;
@@ -53,9 +62,18 @@ function wasEdited(createdIso: string, updatedIso: string): boolean {
   return new Date(updatedIso).getTime() - new Date(createdIso).getTime() > 30_000;
 }
 
-function Avatar({ name }: { name: string | null | undefined }) {
+function Avatar({
+  name,
+  size = 'md',
+}: {
+  name: string | null | undefined;
+  size?: 'sm' | 'md';
+}) {
+  const sizeClass = size === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-8 w-8 text-xs';
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-700">
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full bg-red-100 font-semibold text-red-700 ${sizeClass}`}
+    >
       {initials(name)}
     </div>
   );
@@ -100,8 +118,7 @@ function Composer({ classId }: { classId: string }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Collapsed by default — the composer expands only when the teacher
-  // chooses to post. Keeps the Stream tab from being dominated by a large
-  // always-open editor box.
+  // chooses to post.
   const [expanded, setExpanded] = useState(false);
 
   function collapse() {
@@ -125,7 +142,6 @@ function Composer({ classId }: { classId: string }) {
     });
   }
 
-  // Collapsed state — a single quiet button.
   if (!expanded) {
     return (
       <button
@@ -237,14 +253,12 @@ function AnnouncementCard({
         await setAnnouncementPinned(announcement.id, !announcement.pinned);
         router.refresh();
       } catch (e) {
-        // Silent — pin is low-stakes; user can retry.
         console.error(e);
       }
     });
   }
 
   async function handleDelete() {
-    // ConfirmDialog auto-closes on successful onConfirm.
     await deleteAnnouncement(announcement.id);
     router.refresh();
   }
@@ -407,54 +421,28 @@ function CommentSection({
     });
   }
 
-  function handleDelete(commentId: string) {
-    startTransition(async () => {
-      try {
-        await deleteComment(commentId);
-        router.refresh();
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
+  const count = comments.length;
 
   return (
     <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3">
-      {comments.length > 0 && (
-        <ul className="mb-3 space-y-2">
-          {comments.map((c) => {
-            const canDelete = isTeacher || c.author?.id === currentUserId;
-            const authorName = c.author?.full_name ?? 'Unknown';
-            return (
-              <li key={c.id} className="flex items-start gap-2">
-                <Avatar name={authorName} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-900">
-                      {authorName}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {formatTimestamp(c.created_at)}
-                    </span>
-                    {canDelete && (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(c.id)}
-                        disabled={isPending}
-                        className="ml-auto rounded p-0.5 text-gray-400 transition hover:bg-gray-200 hover:text-red-600 disabled:opacity-50"
-                        aria-label="Delete comment"
-                        title="Delete comment"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <MarkdownContent body={c.body} className="mt-0.5" />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      {count > 0 && (
+        <>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+            <MessageCircle className="h-3.5 w-3.5" />
+            {count} {count === 1 ? 'comment' : 'comments'}
+          </div>
+          {/* Indented thread with a left rail so replies read as replies */}
+          <ul className="mb-3 ml-3 space-y-3 border-l-2 border-gray-200 pl-4">
+            {comments.map((c) => (
+              <CommentItem
+                key={c.id}
+                comment={c}
+                currentUserId={currentUserId}
+                isTeacher={isTeacher}
+              />
+            ))}
+          </ul>
+        </>
       )}
 
       <div className="flex items-start gap-2">
@@ -477,5 +465,151 @@ function CommentSection({
       </div>
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
+  );
+}
+
+interface CommentItemProps {
+  comment: AnnouncementComment;
+  currentUserId: string;
+  isTeacher: boolean;
+}
+
+function CommentItem({ comment, currentUserId, isTeacher }: CommentItemProps) {
+  const router = useRouter();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editBody, setEditBody] = useState(comment.body);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const isAuthor = comment.author?.id === currentUserId;
+  const canEdit = isAuthor; // only the author edits
+  const canDelete = isTeacher || isAuthor; // teacher can moderate
+  const authorName = comment.author?.full_name ?? 'Unknown';
+  const edited = wasEdited(comment.created_at, comment.updated_at);
+
+  function handleSave() {
+    setError(null);
+    const trimmed = editBody.trim();
+    if (!trimmed) {
+      setError('Comment cannot be empty.');
+      return;
+    }
+    if (trimmed === comment.body) {
+      setIsEditing(false);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await updateComment(comment.id, trimmed);
+        setIsEditing(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to save.');
+      }
+    });
+  }
+
+  function handleCancel() {
+    setEditBody(comment.body);
+    setError(null);
+    setIsEditing(false);
+  }
+
+  async function handleDelete() {
+    await deleteComment(comment.id);
+    router.refresh();
+  }
+
+  return (
+    <li className="flex items-start gap-2.5">
+      <Avatar name={authorName} size="sm" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-900">{authorName}</span>
+          <span className="text-xs text-gray-500">
+            {formatTimestamp(comment.created_at)}
+            {edited && <span className="ml-1 italic">(edited)</span>}
+          </span>
+
+          {!isEditing && (canEdit || canDelete) && (
+            <div className="ml-auto flex items-center gap-0.5">
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  disabled={isPending}
+                  className="rounded p-1 text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50"
+                  aria-label="Edit comment"
+                  title="Edit comment"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={isPending}
+                  className="rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                  aria-label="Delete comment"
+                  title="Delete comment"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {isEditing ? (
+          <div className="mt-1">
+            <textarea
+              value={editBody}
+              onChange={(e) => setEditBody(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') handleCancel();
+              }}
+              rows={2}
+              autoFocus
+              disabled={isPending}
+              className="w-full resize-y rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+            />
+            {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+            <div className="mt-1.5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={isPending}
+                className="rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isPending || !editBody.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
+              </button>
+            </div>
+          </div>
+        ) : (
+          <MarkdownContent body={comment.body} className="mt-0.5" />
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete comment?"
+        message="This cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDelete}
+        onClose={() => setConfirmDelete(false)}
+      />
+    </li>
   );
 }

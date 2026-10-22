@@ -16,6 +16,7 @@ export type AnnouncementComment = {
   announcement_id: string;
   body: string;
   created_at: string;
+  updated_at: string;
   author: AnnouncementAuthor | null;
 };
 
@@ -37,6 +38,12 @@ async function requireAuth() {
   return { supabase, userId: user.id };
 }
 
+function revalidateClass(classId: string | undefined | null) {
+  if (!classId) return;
+  revalidatePath(`/teacher/classes/${classId}`);
+  revalidatePath(`/student/classes/${classId}`);
+}
+
 export async function listAnnouncements(classId: string): Promise<Announcement[]> {
   const { supabase } = await requireAuth();
 
@@ -46,7 +53,7 @@ export async function listAnnouncements(classId: string): Promise<Announcement[]
       id, class_id, body, pinned, created_at, updated_at,
       author:author_id ( id, full_name ),
       announcement_comments (
-        id, announcement_id, body, created_at,
+        id, announcement_id, body, created_at, updated_at,
         author:author_id ( id, full_name )
       )
     `)
@@ -73,6 +80,7 @@ export async function listAnnouncements(classId: string): Promise<Announcement[]
         announcement_id: c.announcement_id,
         body: c.body,
         created_at: c.created_at,
+        updated_at: c.updated_at ?? c.created_at,
         author: c.author
           ? { id: c.author.id, full_name: c.author.full_name }
           : null,
@@ -124,8 +132,7 @@ export async function createAnnouncement(
     console.error('[announcements] notify fan-out error:', e);
   }
 
-  revalidatePath(`/teacher/classes/${classId}`);
-  revalidatePath(`/student/classes/${classId}`);
+  revalidateClass(classId);
 }
 
 export async function updateAnnouncement(
@@ -144,10 +151,7 @@ export async function updateAnnouncement(
     .single();
 
   if (error) throw new Error(`Failed to update announcement: ${error.message}`);
-  if (data?.class_id) {
-    revalidatePath(`/teacher/classes/${data.class_id}`);
-    revalidatePath(`/student/classes/${data.class_id}`);
-  }
+  revalidateClass(data?.class_id);
 }
 
 export async function deleteAnnouncement(announcementId: string): Promise<void> {
@@ -166,10 +170,7 @@ export async function deleteAnnouncement(announcementId: string): Promise<void> 
     .eq('id', announcementId);
 
   if (error) throw new Error(`Failed to delete announcement: ${error.message}`);
-  if (pre?.class_id) {
-    revalidatePath(`/teacher/classes/${pre.class_id}`);
-    revalidatePath(`/student/classes/${pre.class_id}`);
-  }
+  revalidateClass(pre?.class_id);
 }
 
 export async function setAnnouncementPinned(
@@ -183,17 +184,13 @@ export async function setAnnouncementPinned(
   });
   if (error) throw new Error(`Failed to ${pinned ? 'pin' : 'unpin'}: ${error.message}`);
 
-  // Revalidate the relevant class detail pages. We don't have class_id at the
-  // call site, so look it up.
+  // We don't have class_id at the call site, so look it up.
   const { data } = await supabase
     .from('class_announcements')
     .select('class_id')
     .eq('id', announcementId)
     .maybeSingle();
-  if (data?.class_id) {
-    revalidatePath(`/teacher/classes/${data.class_id}`);
-    revalidatePath(`/student/classes/${data.class_id}`);
-  }
+  revalidateClass(data?.class_id);
 }
 
 export async function createComment(
@@ -214,7 +211,6 @@ export async function createComment(
 
   if (error) throw new Error(`Failed to post comment: ${error.message}`);
 
-  // Revalidate parent class pages.
   const { data } = await supabase
     .from('class_announcements')
     .select('class_id')
@@ -248,10 +244,28 @@ export async function createComment(
     }
   }
 
-  if (classId) {
-    revalidatePath(`/teacher/classes/${classId}`);
-    revalidatePath(`/student/classes/${classId}`);
-  }
+  revalidateClass(classId);
+}
+
+export async function updateComment(
+  commentId: string,
+  body: string,
+): Promise<void> {
+  const { supabase } = await requireAuth();
+  const trimmed = body.trim();
+  if (!trimmed) throw new Error('Comment cannot be empty.');
+
+  // RLS (comments_update_own) ensures only the author can edit.
+  const { data, error } = await supabase
+    .from('announcement_comments')
+    .update({ body: trimmed })
+    .eq('id', commentId)
+    .select(`announcement:announcement_id ( class_id )`)
+    .single();
+
+  if (error) throw new Error(`Failed to edit comment: ${error.message}`);
+
+  revalidateClass((data?.announcement as any)?.class_id as string | undefined);
 }
 
 export async function deleteComment(commentId: string): Promise<void> {
@@ -271,11 +285,7 @@ export async function deleteComment(commentId: string): Promise<void> {
 
   if (error) throw new Error(`Failed to delete comment: ${error.message}`);
 
-  const classId = (pre?.announcement as any)?.class_id as string | undefined;
-  if (classId) {
-    revalidatePath(`/teacher/classes/${classId}`);
-    revalidatePath(`/student/classes/${classId}`);
-  }
+  revalidateClass((pre?.announcement as any)?.class_id as string | undefined);
 }
 
 // ==========================================================================
