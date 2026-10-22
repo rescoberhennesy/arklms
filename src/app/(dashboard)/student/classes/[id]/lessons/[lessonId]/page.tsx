@@ -6,7 +6,7 @@ import { getLesson } from '@/lib/actions/modules';
 import { listFlashcardDecksForLesson } from '@/lib/actions/flashcards';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import StudentLessonView from '@/components/student/StudentLessonView';
-import { FlashcardDeckLauncher } from '@/components/student/FlashcardStudyMode';
+import FlashcardDeckLauncher from '@/components/student/FlashcardDeckLauncher';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +45,9 @@ export default async function StudentLessonPage({ params }: PageProps) {
   // where (deck.published = true AND lesson.published = true) for this
   // student's enrollment.
   const flashcardDecks = await listFlashcardDecksForLesson(lessonId);
+  const hasFlashcards = flashcardDecks.some(
+    (d) => d.deck.published && d.cards.length > 0,
+  );
 
   return (
     <div className="space-y-6">
@@ -56,11 +59,9 @@ export default async function StudentLessonPage({ params }: PageProps) {
         <ChevronLeft size={16} />
         Back to {klass.name}
       </Link>
-      <StudentLessonView lesson={lesson} />
+      <StudentLessonView lesson={lesson} hasFlashcards={hasFlashcards} />
 
-      {flashcardDecks.length > 0 && (
-        <FlashcardDeckLauncher decks={flashcardDecks} />
-      )}
+      {hasFlashcards && <FlashcardDeckLauncher decks={flashcardDecks} />}
     </div>
   );
 }

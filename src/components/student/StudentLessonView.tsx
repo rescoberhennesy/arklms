@@ -17,6 +17,8 @@ import {
 
 interface StudentLessonViewProps {
   lesson: LessonDetail;
+  /** True when the lesson has at least one study-ready flashcard deck. */
+  hasFlashcards?: boolean;
 }
 
 function formatFileSize(bytes: number): string {
@@ -25,13 +27,17 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
+export default function StudentLessonView({
+  lesson,
+  hasFlashcards = false,
+}: StudentLessonViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const hasBody = lesson.body.trim().length > 0;
   const hasAttachments = lesson.attachments.length > 0;
+  const isEmpty = !hasBody && !hasAttachments && !hasFlashcards;
 
   function handleDownload(attachmentId: string) {
     setError(null);
@@ -79,8 +85,8 @@ export default function StudentLessonView({ lesson }: StudentLessonViewProps) {
         </section>
       )}
 
-      {/* Truly empty lesson: no text and no files */}
-      {!hasBody && !hasAttachments && (
+      {/* Truly empty lesson: no text, no files, no flashcards */}
+      {isEmpty && (
         <section className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
           <p className="text-sm text-gray-500">This lesson has no content yet.</p>
         </section>
