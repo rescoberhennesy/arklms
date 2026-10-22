@@ -128,7 +128,7 @@ export function ProfileCard({
           </button>
         </div>
 
-        <div className="-mt-12 flex flex-col items-center px-6 pb-6 text-center">
+        <div className="relative z-10 -mt-12 flex flex-col items-center px-6 pb-6 text-center">
           <div className="rounded-full ring-4 ring-white">
             <PersonAvatar id={id} name={name} url={avatarUrl} size={96} />
           </div>

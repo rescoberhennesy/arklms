@@ -158,7 +158,7 @@ function ProfileCard({
         </div>
 
         {/* Avatar overlapping the header */}
-        <div className="-mt-12 flex flex-col items-center px-6 pb-6 text-center">
+        <div className="relative z-10 -mt-12 flex flex-col items-center px-6 pb-6 text-center">
           <div className="rounded-full ring-4 ring-white">
             <PersonAvatar person={person} size={96} />
           </div>
