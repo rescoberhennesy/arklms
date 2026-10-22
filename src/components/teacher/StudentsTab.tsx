@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { Check, X, Trash2, UserPlus } from 'lucide-react';
 import { decideJoinRequest, removeEnrollment } from '@/lib/actions/enrollments';
 import type { PendingJoinRequest } from '@/types/class';
+import { PersonAvatar, ProfileCard } from '@/components/dashboard/ProfileCard';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 
 interface RosterEntry {
@@ -104,6 +105,7 @@ export function StudentsTab({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
+  const [selected, setSelected] = useState<RosterEntry | null>(null);
   const [, startTransition] = useTransition();
 
   function handleDecide(request: PendingJoinRequest, approve: boolean) {
@@ -241,7 +243,17 @@ export function StudentsTab({
               <tbody className="divide-y divide-gray-100 bg-white">
                 {roster.map((s) => (
                   <tr key={s.student_id}>
-                    <td className="px-4 py-3 text-sm text-gray-900">{s.full_name ?? '—'}</td>
+                    <td className="px-4 py-3">
+  <button
+    type="button"
+    onClick={() => setSelected(s)}
+    className="group flex items-center gap-3 text-left"
+    aria-label={`View ${s.full_name ?? s.email ?? 'student'}'s profile`}
+  >
+    <PersonAvatar id={s.student_id} name={s.full_name ?? s.email ?? 'Student'} url={s.avatar_url} size={32} />
+    <span className="text-sm font-medium text-gray-900 group-hover:underline">{s.full_name ?? '—'}</span>
+  </button>
+</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.email ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       <span className="inline-flex items-center gap-1.5">
@@ -287,6 +299,22 @@ export function StudentsTab({
           </div>
         )}
       </section>
+
+      {selected && (
+  <ProfileCard
+    id={selected.student_id}
+    name={selected.full_name ?? selected.email ?? 'Student'}
+    email={selected.email}
+    avatarUrl={selected.avatar_url}
+    roleLabel="Student"
+    details={[
+      { label: 'Last active', value: formatLastActive(selected.last_active_at) },
+      { label: 'Joined', value: new Date(selected.enrolled_at).toLocaleDateString() },
+    ]}
+    onClose={() => setSelected(null)}
+  />
+)}
+
 
       <ConfirmDialog
         open={confirm !== null}
