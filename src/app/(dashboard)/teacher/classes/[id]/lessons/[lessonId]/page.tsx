@@ -44,7 +44,7 @@ export default async function TeacherLessonPage({ params }: PageProps) {
         className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
       >
         <ChevronLeft size={16} />
-        Back to {classRes.data.name}
+        Back to modules
       </Link>
       <LessonEditor lesson={lesson} classId={classId} />
     </div>

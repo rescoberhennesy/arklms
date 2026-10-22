@@ -44,7 +44,11 @@ function localToIso(local: string): string {
 }
 
 const inputClass =
-  'w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60';
+  'w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-4 focus:ring-red-500/10 disabled:opacity-60';
+
+const labelClass = 'mb-1 block text-xs font-semibold text-zinc-700';
+
+const checkboxClass = 'h-4 w-4 rounded border-zinc-300 text-red-600 focus:ring-red-500';
 
 export default function AddActivityBar({
   classId,
@@ -208,13 +212,14 @@ export default function AddActivityBar({
 
   return (
     <>
+      {/* Same size/shape as "Add module to …" on the Modules tab */}
       <button
         type="button"
         onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700"
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-bold text-white shadow-[0_6px_16px_rgba(220,38,38,0.22)] transition hover:bg-red-700 active:scale-[0.98]"
       >
-        <Plus className="h-4 w-4" />
-        Add activity
+        <Plus className="h-4 w-4" strokeWidth={2.4} />
+        Add activity to {MODULE_TERM_LABELS[defaultTerm]}
       </button>
 
       <Modal
@@ -232,7 +237,7 @@ export default function AddActivityBar({
         >
           <div className="grid gap-3 md:grid-cols-2">
             <div className="md:col-span-2">
-              <label htmlFor="act-kind" className="mb-1 block text-xs font-medium text-gray-700">
+              <label htmlFor="act-kind" className={labelClass}>
                 Kind
               </label>
               <select
@@ -249,7 +254,7 @@ export default function AddActivityBar({
                 ))}
               </select>
               {isQuiz && (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-zinc-500">
                   Max points and submission settings are configured
                   per-question once you add questions.
                 </p>
@@ -257,8 +262,8 @@ export default function AddActivityBar({
             </div>
 
             <div className="md:col-span-2">
-              <label htmlFor="act-title" className="mb-1 block text-xs font-medium text-gray-700">
-                Title <span className="text-red-600">*</span>
+              <label htmlFor="act-title" className={labelClass}>
+                Title <span className="text-red-500">*</span>
               </label>
               <input
                 id="act-title"
@@ -275,7 +280,7 @@ export default function AddActivityBar({
             </div>
 
             <div>
-              <label htmlFor="act-term" className="mb-1 block text-xs font-medium text-gray-700">
+              <label htmlFor="act-term" className={labelClass}>
                 Term
               </label>
               <select
@@ -294,7 +299,7 @@ export default function AddActivityBar({
             </div>
 
             <div>
-              <label htmlFor="act-due" className="mb-1 block text-xs font-medium text-gray-700">
+              <label htmlFor="act-due" className={labelClass}>
                 Due date
               </label>
               <input
@@ -310,10 +315,10 @@ export default function AddActivityBar({
             {!isQuiz && (
               <>
                 <div>
-                  <label htmlFor="act-points" className="mb-1 block text-xs font-medium text-gray-700">
+                  <label htmlFor="act-points" className={labelClass}>
                     Max points
                   </label>
-                    <input
+                  <input
                     id="act-points"
                     type="text"
                     inputMode="decimal"
@@ -331,7 +336,7 @@ export default function AddActivityBar({
                 </div>
 
                 <div>
-                  <label htmlFor="act-subtype" className="mb-1 block text-xs font-medium text-gray-700">
+                  <label htmlFor="act-subtype" className={labelClass}>
                     Submission type
                   </label>
                   <select
@@ -352,34 +357,34 @@ export default function AddActivityBar({
                 </div>
 
                 <div className="space-y-2 pt-1 md:col-span-2">
-                  <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
                     <input
                       type="checkbox"
                       checked={allowLate}
                       onChange={(e) => setAllowLate(e.target.checked)}
                       disabled={isPending}
-                      className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                      className={checkboxClass}
                     />
                     Allow late submissions
                   </label>
 
                   <div>
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
                       <input
                         type="checkbox"
                         checked={allowResubmission}
                         onChange={(e) => setAllowResubmission(e.target.checked)}
                         disabled={isPending}
-                        className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        className={checkboxClass}
                       />
                       Allow resubmission
                     </label>
                     {allowResubmission ? (
                       <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
-                        <label htmlFor="act-attempts" className="text-sm text-gray-600">
+                        <label htmlFor="act-attempts" className="text-sm text-zinc-600">
                           Max attempts
                         </label>
-                          <input
+                        <input
                           id="act-attempts"
                           type="text"
                           inputMode="numeric"
@@ -389,14 +394,14 @@ export default function AddActivityBar({
                             setMaxAttempts(e.target.value.replace(/\D/g, ''))
                           }
                           disabled={isPending}
-                          className="w-20 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-60"
+                          className="w-20 rounded-xl border border-zinc-200 px-3 py-1.5 text-sm focus:border-red-400 focus:outline-none focus:ring-4 focus:ring-red-500/10 disabled:opacity-60"
                         />
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-zinc-500">
                           Students can submit up to this many times.
                         </span>
                       </div>
                     ) : (
-                      <p className="ml-6 text-xs text-gray-500">
+                      <p className="ml-6 text-xs text-zinc-500">
                         Students get one attempt by default.
                       </p>
                     )}
@@ -407,17 +412,17 @@ export default function AddActivityBar({
 
             {isQuiz && (
               <div className="pt-1 md:col-span-2">
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
                   <input
                     type="checkbox"
                     checked={allowLate}
                     onChange={(e) => setAllowLate(e.target.checked)}
                     disabled={isPending}
-                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    className={checkboxClass}
                   />
                   Allow late submissions
                 </label>
-                <p className="ml-6 text-xs text-gray-500">
+                <p className="ml-6 text-xs text-zinc-500">
                   Students can start and submit after the due date. Late
                   attempts are flagged.
                 </p>
@@ -426,32 +431,32 @@ export default function AddActivityBar({
           </div>
 
           {formError && (
-            <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {formError}
             </div>
           )}
 
-          <p className="mt-4 text-xs text-gray-500">
+          <p className="mt-4 text-xs text-zinc-500">
             {isQuiz
               ? 'Quizzes start as drafts. Open the quiz to add questions and publish it.'
               : 'Activities start as drafts. Open the activity to publish it and add a description.'}
           </p>
 
-          <div className="mt-4 flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+          <div className="mt-5 flex items-center justify-end gap-2 border-t border-zinc-100 pt-4">
             <button
               type="button"
               onClick={handleClose}
               disabled={isPending}
-              className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Continue
             </button>
           </div>

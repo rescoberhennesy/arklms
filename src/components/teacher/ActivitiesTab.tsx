@@ -26,6 +26,8 @@ import {
   Copy,
   MoreHorizontal,
   ExternalLink,
+  ClipboardList,
+  ListChecks,
 } from 'lucide-react';
 import {
   reorderActivities,
@@ -81,6 +83,14 @@ const STATUS_LABEL: Record<ActivityCardStatus, string> = {
   closed: 'Closed',
 };
 
+const STATUS_PILL: Record<ActivityCardStatus, string> = {
+  draft: 'bg-zinc-100 text-zinc-600',
+  scheduled: 'bg-blue-50 text-blue-700',
+  open: 'bg-emerald-50 text-emerald-700',
+  past_due: 'bg-amber-50 text-amber-700',
+  closed: 'bg-zinc-100 text-zinc-600',
+};
+
 const FILTER_LABEL: Record<CompletionFilter, string> = {
   all: 'All',
   has_ungraded: 'To grade',
@@ -92,7 +102,7 @@ const FILTER_KEYS = Object.keys(FILTER_LABEL) as CompletionFilter[];
 
 // Shared column layout for the header row and every activity row (md and up).
 const ROW_GRID =
-  'md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_96px] md:items-center md:gap-4';
+  'md:grid md:grid-cols-[minmax(0,1fr)_140px_110px_130px_96px] md:items-center md:gap-4';
 
 function isCompletionFilter(v: string | null): v is CompletionFilter {
   return v !== null && (FILTER_KEYS as string[]).includes(v);
@@ -279,17 +289,17 @@ export default function ActivitiesTab({
   const termLabel = MODULE_TERM_LABELS[activeTerm];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</div>
       )}
 
-      {/* Term switcher + actions */}
+      {/* Term switcher + actions (same style as the Modules tab) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-                <div
+        <div
           role="tablist"
           aria-label="Grading period"
-          className="inline-flex gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+          className="inline-flex flex-wrap gap-1 rounded-2xl bg-zinc-100 p-1"
         >
           {MODULE_TERMS.map((t) => {
             const active = t === activeTerm;
@@ -300,10 +310,10 @@ export default function ActivitiesTab({
                 role="tab"
                 aria-selected={active}
                 onClick={() => selectTerm(t)}
-                className={`rounded-lg px-5 py-2 text-sm transition ${
+                className={`inline-flex min-h-10 items-center rounded-xl px-5 text-sm transition ${
                   active
-                    ? 'bg-red-600 font-semibold text-white shadow-[0_4px_12px_rgba(220,38,38,0.25)]'
-                    : 'font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                    ? 'bg-white font-bold text-red-700 shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
+                    : 'font-semibold text-zinc-500 hover:text-zinc-900'
                 }`}
               >
                 {MODULE_TERM_LABELS[t]}
@@ -313,10 +323,10 @@ export default function ActivitiesTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-                    <button
+          <button
             type="button"
             onClick={() => setCopyModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
           >
             <CopyPlus className="h-4 w-4" />
             Copy from another class
@@ -331,12 +341,12 @@ export default function ActivitiesTab({
         </div>
       </div>
 
-            {/* Filters + table in one card */}
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      {/* Filters + table in one card */}
+      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
         <div
           role="tablist"
           aria-label="Filter activities"
-          className="flex flex-wrap gap-x-5 gap-y-2 border-b border-zinc-100 px-5 py-3.5 text-sm"
+          className="flex flex-wrap gap-1 border-b border-zinc-100 px-5 py-3"
         >
           {FILTER_KEYS.map((key) => {
             const active = filter === key;
@@ -348,14 +358,18 @@ export default function ActivitiesTab({
                 role="tab"
                 aria-selected={active}
                 onClick={() => setFilter(key)}
-                className={`transition ${active ? 'font-semibold text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}`}
+                className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
+                  active ? 'bg-zinc-900 font-semibold text-white' : 'font-medium text-zinc-600 hover:bg-zinc-100'
+                }`}
               >
                 {FILTER_LABEL[key]}{' '}
                 <span
                   className={
-                    key === 'has_ungraded' && count > 0
-                      ? 'text-red-600'
-                      : 'text-zinc-400'
+                    active
+                      ? 'text-white/60'
+                      : key === 'has_ungraded' && count > 0
+                        ? 'font-semibold text-red-600'
+                        : 'text-zinc-400'
                   }
                 >
                   {count}
@@ -374,8 +388,8 @@ export default function ActivitiesTab({
           />
         ) : (
           <>
-            <div className={`hidden border-b border-zinc-100 bg-zinc-50/60 px-5 py-2.5 text-xs font-medium text-zinc-400 ${ROW_GRID}`}>
-              <span>Title</span>
+            <div className={`hidden border-b border-zinc-100 bg-zinc-50/60 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 ${ROW_GRID}`}>
+              <span className="pl-12">Title</span>
               <span>Due</span>
               <span>Submitted</span>
               <span>Status</span>
@@ -423,7 +437,7 @@ function EmptyState({
   onCopy: () => void;
 }) {
   return (
-        <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       {filterActive ? (
         <>
           <h3 className="text-base font-semibold text-zinc-900">No matching activities in {termLabel}</h3>
@@ -438,7 +452,10 @@ function EmptyState({
         </>
       ) : (
         <>
-          <h3 className="text-base font-semibold text-zinc-900">No activities in {termLabel} yet</h3>
+          <span className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+            <ClipboardList className="h-6 w-6" />
+          </span>
+          <h3 className="text-base font-bold text-zinc-900">No {termLabel} activities yet</h3>
           <p className="max-w-md text-sm text-zinc-500">
             Create an activity or quiz with the button above, or reuse ones you already made in another class.
           </p>
@@ -512,7 +529,7 @@ function TermList({
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={activities.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-                <ul className="divide-y divide-zinc-100">
+        <ul className="divide-y divide-zinc-100">
           {activities.map((a) => (
             <ActivityRow
               key={a.id}
@@ -591,7 +608,6 @@ function ActivityRow({
 
   const now = Date.now();
   const status = computeCardStatus(activity, now);
-  const isDraft = status === 'draft';
   const hint = dueHint(activity, status, now);
   const isQuiz = activity.activityKind === 'quiz';
 
@@ -599,6 +615,7 @@ function ActivityRow({
   const ungradedCount = activity.submissions.filter((s) => s.grade === null).length;
   const showRoster = activity.published && now >= new Date(activity.startAt).getTime() && rosterSize > 0;
   const submittedFromRoster = roster.filter((r) => submitterIds.has(r.student_id)).length;
+  const submittedPct = rosterSize > 0 ? Math.round((submittedFromRoster / rosterSize) * 100) : 0;
   const missingStudents = showRoster ? roster.filter((r) => !submitterIds.has(r.student_id)) : [];
   const allGraded = submissionCount > 0 && ungradedCount === 0;
 
@@ -633,64 +650,82 @@ function ActivityRow({
     }
   }
 
-  // Status column: red only when something needs grading.
-  let statusNode: React.ReactNode;
+  // Status pill: red only when something needs grading.
+  let pill: { text: string; className: string };
   if (ungradedCount > 0) {
-    statusNode = <span className="font-semibold text-red-600">{ungradedCount} to grade</span>;
+    pill = { text: `${ungradedCount} to grade`, className: 'bg-red-50 text-red-700' };
   } else if (allGraded) {
-    statusNode = <span className="text-zinc-400">Graded</span>;
+    pill = { text: 'Graded', className: 'bg-emerald-50 text-emerald-700' };
   } else {
-    statusNode = <span className="text-zinc-400">{STATUS_LABEL[status]}</span>;
+    pill = { text: STATUS_LABEL[status], className: STATUS_PILL[status] };
   }
 
   return (
     <li ref={setNodeRef} style={style} className="group">
-            <div className={`relative flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 transition hover:bg-zinc-50/70 ${ROW_GRID}`}>
-        {/* Title */}
-        <div className="relative min-w-0 flex-1 basis-full md:basis-auto">
+      <div className={`relative flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 transition hover:bg-zinc-50/70 ${ROW_GRID}`}>
+        {/* Title (icon + text) */}
+        <div className="relative flex min-w-0 flex-1 basis-full items-center gap-3 md:basis-auto">
           {canReorder && (
             <button
               ref={setActivatorNodeRef}
               {...attributes}
               {...listeners}
               type="button"
-              className="absolute -left-6 top-1/2 z-10 -translate-y-1/2 cursor-grab rounded p-0.5 text-zinc-300 opacity-0 transition hover:text-zinc-500 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+              className="absolute -left-5 top-1/2 z-10 -translate-y-1/2 cursor-grab rounded p-0.5 text-zinc-300 opacity-0 transition hover:text-zinc-500 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
               aria-label="Drag to reorder"
             >
               <GripVertical className="h-4 w-4" />
             </button>
           )}
-          {/* Stretched link: clicking anywhere on the row opens the activity */}
-          <Link
-            href={href}
-            className={`block truncate text-[15px] font-semibold after:absolute after:inset-0 after:content-[''] hover:text-red-600 ${
-              isDraft ? 'text-zinc-500' : 'text-zinc-900'
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              isQuiz ? 'bg-purple-50 text-purple-600' : 'bg-red-50 text-red-600'
             }`}
           >
-            {activity.title}
-          </Link>
-          <p className="mt-0.5 text-[13px] text-zinc-400">
-            {isQuiz ? 'Quiz' : 'Activity'} · {activity.maxPoints} pts
-          </p>
+            {isQuiz ? <ListChecks className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+          </span>
+          <div className="min-w-0">
+            {/* Stretched link: clicking anywhere on the row opens the activity */}
+            <Link
+              href={href}
+              className="block truncate text-[15px] font-bold text-zinc-900 after:absolute after:inset-0 after:content-[''] hover:text-red-600"
+            >
+              {activity.title}
+            </Link>
+            <p className="mt-0.5 text-[13px] text-zinc-500">
+              {isQuiz ? 'Quiz' : 'Activity'} · {activity.maxPoints} pts
+            </p>
+          </div>
         </div>
 
         {/* Due */}
         <div className="text-sm">
-          <p className="text-zinc-700">{formatDay(activity.dueAt)}</p>
-          <p className={`text-xs ${hint.urgent ? 'font-semibold text-red-600' : 'text-zinc-400'}`}>{hint.text}</p>
+          <p className="font-medium text-zinc-800">{formatDay(activity.dueAt)}</p>
+          <p className={`text-xs ${hint.urgent ? 'font-semibold text-red-600' : 'text-zinc-500'}`}>{hint.text}</p>
         </div>
 
         {/* Submitted */}
-        <div className="text-sm text-zinc-700">
+        <div className="text-sm text-zinc-800">
           {showRoster ? (
-            `${submittedFromRoster} / ${rosterSize}`
+            <>
+              <p className="font-medium">
+                {submittedFromRoster} <span className="font-normal text-zinc-400">/ {rosterSize}</span>
+              </p>
+              <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-zinc-100">
+                <div className="h-full rounded-full bg-red-500" style={{ width: `${submittedPct}%` }} />
+              </div>
+            </>
           ) : (
             <span className="text-zinc-400">—</span>
           )}
         </div>
 
         {/* Status */}
-        <div className="text-[13px]">{statusNode}</div>
+        <div>
+          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${pill.className}`}>
+            {pill.text}
+          </span>
+        </div>
 
         {/* Actions */}
         <div className="relative z-10 ml-auto flex items-center justify-end gap-1" ref={menuRef}>
@@ -769,7 +804,7 @@ function ActivityRow({
       </div>
 
       {expanded && showRoster && (
-        <div className="px-1 pb-4">
+        <div className="border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 md:pl-[4.25rem]">
           {missingStudents.length === 0 ? (
             <p className="text-xs text-zinc-500">Everyone submitted.</p>
           ) : (

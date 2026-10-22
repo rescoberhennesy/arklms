@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, ListChecks } from 'lucide-react';
 import { type ActivityWithStudentState, type ActivityStatus } from '@/lib/types/activities';
 import { type ModuleTerm, MODULE_TERMS, MODULE_TERM_LABELS } from '@/lib/types/modules';
 import { cn } from '@/lib/utils/cn';
@@ -68,18 +68,25 @@ function formatDueTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
 }
 
-function timeHint(a: ActivityWithStudentState): { text: string; className: string } | null {
-  if (a.status === 'missing') return { text: 'Missed', className: 'font-semibold text-red-700' };
-  if (a.status === 'late_window') return { text: 'Past due, late accepted', className: 'font-semibold text-amber-700' };
+/** Colored "due" pill for things still to do. Null when not relevant. */
+function duePill(a: ActivityWithStudentState): { text: string; className: string } | null {
+  if (a.status === 'missing') return { text: 'Overdue', className: 'bg-red-50 text-red-700' };
+  if (a.status === 'late_window') return { text: 'Past due', className: 'bg-amber-50 text-amber-700' };
   if (a.status !== 'open' && a.status !== 'not_started') return null;
   const msLeft = new Date(a.dueAt).getTime() - Date.now();
   if (msLeft <= 0) return null;
   const hours = Math.floor(msLeft / 3_600_000);
   if (hours < 24) {
-    return { text: hours <= 0 ? 'Due within the hour' : `${hours} hour${hours === 1 ? '' : 's'} left`, className: 'font-semibold text-red-700' };
+    return {
+      text: hours <= 0 ? 'Due within the hour' : `Due in ${hours}h`,
+      className: 'bg-red-50 text-red-700',
+    };
   }
   const days = Math.ceil(msLeft / 86_400_000);
-  return { text: `${days} day${days === 1 ? '' : 's'} left`, className: days <= 7 ? 'font-semibold text-amber-700' : 'text-zinc-500' };
+  return {
+    text: `Due in ${days} day${days === 1 ? '' : 's'}`,
+    className: days <= 3 ? 'bg-amber-50 text-amber-700' : 'bg-zinc-100 text-zinc-600',
+  };
 }
 
 export default function StudentActivitiesTab({ classId, activities }: StudentActivitiesTabProps) {
@@ -140,20 +147,20 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
 
   if (activities.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
-        <span className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
           <ClipboardList className="h-6 w-6" />
-        </span>
+        </div>
         <h2 className="text-base font-bold text-zinc-900">No activities yet</h2>
-        <p className="text-sm text-zinc-500">Your teacher hasn&apos;t posted any activities for this class.</p>
+        <p className="max-w-md text-sm text-zinc-600">Your teacher hasn&apos;t posted any activities for this class.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Term tabs */}
-      <div role="tablist" aria-label="Grading period" className="inline-flex rounded-xl border border-zinc-200 bg-white p-1">
+    <div className="space-y-6">
+      {/* Term tabs (same style as the Modules tab) */}
+      <div role="tablist" aria-label="Grading period" className="inline-flex flex-wrap gap-1 rounded-2xl bg-zinc-100 p-1">
         {MODULE_TERMS.map((t) => {
           const active = t === activeTerm;
           return (
@@ -164,10 +171,10 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
               aria-selected={active}
               onClick={() => selectTerm(t)}
               className={cn(
-                'rounded-lg px-4 py-2 text-sm transition',
+                'inline-flex min-h-10 items-center rounded-xl px-5 text-sm transition',
                 active
-                  ? 'bg-red-600 font-semibold text-white shadow-[0_4px_12px_rgba(220,38,38,0.25)]'
-                  : 'font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900',
+                  ? 'bg-white font-bold text-red-700 shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
+                  : 'font-semibold text-zinc-500 hover:text-zinc-900',
               )}
             >
               {MODULE_TERM_LABELS[t]}
@@ -177,7 +184,7 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
       </div>
 
       {/* Table card */}
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
         <div role="tablist" aria-label="Filter activities" className="flex flex-wrap gap-1 border-b border-zinc-100 px-5 py-3">
           {FILTER_KEYS.map((key) => {
             const active = filter === key;
@@ -225,7 +232,7 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
                 ROW_GRID,
               )}
             >
-              <span>Title</span>
+              <span className="pl-12">Title</span>
               <span>Due</span>
               <span>Score</span>
               <span>Status</span>
@@ -245,7 +252,7 @@ export default function StudentActivitiesTab({ classId, activities }: StudentAct
 
 function ActivityRow({ activity, classId }: { activity: ActivityWithStudentState; classId: string }) {
   const isQuiz = activity.activityKind === 'quiz';
-  const hint = timeHint(activity);
+  const due = duePill(activity);
   const href = `/student/classes/${classId}/activities/${activity.id}`;
   const isTodo = FILTER_STATUSES.todo.has(activity.status);
   const isGraded = FILTER_STATUSES.graded.has(activity.status);
@@ -270,30 +277,39 @@ function ActivityRow({ activity, classId }: { activity: ActivityWithStudentState
         ROW_GRID,
       )}
     >
-      {/* Title */}
-      <div className="min-w-0 basis-full md:basis-auto">
-        <Link
-          href={href}
-          className="block truncate text-[15px] font-semibold text-zinc-900 after:absolute after:inset-0 after:content-[''] hover:text-red-700"
-        >
-          {activity.title}
-        </Link>
-        <p className="mt-0.5 truncate text-[13px] text-zinc-500">
-          {isQuiz ? 'Quiz' : 'Activity'}
-          {hint && (
-            <>
-              {' · '}
-              <span className={hint.className}>{hint.text}</span>
-            </>
+      {/* Title (icon + text) */}
+      <div className="flex min-w-0 basis-full items-center gap-3 md:basis-auto">
+        <span
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            isQuiz ? 'bg-purple-50 text-purple-600' : 'bg-red-50 text-red-600',
           )}
-          {activity.allowLate && isTodo && activity.status !== 'late_window' && ' · late accepted'}
-        </p>
+        >
+          {isQuiz ? <ListChecks className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0">
+          <Link
+            href={href}
+            className="block truncate text-[15px] font-bold text-zinc-900 after:absolute after:inset-0 after:content-[''] hover:text-red-700"
+          >
+            {activity.title}
+          </Link>
+          <p className="mt-0.5 truncate text-[13px] text-zinc-500">
+            {isQuiz ? 'Quiz' : 'Activity'}
+            {activity.allowLate && isTodo && activity.status !== 'late_window' && ' · late accepted'}
+          </p>
+        </div>
       </div>
 
       {/* Due */}
       <div className="text-[13px]">
         <span className="font-medium text-zinc-800">{formatDueDate(activity.dueAt)}</span>
         <span className="ml-1 text-zinc-500 md:ml-0 md:block">{formatDueTime(activity.dueAt)}</span>
+        {due && (
+          <span className={cn('mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', due.className)}>
+            {due.text}
+          </span>
+        )}
       </div>
 
       {/* Score */}
@@ -321,7 +337,7 @@ function ActivityRow({ activity, classId }: { activity: ActivityWithStudentState
         <Link
           href={href}
           className={cn(
-            'relative z-10 inline-flex items-center justify-center rounded-lg px-3.5 py-1.5 text-sm font-semibold transition',
+            'relative z-10 inline-flex min-h-9 items-center justify-center rounded-xl px-4 text-sm font-semibold transition',
             action.primary
               ? 'bg-red-600 text-white shadow-[0_4px_12px_rgba(220,38,38,0.22)] hover:bg-red-700'
               : 'border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50',

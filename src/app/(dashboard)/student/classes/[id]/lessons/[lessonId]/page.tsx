@@ -57,7 +57,7 @@ export default async function StudentLessonPage({ params }: PageProps) {
         className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
       >
         <ChevronLeft size={16} />
-        Back to {klass.name}
+        Back to modules
       </Link>
       <StudentLessonView lesson={lesson} hasFlashcards={hasFlashcards} />
 
