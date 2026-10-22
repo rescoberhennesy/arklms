@@ -45,7 +45,11 @@ export type GenerateTextResult = {
 };
 
 /**
- * One-shot text generation with retry on 429/5xx.
+ * One-shot text generation.
+ * - Retries on 429/5xx/timeouts.
+ * - If the main model is overloaded or out of quota, falls back to
+ *   flash-lite (separate, bigger free quota).
+ * - If the DAILY quota is gone, skips straight to the fallback.
  * Returns the full text plus token usage so the caller can log it.
  */
 export async function generateText(
@@ -63,36 +67,58 @@ export async function generateText(
     config.responseSchema = opts.responseSchema;
   }
 
-  const maxAttempts = 3;
+  const fallback = process.env.GEMINI_MODEL_FALLBACK ?? "gemini-2.5-flash-lite";
+  const plan: { model: string; attempts: number }[] =
+    modelName === fallback
+      ? [{ model: modelName, attempts: 3 }]
+      : [
+          { model: modelName, attempts: 2 },
+          { model: fallback, attempts: 2 },
+        ];
+
   let lastErr: unknown;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const res = await client.models.generateContent({
-        model: modelName,
-        // Cast through unknown to satisfy both string and Content[] shapes.
-        // String callers behave exactly as before.
-        contents: opts.prompt as unknown as string,
-        config,
-      });
+  for (const step of plan) {
+    for (let attempt = 1; attempt <= step.attempts; attempt++) {
+      try {
+        const res = await client.models.generateContent({
+          model: step.model,
+          // Cast through unknown to satisfy both string and Content[] shapes.
+          contents: opts.prompt as unknown as string,
+          config,
+        });
 
-      const text = res.text ?? "";
-      const usage = res.usageMetadata;
-      return {
-        text,
-        modelUsed: modelName,
-        tokens: {
-          input: usage?.promptTokenCount ?? 0,
-          output: usage?.candidatesTokenCount ?? 0,
-        },
-      };
-    } catch (err: unknown) {
-      lastErr = err;
-      const msg = err instanceof Error ? err.message : String(err);
-      const retryable = /429|5\d\d|timeout|ECONNRESET/i.test(msg);
-      if (!retryable || attempt === maxAttempts) break;
-      const delayMs = 2 ** (attempt - 1) * 1000;
-      await new Promise((r) => setTimeout(r, delayMs));
+        const text = res.text ?? "";
+        const usage = res.usageMetadata;
+        return {
+          text,
+          modelUsed: step.model,
+          tokens: {
+            input: usage?.promptTokenCount ?? 0,
+            output: usage?.candidatesTokenCount ?? 0,
+          },
+        };
+      } catch (err: unknown) {
+        lastErr = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[ai/client] ${step.model} attempt ${attempt} failed:`,
+          msg.slice(0, 300),
+        );
+
+        const retryable =
+          /429|5\d\d|overloaded|unavailable|RESOURCE_EXHAUSTED|timeout|ECONNRESET/i.test(msg);
+        if (!retryable) {
+          throw AIErrors.geminiFailed(msg);
+        }
+
+        // Daily quota gone: retrying this model won't help, go to the fallback
+        if (/PerDay/i.test(msg)) break;
+
+        if (attempt < step.attempts) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+      }
     }
   }
 
