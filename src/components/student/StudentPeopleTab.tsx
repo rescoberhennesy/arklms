@@ -1,4 +1,6 @@
-import Image from 'next/image';
+'use client';
+
+import { useState } from 'react';
 import type { ClassPeople } from '@/lib/actions/classPeople';
 import type { ClassAvatarInfo } from '@/types/class';
 import { cn } from '@/lib/utils/cn';
@@ -20,9 +22,7 @@ export default function StudentPeopleTab({ people }: Props) {
     <div className="space-y-6">
       {/* Teacher */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-          Teacher
-        </h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Teacher</h2>
         {teacher ? (
           <PersonRow person={teacher} role="teacher" />
         ) : (
@@ -36,9 +36,7 @@ export default function StudentPeopleTab({ people }: Props) {
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
           Classmates{' '}
-          <span className="ml-1 font-normal normal-case text-gray-400">
-            ({sortedClassmates.length})
-          </span>
+          <span className="ml-1 font-normal normal-case text-gray-400">({sortedClassmates.length})</span>
         </h2>
 
         {sortedClassmates.length === 0 ? (
@@ -59,32 +57,16 @@ export default function StudentPeopleTab({ people }: Props) {
   );
 }
 
-function PersonRow({
-  person,
-  role,
-}: {
-  person: ClassAvatarInfo;
-  role: 'teacher' | 'student';
-}) {
+function PersonRow({ person, role }: { person: ClassAvatarInfo; role: 'teacher' | 'student' }) {
   const displayName = person.full_name || person.email || 'Unnamed';
-  const initials = getInitials(displayName);
   const isTeacher = role === 'teacher';
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 px-4 py-3',
-        isTeacher && 'rounded-xl border border-gray-200 bg-white',
-      )}
-    >
+    <div className={cn('flex items-center gap-3 px-4 py-3', isTeacher && 'rounded-xl border border-gray-200 bg-white')}>
       <PersonAvatar person={person} size={isTeacher ? 48 : 40} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">
-          {displayName}
-        </p>
-        {person.email && (
-          <p className="truncate text-xs text-gray-500">{person.email}</p>
-        )}
+        <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
+        {person.email && <p className="truncate text-xs text-gray-500">{person.email}</p>}
       </div>
       {isTeacher && (
         <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
@@ -95,55 +77,42 @@ function PersonRow({
   );
 }
 
-function PersonAvatar({
-  person,
-  size,
-}: {
-  person: ClassAvatarInfo;
-  size: number;
-}) {
+function PersonAvatar({ person, size }: { person: ClassAvatarInfo; size: number }) {
+  const [failed, setFailed] = useState(false);
   const displayName = person.full_name || person.email || 'Unnamed';
   const initials = getInitials(displayName);
 
-  if (person.avatar_url) {
+  if (person.avatar_url && !failed) {
     return (
-      <span
-        className="relative inline-block flex-shrink-0 overflow-hidden rounded-full bg-gray-200"
-        style={{ width: size, height: size }}
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={person.avatar_url}
+        alt={displayName}
         title={displayName}
-      >
-        <Image
-          src={person.avatar_url}
-          alt={displayName}
-          fill
-          sizes={`${size}px`}
-          className="object-cover"
-        />
-      </span>
+        width={size}
+        height={size}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="flex-shrink-0 rounded-full bg-gray-200 object-cover"
+        style={{ width: size, height: size }}
+      />
     );
   }
 
+  // Initials fallback, in theme-friendly neutrals with one red tone
   const palette = [
-    'bg-rose-200 text-rose-800',
-    'bg-amber-200 text-amber-800',
-    'bg-emerald-200 text-emerald-800',
-    'bg-sky-200 text-sky-800',
-    'bg-violet-200 text-violet-800',
-    'bg-pink-200 text-pink-800',
+    'bg-zinc-900 text-white',
+    'bg-zinc-200 text-zinc-800',
+    'bg-red-100 text-red-800',
+    'bg-stone-200 text-stone-800',
+    'bg-zinc-700 text-white',
   ];
   const idx = hashStr(person.id) % palette.length;
 
   return (
     <span
-      className={cn(
-        'inline-flex flex-shrink-0 items-center justify-center rounded-full font-semibold',
-        palette[idx],
-      )}
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.round(size * 0.36),
-      }}
+      className={cn('inline-flex flex-shrink-0 items-center justify-center rounded-full font-semibold', palette[idx])}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}
       title={displayName}
     >
       {initials}

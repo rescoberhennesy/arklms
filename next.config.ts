@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'graph.microsoft.com',
       },
+      // Supabase cloud storage (live site)
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        pathname: '/storage/v1/object/public/**',
+      },
+      // Local Supabase (development)
       {
         protocol: 'http',
         hostname: 'localhost',
@@ -15,7 +22,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Move it here, right at the root of nextConfig
   outputFileTracingIncludes: {
     '/api/ai/quiz/export': [
       './node_modules/pdfkit/js/data/**',
