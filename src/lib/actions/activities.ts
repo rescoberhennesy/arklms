@@ -93,6 +93,8 @@ interface GradeWeightsRow {
   midterm_pct: string | number;
   prefinal_pct: string | number;
   final_pct: string | number;
+  passing_grade: string | number | null;
+  grading_method: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -172,6 +174,8 @@ function mapGradeWeights(r: GradeWeightsRow): ClassGradeWeights {
     midtermPct: Number(r.midterm_pct),
     prefinalPct: Number(r.prefinal_pct),
     finalPct: Number(r.final_pct),
+    passingGrade: r.passing_grade == null ? 75 : Number(r.passing_grade),
+    gradingMethod: r.grading_method === 'deped' ? 'deped' : 'raw',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -917,11 +921,13 @@ export async function getGradeWeights(
 
 export async function createGradeWeights(
   classId: string,
-  weights: {
+    weights: {
     prelimPct: number;
     midtermPct: number;
     prefinalPct: number;
     finalPct: number;
+    passingGrade?: number;
+    gradingMethod?: 'raw' | 'deped';
   },
 ): Promise<ClassGradeWeights> {
   const sum =
@@ -942,6 +948,8 @@ export async function createGradeWeights(
       midterm_pct: weights.midtermPct,
       prefinal_pct: weights.prefinalPct,
       final_pct: weights.finalPct,
+      passing_grade: weights.passingGrade ?? 75,
+      grading_method: weights.gradingMethod ?? 'raw',
     })
     .select('*')
     .single();
@@ -952,11 +960,13 @@ export async function createGradeWeights(
 
 export async function updateGradeWeights(
   classId: string,
-  weights: {
+    weights: {
     prelimPct: number;
     midtermPct: number;
     prefinalPct: number;
     finalPct: number;
+    passingGrade?: number;
+    gradingMethod?: 'raw' | 'deped';
   },
 ): Promise<void> {
   const sum =
@@ -978,6 +988,8 @@ export async function updateGradeWeights(
         midterm_pct: weights.midtermPct,
         prefinal_pct: weights.prefinalPct,
         final_pct: weights.finalPct,
+        passing_grade: weights.passingGrade ?? 75,
+        grading_method: weights.gradingMethod ?? 'raw',
       },
       { onConflict: 'class_id' },
     );

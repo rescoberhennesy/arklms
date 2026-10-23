@@ -154,6 +154,8 @@ export interface ClassGradeWeights {
   midtermPct: number;
   prefinalPct: number;
   finalPct: number;
+  passingGrade: number;
+  gradingMethod: 'raw' | 'deped';
   createdAt: string;
   updatedAt: string;
 }
@@ -170,6 +172,8 @@ export const DEFAULT_GRADE_WEIGHTS: Omit <
   midtermPct: 25,
   prefinalPct: 25,
   finalPct: 25,
+  passingGrade: 75,
+  gradingMethod: 'raw',
 };
 
 // Attachment metadata for submitActivity ------------------------------------

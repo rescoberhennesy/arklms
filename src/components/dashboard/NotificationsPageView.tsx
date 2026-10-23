@@ -46,7 +46,6 @@ export default function NotificationsPageView({
   const [loading, setLoading] = useState(false);
   const [busy, startTransition] = useTransition();
 
-  // New data from live refresh (only when looking at the first page of "All")
   useEffect(() => {
     if (tab === 'all') {
       setItems(initial.items);

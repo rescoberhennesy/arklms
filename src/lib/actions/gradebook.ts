@@ -10,6 +10,7 @@ import {
   getGradeWeights,
 } from '@/lib/actions/activities';
 import { listClassRoster } from '@/lib/actions/enrollments';
+import { transmute } from '@/lib/utils/grading';
 import type {
   SubmissionWithGrade,
   ClassGradeWeights,
@@ -235,6 +236,14 @@ export async function getGradebookView(
           ? (termEarned.final / termPossible.final) * 100
           : null,
     };
+
+    // DepEd transmutation: convert each term's raw % before weighting.
+    if (weights?.gradingMethod === 'deped') {
+      for (const t of MODULE_TERMS) {
+        const v = termPercents[t];
+        termPercents[t] = v === null ? null : transmute(v);
+      }
+    }
 
     let finalPercent: number | null;
     const availableTerms: ModuleTerm[] = MODULE_TERMS.filter(
@@ -881,6 +890,14 @@ export async function getStudentGradebookView(
         ? (termEarned.final / termPossible.final) * 100
         : null,
   };
+
+    // DepEd transmutation: convert each term's raw % before weighting.
+  if (weights?.gradingMethod === 'deped') {
+    for (const t of MODULE_TERMS) {
+      const v = termPercents[t];
+      termPercents[t] = v === null ? null : transmute(v);
+    }
+  }
 
   let finalPercent: number | null;
   const availableTerms: ModuleTerm[] = MODULE_TERMS.filter(
