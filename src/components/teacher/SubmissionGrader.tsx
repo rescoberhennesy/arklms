@@ -10,6 +10,7 @@ import {
   Download,
   Loader2,
   Award,
+  Lock,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -18,11 +19,7 @@ import {
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
-import {
-  AISuggestFeedbackProvider,
-  AISuggestFeedbackButton,
-  AISuggestFeedbackCard,
-} from '@/components/teacher/ai/AISuggestFeedback';
+
 import { markAiGenerationPublished } from '@/lib/actions/aiGenerations';
 import {
   gradeSubmission,
@@ -38,7 +35,8 @@ import type {
 interface SubmissionGraderProps {
   submission: SubmissionWithGrade;
   activity: ActivityWithAllSubmissions;
-  classId: string;
+    classId: string;
+  answerKey?: string;
 }
 
 // Signature used to detect when the server-fetched submission/grade actually
@@ -58,8 +56,9 @@ function gradeSignature(s: SubmissionWithGrade): string {
 
 export default function SubmissionGrader({
   submission,
-  activity,
+    activity,
   classId,
+  answerKey = '',
 }: SubmissionGraderProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -135,13 +134,6 @@ export default function SubmissionGrader({
   function handleFeedbackChange(v: string) {
     editingRef.current = true;
     setFeedback(v);
-    setError(null);
-  }
-
-  function handleAiAccept(suggestedFeedback: string, generationId: string | null) {
-    editingRef.current = true;
-    setFeedback(suggestedFeedback);
-    setPendingGenerationId(generationId);
     setError(null);
   }
 
@@ -363,6 +355,20 @@ export default function SubmissionGrader({
 
       {/* ---- Right column: grading panel -------------------------------- */}
       <div className="space-y-4">
+                {answerKey.trim() && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-gray-700">Answer key</h2>
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                <Lock className="h-3 w-3" />
+                Only you can see this
+              </span>
+            </div>
+            <div className="max-h-80 overflow-y-auto pr-1 text-sm">
+              <MarkdownContent body={answerKey} />
+            </div>
+          </div>
+        )}
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
             <Award className="h-4 w-4" />
@@ -418,35 +424,18 @@ export default function SubmissionGrader({
 
           {/* Feedback — Provider wraps label+button (compact row) AND the
               full-width card+editor, so all three pieces share state. */}
-          <AISuggestFeedbackProvider
-            endpoint="/api/ai/feedback/submission"
-            body={{
-              submissionId: submission.id,
-              score: currentScore ?? 0,
-            }}
-            disabled={currentScore === null || pending}
-            disabledReason="Enter a valid score first"
-            onAccept={handleAiAccept}
-          >
-            <div className="mb-4">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="block text-xs font-medium text-gray-700">
-                  Feedback (optional, markdown)
-                </span>
-                <AISuggestFeedbackButton />
-              </div>
-              <AISuggestFeedbackCard />
-              <div className="mt-2">
-                <MarkdownEditor
-                  value={feedback}
-                  onChange={handleFeedbackChange}
-                  placeholder="Leave feedback for the student..."
-                  rows={6}
-                  disabled={pending}
-                />
-              </div>
-            </div>
-          </AISuggestFeedbackProvider>
+                    <div className="mb-4">
+            <span className="mb-1 block text-xs font-medium text-gray-700">
+              Feedback (optional)
+            </span>
+            <MarkdownEditor
+              value={feedback}
+              onChange={handleFeedbackChange}
+              placeholder="Leave feedback for the student..."
+              rows={6}
+              disabled={pending}
+            />
+          </div>
 
           {/* Error */}
           {error && (

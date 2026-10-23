@@ -4,6 +4,7 @@ import { ChevronLeft } from 'lucide-react';
 import {
   getActivityForTeacher,
   getSubmissionForTeacher,
+  getActivityAnswerKey,
 } from '@/lib/actions/activities';
 import { getClassById } from '@/lib/actions/classes';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
@@ -56,6 +57,7 @@ export default async function SubmissionGradingPage({ params }: PageProps) {
 
   // Submission must belong to this activity.
   if (submission.activityId !== activityId) notFound();
+    const answerKey = await getActivityAnswerKey(activityId).catch(() => '');
 
   return (
     <div className="space-y-6">
@@ -63,11 +65,11 @@ export default async function SubmissionGradingPage({ params }: PageProps) {
         title={`${submission.studentName || submission.studentEmail} — ${activity.title}`}
       />
       <Link
-        href={`/teacher/classes/${classId}/activities/${activityId}`}
+        href={`/teacher/classes/${classId}/activities/${activityId}?tab=submissions`}
         className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
       >
         <ChevronLeft size={16} />
-        Back to {activity.title}
+        Back to submissions
       </Link>
 
       <div className="text-xs text-gray-500">
@@ -79,6 +81,7 @@ export default async function SubmissionGradingPage({ params }: PageProps) {
         submission={submission}
         activity={activity}
         classId={classId}
+        answerKey={answerKey}
       />
     </div>
   );
