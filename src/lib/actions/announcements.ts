@@ -354,7 +354,7 @@ export async function listRecentAnnouncementsAcrossClasses(
     .from('class_announcements')
     .select(`
       id, class_id, body, pinned, created_at,
-      author:author_id ( full_name ),
+      author:author_id ( id, full_name, avatar_url ),
       class:class_id ( name, color )
     `)
     .order('pinned', { ascending: false })
@@ -374,5 +374,7 @@ export async function listRecentAnnouncementsAcrossClasses(
     pinned: row.pinned,
     createdAt: row.created_at,
     authorName: row.author?.full_name ?? null,
+    authorId: row.author?.id ?? null,
+    authorAvatarUrl: row.author?.avatar_url ?? null,
   }));
 }

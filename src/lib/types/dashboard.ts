@@ -103,4 +103,6 @@ export interface RecentAnnouncementItem {
   pinned: boolean;
   createdAt: string;
   authorName: string | null;
+  authorId: string | null;
+  authorAvatarUrl: string | null;
 }

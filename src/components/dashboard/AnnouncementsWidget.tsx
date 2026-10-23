@@ -8,6 +8,7 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { Pin } from 'lucide-react';
+import { PersonAvatar } from '@/components/dashboard/ProfileCard';
 import type { RecentAnnouncementItem } from '@/lib/types/dashboard';
 
 interface AnnouncementsWidgetProps {
@@ -38,16 +39,6 @@ function previewBody(body: string, maxChars = 110): string {
   return flat.slice(0, maxChars - 1).trimEnd() + '…';
 }
 
-function initials(name: string | null): string {
-  if (!name) return '•';
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join('');
-}
-
 export default function AnnouncementsWidget({ items, classesBasePath }: AnnouncementsWidgetProps) {
   const rows = useMemo(() => items, [items]);
 
@@ -71,9 +62,12 @@ export default function AnnouncementsWidget({ items, classesBasePath }: Announce
                 href={`${classesBasePath}/${item.classId}`}
                 className="group flex items-start gap-3 rounded-xl p-2.5 transition hover:bg-zinc-50"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-[11px] font-bold text-white">
-                  {initials(item.authorName)}
-                </span>
+                  <PersonAvatar
+                  id={item.authorId ?? item.id}
+                  name={item.authorName ?? 'Teacher'}
+                  url={item.authorAvatarUrl}
+                  size={36}
+                />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     {item.pinned && <Pin className="h-3 w-3 shrink-0 text-zinc-500" aria-label="Pinned" />}

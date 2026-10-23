@@ -410,7 +410,7 @@ export async function getTeacherTodoItems(
       .from('quiz_questions')
       .select('id')
       .in('activity_id', attActIds)
-      .in('question_kind', ['essay', 'short_answer']);
+      .eq('question_kind', 'essay');
     if (mqErr) throw new Error(mqErr.message);
     const manualQuestionIds = new Set(
       (mQuestionRows ?? []).map((r) => (r as { id: string }).id),

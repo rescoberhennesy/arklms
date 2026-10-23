@@ -6,6 +6,7 @@ import {
   XCircle,
   Award,
   Loader2,
+  Pencil,
   ArrowRight,
   HelpCircle,
   AlarmClock,
@@ -240,34 +241,42 @@ interface ReviewRowProps {
 }
 
 function ReviewRow({ index, question: q, response: r }: ReviewRowProps) {
-  const verdict: 'correct' | 'incorrect' | 'manual' | 'unanswered' = (() => {
+  const earned =
+    r?.manualPoints !== undefined && r?.manualPoints !== null
+      ? r.manualPoints
+      : (r?.autoPoints ?? 0);
+
+  // Teacher changed the auto-checked score for this question.
+  const adjusted = !!r && q.questionKind !== 'essay' && r.manualPoints !== null;
+  const autoEarned = r?.autoPoints ?? 0;
+
+  // Verdict follows the FINAL score, not just the auto-check.
+  const verdict: 'correct' | 'partial' | 'incorrect' | 'manual' | 'unanswered' = (() => {
     if (!r) return 'unanswered';
-    if (q.questionKind === 'essay') {
-      return r.manualPoints !== null && r.manualPoints > 0
-        ? 'correct'
-        : r.manualPoints === null
-          ? 'manual'
-          : 'incorrect';
+    if (q.questionKind === 'essay' && r.manualPoints === null) return 'manual';
+    if (q.questionKind === 'essay' || adjusted) {
+      if (earned >= q.points) return 'correct';
+      if (earned > 0) return 'partial';
+      return 'incorrect';
     }
     if (r.autoCorrect === true) return 'correct';
     if (r.autoCorrect === false) return 'incorrect';
     return 'manual';
   })();
 
-  const earned =
-    r?.manualPoints !== undefined && r?.manualPoints !== null
-      ? r.manualPoints
-      : (r?.autoPoints ?? 0);
-
   return (
     <li className="rounded-md border border-gray-100 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+        <span className="inline-flex flex-wrap items-center gap-2 text-sm font-medium text-gray-700">
           <span className="text-xs text-gray-400">Q{index + 1}</span>
           {verdict === 'correct' ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
               <CheckCircle2 className="h-3 w-3" />
               Correct
+            </span>
+          ) : verdict === 'partial' ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              Partly correct
             </span>
           ) : verdict === 'incorrect' ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
@@ -283,8 +292,20 @@ function ReviewRow({ index, question: q, response: r }: ReviewRowProps) {
               Unanswered
             </span>
           )}
+          {adjusted && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800"
+              title={`The automatic check gave ${autoEarned}/${q.points}. Your teacher changed it to ${earned}/${q.points}.`}
+            >
+              <Pencil className="h-3 w-3" />
+              Adjusted by teacher
+            </span>
+          )}
         </span>
         <span className="text-xs text-gray-500">
+          {adjusted && autoEarned !== earned && (
+            <span className="mr-1 text-gray-400 line-through">{autoEarned}</span>
+          )}
           {earned} / {q.points}
         </span>
       </div>
@@ -297,16 +318,21 @@ function ReviewRow({ index, question: q, response: r }: ReviewRowProps) {
 
       <ReviewAnswerDetail question={q} response={r} />
 
+      {adjusted && (
+        <p className="mt-2 text-xs text-purple-800">
+          Your teacher reviewed this answer and changed the score from {autoEarned} to {earned}.
+        </p>
+      )}
+
       {r?.feedback && r.feedback.trim() && (
         <div className="mt-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-          <p className="mb-0.5 font-medium">Teacher feedback</p>
+          <p className="mb-0.5 font-medium">Teacher&apos;s note</p>
           <MarkdownContent body={r.feedback} />
         </div>
       )}
     </li>
   );
 }
-
 function ReviewAnswerDetail({
   question: q,
   response: r,
