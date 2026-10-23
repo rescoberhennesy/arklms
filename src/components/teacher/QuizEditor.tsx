@@ -9,6 +9,8 @@ import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
 import QuestionRow, { QuestionEditModal } from '@/components/teacher/QuestionEditor';
 import AIQuizGenerator from '@/components/teacher/ai/AIQuizGenerator';
 import QuizAttemptsPanel from '@/components/teacher/QuizAttemptsPanel';
+import { useSearchParams } from 'next/navigation';
+import type { RosterStudent } from '@/components/teacher/SubmissionsOverview';
 import {
   updateActivity,
   setActivityTerm,
@@ -52,6 +54,7 @@ interface QuizEditorProps {
   initialQuizView: TeacherQuizView;
   initialAttempts: QuizAttemptListItem[];
   initialAttachments: ActivityAttachment[];
+  roster: RosterStudent[];
 }
 
 type PreparedSettings = {
@@ -106,11 +109,15 @@ export default function QuizEditor({
   initialQuizView,
   initialAttempts,
   initialAttachments,
+  roster,
 }: QuizEditorProps) {
   const router = useRouter();
   const activitiesHref = `/teacher/classes/${classId}?tab=activities`;
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'edit' | 'attempts'>('edit');
+    const searchParams = useSearchParams();
+  const [tab, setTab] = useState<'edit' | 'attempts'>(
+    ['attempts', 'submissions'].includes(searchParams.get('tab') ?? '') ? 'attempts' : 'edit',
+  );
   const [isPending, startTransition] = useTransition();
   const [isFinishing, startFinishing] = useTransition();
   const [finishing, setFinishing] = useState<FinishAction | null>(null);
@@ -154,6 +161,8 @@ export default function QuizEditor({
     autoReleaseGrade !== savedAutoReleaseGrade ||
     showCorrectAnswers !== savedShowCorrectAnswers ||
     allowLate !== savedAllowLate;
+  
+    const hasChanges = isDescDirty || isSettingsDirty;
 
   const [addingKind, setAddingKind] = useState<QuestionKind | ''>('');
   const [addCount, setAddCount] = useState('5');
@@ -563,6 +572,7 @@ export default function QuizEditor({
         <HeaderActions
           published={activity.published}
           busy={busy}
+          dirty={hasChanges}
           finishing={isFinishing ? finishing : null}
           onFinish={handleFinish}
           onUnpublish={() => setConfirmUnpublish(true)}
@@ -586,6 +596,8 @@ export default function QuizEditor({
           classId={classId}
           quizTotalPoints={Number(quizView.config.quizTotalPoints ?? totalPoints)}
           initialAttempts={initialAttempts}
+          roster={roster}
+          dueAt={activity.dueAt}
         />
       ) : (
         <>

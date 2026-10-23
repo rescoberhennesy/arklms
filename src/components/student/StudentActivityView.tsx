@@ -281,8 +281,8 @@ export default function StudentActivityView({
           );
         } else if (result.isLate) {
           setNotice('Submitted as a late submission.');
-        } else {
-          setNotice('Submitted.');
+                } else {
+          setNotice(null);
         }
         router.refresh();
       } catch (e) {
@@ -380,9 +380,6 @@ export default function StudentActivityView({
           </span>
           <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-600">
             {MODULE_TERM_LABELS[activity.term]}
-          </span>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusPill.className}`}>
-            {statusPill.label}
           </span>
         </div>
         <h1 className="text-2xl font-bold text-zinc-900">{activity.title}</h1>

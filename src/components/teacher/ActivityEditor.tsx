@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -16,6 +17,7 @@ import {
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
 import { ConfirmDialog } from '@/components/teacher/ConfirmDialog';
+import SubmissionsOverview, { initialsOf, type RosterStudent } from '@/components/teacher/SubmissionsOverview';
 import AIActivityPromptModal from '@/components/teacher/ai/AIActivityPromptModal';
 import {
   updateActivity,
@@ -54,6 +56,7 @@ interface ActivityEditorProps {
   classId: string;
   initialAttachments: ActivityAttachment[];
   initialAnswerKey: string;
+  roster: RosterStudent[];
 }
 
 type UpdatePatch = Parameters<typeof updateActivity>[1];
@@ -104,11 +107,15 @@ export default function ActivityEditor({
   classId,
   initialAttachments,
   initialAnswerKey,
+  roster,
 }: ActivityEditorProps) {
   const router = useRouter();
   const activitiesHref = `/teacher/classes/${classId}?tab=activities`;
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'edit' | 'submissions'>('edit');
+    const searchParams = useSearchParams();
+  const [tab, setTab] = useState<'edit' | 'submissions'>(
+    searchParams.get('tab') === 'submissions' ? 'submissions' : 'edit',
+  );
 
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(activity.title);
@@ -129,6 +136,7 @@ export default function ActivityEditor({
   const [savedAnswerKey, setSavedAnswerKey] = useState(initialAnswerKey);
   const [answerKeyEditing, setAnswerKeyEditing] = useState(false);
   const isAnswerKeyDirty = answerKey !== savedAnswerKey;
+    
 
   // Settings
   const [maxPoints, setMaxPoints] = useState(String(activity.maxPoints));
@@ -157,10 +165,14 @@ export default function ActivityEditor({
     allowResubmission !== savedAllowResubmission ||
     (allowResubmission && maxAttempts !== savedMaxAttempts);
 
+    const hasChanges =
+    isInstructionsDirty || isPromptDirty || isAnswerKeyDirty || isSettingsDirty;
+
   const [isPending, startTransition] = useTransition();
   const [isFinishing, startFinishing] = useTransition();
   const [finishing, setFinishing] = useState<FinishAction | null>(null);
-  const busy = isPending || isFinishing;
+    const busy = isPending || isFinishing;
+    
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
@@ -546,6 +558,7 @@ export default function ActivityEditor({
         <HeaderActions
           published={activity.published}
           busy={busy}
+          dirty={hasChanges}
           finishing={isFinishing ? finishing : null}
           onFinish={handleFinish}
           onUnpublish={() => setConfirmUnpublish(true)}
@@ -564,12 +577,11 @@ export default function ActivityEditor({
       />
 
       {tab === 'submissions' ? (
-        <SubmissionsPanel
+           <SubmissionsPanel
           activity={activity}
           classId={classId}
+          roster={roster}
           unreturnedCount={unreturnedCount}
-          gradedCount={gradedCount}
-          submissionCount={submissionCount}
           onReturnAll={handleReturnAll}
           isPending={busy}
         />
@@ -974,115 +986,188 @@ function InlineSaveBar({
 }
 
 // ============================================================================
-// Submissions panel
+// Submissions panel (overview + every student, including missing)
 // ============================================================================
 
-interface SubmissionsPanelProps {
-  activity: ActivityWithAllSubmissions;
-  classId: string;
-  unreturnedCount: number;
-  gradedCount: number;
-  submissionCount: number;
-  onReturnAll: () => void;
-  isPending: boolean;
-}
+type SubFilter = 'all' | 'to_grade' | 'graded' | 'missing';
 
 function SubmissionsPanel({
   activity,
   classId,
+  roster,
   unreturnedCount,
-  gradedCount,
-  submissionCount,
   onReturnAll,
   isPending,
-}: SubmissionsPanelProps) {
-  return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-zinc-600">
-          {submissionCount} total · {gradedCount} graded · {unreturnedCount} awaiting release
-        </p>
-        {unreturnedCount > 0 && (
-          <button
-            type="button"
-            onClick={onReturnAll}
-            disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
-            Release all {unreturnedCount} grade{unreturnedCount === 1 ? '' : 's'}
-          </button>
-        )}
-      </div>
-
-      {submissionCount === 0 ? (
-        <p className="py-6 text-center text-sm text-zinc-500">No submissions yet.</p>
-      ) : (
-        <ul className="divide-y divide-zinc-100">
-          {activity.submissions.map((s: SubmissionWithGrade) => (
-            <SubmissionRow key={s.id} submission={s} activity={activity} classId={classId} />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-interface SubmissionRowProps {
-  submission: SubmissionWithGrade;
+}: {
   activity: ActivityWithAllSubmissions;
   classId: string;
-}
+  roster: RosterStudent[];
+  unreturnedCount: number;
+  onReturnAll: () => void;
+  isPending: boolean;
+}) {
+  const [filter, setFilter] = useState<SubFilter>('all');
+  const pastDue = Date.now() > new Date(activity.dueAt).getTime();
 
-function SubmissionRow({ submission, activity, classId }: SubmissionRowProps) {
-  const grade = submission.grade;
-  const attachmentCount = submission.attachments.length;
-
-  let statusPill: { className: string; label: string };
-  if (!grade) {
-    statusPill = submission.isLate
-      ? { className: 'bg-amber-50 text-amber-700', label: 'Submitted (late)' }
-      : { className: 'bg-blue-50 text-blue-700', label: 'Submitted' };
-  } else if (!grade.returnedAt) {
-    statusPill = { className: 'bg-purple-50 text-purple-700', label: 'Graded (not released)' };
-  } else {
-    statusPill = { className: 'bg-emerald-50 text-emerald-700', label: 'Graded and released' };
+  // Latest attempt per student
+  const latest = new Map<string, SubmissionWithGrade>();
+  for (const s of activity.submissions) {
+    const prev = latest.get(s.studentId);
+    if (!prev || s.attemptNumber > prev.attemptNumber) latest.set(s.studentId, s);
   }
 
-  return (
-    <li className="flex items-center gap-3 py-3">
-      <div className="min-w-0 flex-1">
-        <Link
-          href={`/teacher/classes/${classId}/activities/${activity.id}/submissions/${submission.id}`}
-          className="block truncate text-sm font-semibold text-zinc-900 hover:text-red-600"
-        >
-          {submission.studentName || submission.studentEmail || 'Unknown'}
-        </Link>
-        <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-          <span>{new Date(submission.submittedAt).toLocaleString()}</span>
-          {activity.maxAttempts > 1 && (
-            <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
-              Attempt {submission.attemptNumber} / {activity.maxAttempts}
-            </span>
-          )}
-          {attachmentCount > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Paperclip className="h-3 w-3" />
-              {attachmentCount} file{attachmentCount === 1 ? '' : 's'}
-            </span>
-          )}
-          {grade && (
-            <span>
-              <span className="font-semibold text-zinc-700">{grade.score}</span>
-              <span className="text-zinc-400"> / {activity.maxPoints}</span>
-            </span>
-          )}
-        </div>
-      </div>
+  type Row =
+    | { kind: 'sub'; key: string; name: string; sub: SubmissionWithGrade }
+    | { kind: 'missing'; key: string; name: string };
+  const rows: Row[] = [];
+  for (const s of latest.values()) {
+    rows.push({ kind: 'sub', key: s.id, name: s.studentName || s.studentEmail || 'Unknown', sub: s });
+  }
+  for (const r of roster) {
+    if (!latest.has(r.student_id)) {
+      rows.push({ kind: 'missing', key: r.student_id, name: r.full_name ?? r.email ?? 'Unknown' });
+    }
+  }
+  rows.sort((a, b) => a.name.localeCompare(b.name));
 
-      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusPill.className}`}>
-        {statusPill.label}
-      </span>
-    </li>
+  const toGrade = rows.filter((r) => r.kind === 'sub' && !r.sub.grade).length;
+  const graded = rows.filter((r) => r.kind === 'sub' && r.sub.grade).length;
+  const missing = rows.filter((r) => r.kind === 'missing').length;
+  const submitted = latest.size;
+  const total = Math.max(roster.length, submitted);
+
+  const visible = rows.filter((r) => {
+    if (filter === 'to_grade') return r.kind === 'sub' && !r.sub.grade;
+    if (filter === 'graded') return r.kind === 'sub' && !!r.sub.grade;
+    if (filter === 'missing') return r.kind === 'missing';
+    return true;
+  });
+
+  const chips: { key: SubFilter; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: rows.length },
+    { key: 'to_grade', label: 'To grade', count: toGrade },
+    { key: 'graded', label: 'Graded', count: graded },
+    { key: 'missing', label: pastDue ? 'Missing' : 'Not yet', count: missing },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <SubmissionsOverview
+        total={total}
+        submitted={submitted}
+        toGrade={toGrade}
+        graded={graded}
+        missing={missing}
+        dueAt={activity.dueAt}
+        unreleased={unreturnedCount}
+        onRelease={onReturnAll}
+        releasing={isPending}
+      />
+
+      <section className="rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-wrap gap-1 border-b border-zinc-100 px-4 py-3">
+          {chips.map((c) => {
+            const active = filter === c.key;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setFilter(c.key)}
+                className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
+                  active ? 'bg-zinc-900 font-semibold text-white' : 'font-medium text-zinc-600 hover:bg-zinc-100'
+                }`}
+              >
+                {c.label} <span className={active ? 'text-white/60' : 'text-zinc-400'}>{c.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {visible.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-zinc-500">
+            {rows.length === 0 ? 'No students in this class yet.' : 'Nobody here.'}
+          </p>
+        ) : (
+          <ul className="divide-y divide-zinc-100">
+            {visible.map((r) => {
+              if (r.kind === 'missing') {
+                return (
+                  <li key={r.key} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-semibold text-zinc-400">
+                      {initialsOf(r.name)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-zinc-600">{r.name}</p>
+                      <p className="text-xs text-zinc-400">No submission yet</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        pastDue ? 'bg-amber-50 text-amber-700' : 'bg-zinc-100 text-zinc-500'
+                      }`}
+                    >
+                      {pastDue ? 'Missing' : 'Not yet'}
+                    </span>
+                  </li>
+                );
+              }
+              const s = r.sub;
+              const pill = !s.grade
+                ? { label: 'To grade', cls: 'bg-red-50 text-red-700' }
+                : !s.grade.returnedAt
+                  ? { label: 'Not released', cls: 'bg-purple-50 text-purple-700' }
+                  : { label: 'Graded', cls: 'bg-emerald-50 text-emerald-700' };
+              return (
+                <li key={r.key}>
+                  <Link
+                    href={`/teacher/classes/${classId}/activities/${activity.id}/submissions/${s.id}`}
+                    className="flex items-center gap-3 px-4 py-3 transition hover:bg-zinc-50"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-700">
+                      {initialsOf(r.name)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-zinc-900">{r.name}</p>
+                      <p className="flex flex-wrap gap-x-2 text-xs text-zinc-500">
+                        <span>
+                          {new Date(s.submittedAt).toLocaleString('en-PH', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        {s.isLate && <span className="font-semibold text-amber-700">Late</span>}
+                        {activity.maxAttempts > 1 && (
+                          <span>
+                            Attempt {s.attemptNumber}/{activity.maxAttempts}
+                          </span>
+                        )}
+                        {s.attachments.length > 0 && (
+                          <span className="inline-flex items-center gap-1">
+                            <Paperclip className="h-3 w-3" />
+                            {s.attachments.length}
+                          </span>
+                        )}
+                        {s.grade && (
+                          <span className="font-semibold text-zinc-700">
+                            {s.grade.score} / {activity.maxPoints}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${pill.cls}`}>
+                      {pill.label}
+                    </span>
+                    <span className={`text-xs font-bold ${s.grade ? 'text-zinc-500' : 'text-red-600'}`}>
+                      {s.grade ? 'View' : 'Grade'}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }

@@ -15,6 +15,7 @@ import {
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import ActivityEditor from '@/components/teacher/ActivityEditor';
 import QuizEditor from '@/components/teacher/QuizEditor';
+import { listClassRoster } from '@/lib/actions/enrollments';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,10 +51,11 @@ export default async function ActivityDetailPage({ params }: PageProps) {
   // assignment-only restriction was dropped). Quiz teachers can attach
   // formula sheets, reference docs, etc.
   if (isQuiz) {
-    const [quizView, quizAttempts, attachments] = await Promise.all([
+        const [quizView, quizAttempts, attachments, roster] = await Promise.all([
       getTeacherQuizView(activityId),
       listQuizAttemptsForQuiz(activityId),
       listActivityAttachments(activityId),
+      listClassRoster(classId),
     ]);
 
     return (
@@ -73,15 +75,17 @@ export default async function ActivityDetailPage({ params }: PageProps) {
           initialQuizView={quizView}
           initialAttempts={quizAttempts}
           initialAttachments={attachments}
+          roster={roster}
         />
       </div>
     );
   }
 
   // Assignment branch
-    const [attachments, answerKey] = await Promise.all([
+      const [attachments, answerKey, roster] = await Promise.all([
     listActivityAttachments(activityId),
     getActivityAnswerKey(activityId),
+    listClassRoster(classId),
   ]);
 
   return (
@@ -100,6 +104,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         classId={classId}
         initialAttachments={attachments}
         initialAnswerKey={answerKey}
+        roster={roster}
       />
     </div>
   );

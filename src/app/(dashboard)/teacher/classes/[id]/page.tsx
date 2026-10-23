@@ -14,7 +14,7 @@ import InviteCodeStrip from '@/components/teacher/InviteCodeStrip';
 import { StudentsTab } from '@/components/teacher/StudentsTab';
 import ModulesTab from '@/components/teacher/ModulesTab';
 import ActivitiesTab from '@/components/teacher/ActivitiesTab';
-import TeacherProgressStrip from '@/components/teacher/TeacherProgressStrip';
+
 import GradebookTab from '@/components/teacher/GradebookTab';
 import AnalyticsTab from '@/components/teacher/AnalyticsTab';
 import {
@@ -183,21 +183,12 @@ export default async function ClassDetailPage({
           <ModulesTab classId={klass.id} initialModules={modules} />
         )}
 
-        {tab === 'activities' && (
-          // Side panel only on extra-wide screens; below the list otherwise,
-          // so the list always gets enough room.
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-            <div className="min-w-0">
-              <ActivitiesTab
-                classId={klass.id}
-                activities={activities}
-                roster={activitiesRoster}
-              />
-            </div>
-            <aside className="min-w-0 xl:sticky xl:top-20">
-              <TeacherProgressStrip classId={klass.id} activities={activities} />
-            </aside>
-          </div>
+                {tab === 'activities' && (
+          <ActivitiesTab
+            classId={klass.id}
+            activities={activities}
+            roster={activitiesRoster}
+          />
         )}
 
         {tab === 'students' && (

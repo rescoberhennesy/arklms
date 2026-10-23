@@ -25,6 +25,7 @@ export const editorCheckboxClass =
 export function HeaderActions({
   published,
   busy,
+  dirty,
   finishing,
   onFinish,
   onUnpublish,
@@ -32,7 +33,8 @@ export function HeaderActions({
   deleteLabel,
 }: {
   published: boolean;
-  busy: boolean;
+  busy: boolean;  
+  dirty: boolean;
   finishing: FinishAction | null;
   onFinish: (action: FinishAction) => void;
   onUnpublish: () => void;
@@ -53,11 +55,19 @@ export function HeaderActions({
             <EyeOff className="h-4 w-4" />
             Unpublish
           </button>
-          <span className="text-xs text-zinc-400">or</span>
-          <button type="button" onClick={() => onFinish('save')} disabled={busy} className={primary}>
-            {finishing === 'save' ? spin : <Save className="h-4 w-4" />}
-            Save changes
-          </button>
+                    {dirty ? (
+            <>
+              <span className="text-xs text-zinc-400">or</span>
+              <button type="button" onClick={() => onFinish('save')} disabled={busy} className={primary}>
+                {finishing === 'save' ? spin : <Save className="h-4 w-4" />}
+                Save changes
+              </button>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+              ✓ All changes saved
+            </span>
+          )}
         </>
       ) : (
         <>

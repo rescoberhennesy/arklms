@@ -726,9 +726,9 @@ function ActivityRow({
 
         {/* Actions */}
         <div className="relative z-10 flex shrink-0 items-center gap-1" ref={menuRef}>
-          {ungradedCount > 0 && (
+                    {ungradedCount > 0 && (
             <Link
-              href={href}
+              href={`${href}?tab=submissions`}
               className="hidden rounded-md px-2 py-1.5 text-[13px] font-bold text-red-600 transition hover:bg-red-50 @md:inline-flex"
             >
               Grade
@@ -751,7 +751,7 @@ function ActivityRow({
               className="absolute right-0 top-full z-30 mt-1 w-52 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
             >
               <Link
-                href={href}
+                href={ungradedCount > 0 ? `${href}?tab=submissions` : href}
                 role="menuitem"
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
               >
