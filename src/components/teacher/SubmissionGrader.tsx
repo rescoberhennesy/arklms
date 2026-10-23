@@ -155,7 +155,7 @@ export default function SubmissionGrader({
         }
         editingRef.current = false;
         setPendingGenerationId(null);
-        router.refresh();
+                router.push(`/teacher/classes/${classId}/activities/${activity.id}?tab=submissions`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to save grade');
       }
@@ -238,6 +238,12 @@ export default function SubmissionGrader({
   }
 
   const currentScore = parseScore();
+
+    // Has the teacher changed anything since the last save?
+  const isDirty =
+    scoreInput !== (grade ? String(grade.score) : '') ||
+    feedback !== (grade?.feedback ?? '');
+  const releasedAndUnchanged = isReleased && !isDirty;
 
   // ---- Render -----------------------------------------------------------
 
@@ -444,30 +450,35 @@ export default function SubmissionGrader({
             </div>
           )}
 
-          {/* Action buttons */}
+                    {/* Action buttons */}
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={handleSaveAndRelease}
-              disabled={pending}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              {isReleased ? 'Save & re-release' : 'Save & release'}
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={pending}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              <Save className="h-4 w-4" />
-              Save draft
-            </button>
+            {releasedAndUnchanged ? (
+              <div className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" />
+                Released
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSaveAndRelease}
+                disabled={pending}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {isReleased ? 'Save & re-release' : 'Save & release'}
+              </button>
+            )}
+            {!releasedAndUnchanged && (
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={pending || (!!grade && !isDirty)}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                <Save className="h-4 w-4" />
+                {grade && !isDirty ? 'Saved as draft' : 'Save draft'}
+              </button>
+            )}
             {grade && (
               <button
                 type="button"
