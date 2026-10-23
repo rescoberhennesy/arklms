@@ -1,7 +1,5 @@
 // src/app/(dashboard)/teacher/classes/[id]/activities/[activityId]/attempts/[attemptId]/page.tsx
 import { notFound, redirect } from 'next/navigation';
-import Link from 'next/link';
-import { ChevronLeft } from 'lucide-react';
 import {
   getActivityForTeacher,
 } from '@/lib/actions/activities';
@@ -32,7 +30,7 @@ export default async function QuizAttemptGradingPage({ params }: PageProps) {
 
   const classRes = await getClassById(classId);
   if (!classRes.ok || !classRes.data) notFound();
-  const klass = classRes.data;
+
 
   // Validate the activity is a quiz owned by this teacher and belongs to
   // this class. Mirrors the SubmissionGradingPage check.
@@ -72,19 +70,6 @@ export default async function QuizAttemptGradingPage({ params }: PageProps) {
       <SetPageTitle
         title={`${view.studentName || view.studentEmail || 'Attempt'} — ${activity.title}`}
       />
-
-      <Link
-        href={`/teacher/classes/${classId}/activities/${activityId}`}
-        className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
-      >
-        <ChevronLeft size={16} />
-        Back to {activity.title}
-      </Link>
-
-      <div className="text-xs text-gray-500">
-        {klass.name}
-        {klass.section ? ` · ${klass.section}` : ''}
-      </div>
 
       <QuizAttemptGrader view={view} />
     </div>

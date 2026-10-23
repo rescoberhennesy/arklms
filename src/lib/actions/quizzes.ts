@@ -708,7 +708,7 @@ export async function listQuizAttemptsForQuiz(
     .from('quiz_questions')
     .select('id')
     .eq('activity_id', activityId)
-    .in('question_kind', ['essay', 'short_answer']);
+    .eq('question_kind', 'essay');
   if (mqErr) throw new Error(mqErr.message);
   const manualQuestionIds = new Set(
     (manualQuestionRows ?? []).map((r) => (r as { id: string }).id),
