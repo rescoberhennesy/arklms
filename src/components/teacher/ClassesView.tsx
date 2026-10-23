@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Plus, Check, Search, BookOpen, SearchX } from 'lucide-react';
 import { ClassCard } from './ClassCard';
 import { ClassFormModal } from './ClassFormModal';
+import IncomingTransfers from '@/components/teacher/IncomingTransfers';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   createClass,
@@ -205,6 +206,8 @@ export function ClassesView({
           Create class
         </button>
       </div>
+
+            <IncomingTransfers />
 
       {/* Toolbar: search (left) + segmented filter (right) */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

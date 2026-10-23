@@ -4,6 +4,8 @@ import { ChevronLeft } from 'lucide-react';
 import { getClassById } from '@/lib/actions/classes';
 import { InviteCodePanel } from '@/components/teacher/InviteCodePanel';
 import SettingsActions from '@/components/teacher/SettingsActions';
+import TransferClassPanel from '@/components/teacher/TransferClassPanel';
+import { getPendingTransfer } from '@/lib/actions/classTransfers';
 import SetPageTitle from '@/components/dashboard/SetPageTitle';
 import ClassColorPicker from '@/components/teacher/ClassColorPicker';
 
@@ -23,6 +25,7 @@ export default async function ClassSettingsPage({ params }: PageProps) {
   if (!res.ok) notFound();
   const klass = res.data;
   if (!klass) notFound();
+    const pendingTransfer = await getPendingTransfer(klass.id);
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-6 sm:px-6">
@@ -63,6 +66,13 @@ export default async function ClassSettingsPage({ params }: PageProps) {
         />
       </SettingsSection>
 
+      <SettingsSection
+        title="Transfer class"
+        description="Leaving or handing over this class? Send it to the replacement teacher. They must accept first."
+      >
+        <TransferClassPanel classId={klass.id} pending={pendingTransfer} />
+      </SettingsSection>
+      
       <SettingsSection
         title="Danger zone"
         description="These actions affect the whole class. Some are permanent."

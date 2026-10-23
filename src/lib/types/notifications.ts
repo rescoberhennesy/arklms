@@ -15,6 +15,7 @@ import {
   ThumbsUp,
   UserPlus,
   UserCheck,
+  ArrowRightLeft,
   BookOpen,
   FileText,
   ClipboardList,
@@ -46,6 +47,10 @@ export const NOTIFICATION_TYPES = [
   'account_new',       // new student/teacher signup → admins
   'class_created',     // teacher created a class → admins
   'enrollment_new',    // student enrolled → admins + teacher
+    // Class handover
+  'class_transfer_request',  // teacher → replacement teacher
+  'class_transfer_update',   // accepted/declined/IT-assigned → teacher
+  'class_teacher_changed',   // new teacher → enrolled students
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -129,6 +134,19 @@ export const NOTIFICATION_DISPLAY: Record<NotificationType, NotificationDisplayM
   enrollment_new: {
     icon: GraduationCap,
     iconClassName: 'text-indigo-600 bg-indigo-50',
+  },
+
+    class_transfer_request: {
+    icon: ArrowRightLeft,
+    iconClassName: 'text-amber-600 bg-amber-50',
+  },
+  class_transfer_update: {
+    icon: ArrowRightLeft,
+    iconClassName: 'text-amber-600 bg-amber-50',
+  },
+  class_teacher_changed: {
+    icon: UserCheck,
+    iconClassName: 'text-amber-600 bg-amber-50',
   },
 
 };
