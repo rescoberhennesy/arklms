@@ -7,6 +7,7 @@ import TopNavbar from '@/components/dashboard/TopNavbar'
 import NextTopLoader from 'nextjs-toploader'
 import { getUnreadMessageCount } from '@/lib/actions/messages'
 import NotificationBell from '@/components/dashboard/NotificationBell'
+import RealtimeRefresh from '@/components/dashboard/RealtimeRefresh';
 import MessagesButton from '@/components/dashboard/MessagesButton'
 import { getTeacherUngradedCount } from '@/lib/actions/dashboard'
 import type { Profile } from '@/types/user'
@@ -72,6 +73,7 @@ export default async function DashboardLayout({
                 ) : null
               }
             />
+            <RealtimeRefresh />
             <main className="flex-1 overflow-auto px-4 sm:px-8 py-6 lg:py-8">
               {children}
             </main>
