@@ -277,6 +277,9 @@ function ThreadPane({ thread, basePath }: { thread: Thread; basePath: string }) 
   const waitingForAccept = status === 'pending' && requestedByMe && iSentAlready;
   const canCompose = status === 'accepted' || (status === 'pending' && requestedByMe && !iSentAlready);
 
+    useEffect(() => {
+    setError(null);
+  }, [status]);
   // Merge in server refreshes
   useEffect(() => {
     setMessages((prev) => mergeMessages(prev, thread.messages));
@@ -366,7 +369,12 @@ function ThreadPane({ thread, basePath }: { thread: Thread; basePath: string }) 
     setError(null);
     const res = await respondToRequest(conversationId, accept);
     setResponding(null);
-    if (!res.ok) {
+        if (!res.ok) {
+      // Already accepted some other way: just refresh into the normal chat
+      if (/no request/i.test(res.error)) {
+        router.refresh();
+        return;
+      }
       setError(res.error);
       return;
     }

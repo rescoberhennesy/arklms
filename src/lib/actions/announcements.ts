@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import type { RecentAnnouncementItem } from '@/lib/types/dashboard';
 import { notifyAnnouncementCreated } from '@/lib/actions/notifications';
-import { notifyAnnouncementComment } from '@/lib/actions/notifications';
+import { notifyAnnouncementComment, notifyAnnouncementLiked } from '@/lib/actions/notifications';
 
 export type AnnouncementAuthor = {
   id: string;
@@ -217,14 +217,44 @@ export async function setAnnouncementLiked(
 ): Promise<void> {
   const { supabase, userId } = await requireAuth();
 
-  if (liked) {
-    const { error } = await supabase
+    if (liked) {
+    const { data: inserted, error } = await supabase
       .from('announcement_likes')
       .upsert(
         { announcement_id: announcementId, user_id: userId },
         { onConflict: 'announcement_id,user_id', ignoreDuplicates: true },
-      );
+      )
+      .select('announcement_id');
     if (error) throw new Error(`Failed to like: ${error.message}`);
+
+    // Only notify when a NEW like was created (not a duplicate click).
+    if ((inserted ?? []).length > 0) {
+      try {
+        const { data: ann } = await supabase
+          .from('class_announcements')
+          .select('class_id, body')
+          .eq('id', announcementId)
+          .maybeSingle();
+        const a = ann as { class_id: string; body: string } | null;
+        if (a) {
+          const [{ data: cls }, { data: me }] = await Promise.all([
+            supabase.from('classes').select('name').eq('id', a.class_id).maybeSingle(),
+            supabase.from('profiles').select('full_name, email').eq('id', userId).maybeSingle(),
+          ]);
+          const meRow = me as { full_name: string | null; email: string } | null;
+          await notifyAnnouncementLiked({
+            announcementId,
+            classId: a.class_id,
+            className: (cls as { name: string } | null)?.name ?? 'your class',
+            likerId: userId,
+            likerName: meRow?.full_name?.trim() || meRow?.email || 'Someone',
+            preview: a.body.split('\n')[0].slice(0, 140),
+          });
+        }
+      } catch (e) {
+        console.error('[announcements] like notify error:', e);
+      }
+    }
   } else {
     const { error } = await supabase
       .from('announcement_likes')

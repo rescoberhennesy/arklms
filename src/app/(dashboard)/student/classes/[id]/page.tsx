@@ -109,6 +109,7 @@ export default async function StudentClassDetailPage({
         color={klass.color}
         coverPhotoUrl={klass.cover_photo_url}
         teacherName={klass.teacher_name}
+        description={klass.description}
         actions={<LeaveClassButton classId={klass.id} className={klass.name} />}
       />
 
@@ -184,16 +185,7 @@ function StreamTab({
 }) {
   return (
     <div className="space-y-4">
-      {description && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            About this class
-          </h3>
-          <p className="whitespace-pre-wrap text-sm text-gray-700">
-            {description}
-          </p>
-        </div>
-      )}
+      
       <StreamView
         classId={classId}
         announcements={announcements}

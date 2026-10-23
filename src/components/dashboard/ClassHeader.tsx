@@ -14,6 +14,7 @@ import {
   type Track,
 } from '@/types/class';
 import ClassMetaBadges from '@/components/dashboard/ClassMetaBadges';
+import ClassDescription from '@/components/dashboard/ClassDescription';
 
 interface ClassHeaderProps {
   name: string;
@@ -27,6 +28,8 @@ interface ClassHeaderProps {
   teacherName?: string | null;
   /** Buttons on the right (e.g. Settings for teachers, Leave for students). */
   actions?: ReactNode;
+    /** Optional class description, shown under the badges. */
+  description?: string | null;
 }
 
 export default function ClassHeader({
@@ -39,6 +42,7 @@ export default function ClassHeader({
   coverPhotoUrl,
   teacherName,
   actions,
+  description
 }: ClassHeaderProps) {
   const accent = color ?? DEFAULT_CLASS_COLOR;
 
@@ -97,6 +101,8 @@ export default function ClassHeader({
             variant="on-dark"
             hideSection
           />
+
+                    {description?.trim() && <ClassDescription text={description.trim()} />}
 
           {teacherName && (
             <p className="inline-flex items-center gap-1.5 text-sm text-zinc-400">

@@ -286,6 +286,46 @@ export async function notifyAnnouncementComment(params: {
   }
 }
 
+// ----- (a, continued) Announcement liked → its author -----
+export async function notifyAnnouncementLiked(params: {
+  announcementId: string;
+  classId: string;
+  className: string;
+  likerId: string;
+  likerName: string;
+  preview: string;
+}): Promise<void> {
+  try {
+    const supabase = await createClient();
+    const { data: ann } = await supabase
+      .from('class_announcements')
+      .select('author_id')
+      .eq('id', params.announcementId)
+      .maybeSingle();
+    const authorId = (ann as { author_id: string | null } | null)?.author_id;
+    if (!authorId || authorId === params.likerId) return; // no self-notify
+
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', authorId)
+      .maybeSingle();
+    const seg = (prof as { role: string } | null)?.role === 'teacher' ? 'teacher' : 'student';
+
+    await bulkInsertNotifications([
+      {
+        userId: authorId,
+        type: 'announcement_like',
+        refId: params.announcementId,
+        title: `${params.likerName} liked your announcement in ${params.className}`,
+        body: params.preview,
+        linkPath: `/${seg}/classes/${params.classId}?tab=stream`,
+      },
+    ]);
+  } catch (e) {
+    console.error('[notifications] notifyAnnouncementLiked failed:', e);
+  }
+}
 // ----- (b) Student submitted → class teacher -----
 export async function notifySubmissionCreated(params: {
   submissionId: string;

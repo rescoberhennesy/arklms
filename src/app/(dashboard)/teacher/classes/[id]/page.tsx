@@ -127,6 +127,7 @@ export default async function ClassDetailPage({
         track={klass.track}
         semester={klass.semester}
         color={klass.color}
+        description={klass.description}
         coverPhotoUrl={klass.cover_photo_url}
         actions={
           <Link
@@ -233,14 +234,7 @@ function StreamTab({
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
-        {description && (
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-              About this class
-            </h3>
-            <p className="whitespace-pre-wrap text-sm text-gray-700">{description}</p>
-          </div>
-        )}
+        
         <StreamView
           classId={classId}
           announcements={announcements}

@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Inbox,
   Award,
+  ThumbsUp,
   UserPlus,
   UserCheck,
   BookOpen,
@@ -26,6 +27,7 @@ export const NOTIFICATION_TYPES = [
   // Announcements
   'announcement_new',         // teacher posted → student
   'announcement_comment',     // someone commented → participants in thread
+    'announcement_like',        // someone liked a post → its author
 
   // Submissions & grades
   'submission_new',           // student submitted → teacher
@@ -81,6 +83,10 @@ export const NOTIFICATION_DISPLAY: Record<NotificationType, NotificationDisplayM
   announcement_comment: {
     icon: MessageSquare,
     iconClassName: 'text-blue-600 bg-blue-50',
+  },
+    announcement_like: {
+    icon: ThumbsUp,
+    iconClassName: 'text-red-600 bg-red-50',
   },
   submission_new: {
     icon: Inbox,
