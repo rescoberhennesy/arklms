@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import Link from 'next/link';
 import {
   Pencil,

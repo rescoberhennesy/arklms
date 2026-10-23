@@ -9,9 +9,10 @@
 // page navigation by design (see notifications carry-forward).
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { stripMarkdown } from '@/lib/utils/stripMarkdown';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 import {
   markNotificationRead,
   markAllNotificationsRead,
@@ -230,6 +231,13 @@ export default function NotificationBellClient({ initialData }: Props) {
               })}
             </ul>
           )}
+            <Link
+            href="/notifications"
+            onClick={() => setOpen(false)}
+            className="block border-t border-gray-100 px-3 py-2.5 text-center text-xs font-semibold text-red-600 hover:bg-gray-50"
+          >
+            View all notifications
+          </Link>
         </div>
       )}
     </div>

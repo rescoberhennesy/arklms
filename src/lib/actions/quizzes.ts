@@ -4,6 +4,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import type { ModuleTerm } from '@/lib/types/modules';
+import { notifyQuizSubmitted } from '@/lib/actions/notifications';
 import {
   type QuestionKind,
   type QuestionConfig,
@@ -662,14 +663,42 @@ export async function submitQuizAttempt(attemptId: string): Promise<{
     out_submission_id: string;
   }>)[0];
 
-  const { data: attemptData } = await supabase
+    const { data: attemptData } = await supabase
     .from('quiz_attempts')
-    .select('activity_id')
+    .select('activity_id, student_id')
     .eq('id', attemptId)
     .single();
   if (attemptData) {
-    const activityId = (attemptData as { activity_id: string }).activity_id;
-    revalidateQuizPaths(await getActivityClassId(activityId), activityId);
+    const { activity_id: activityId, student_id: studentId } = attemptData as {
+      activity_id: string;
+      student_id: string;
+    };
+    const classId = await getActivityClassId(activityId);
+    revalidateQuizPaths(classId, activityId);
+
+    // Tell the teacher (best-effort, never blocks the submit)
+    try {
+      const [{ data: act }, { data: cls }, { data: me }] = await Promise.all([
+        supabase.from('activities').select('title').eq('id', activityId).maybeSingle(),
+        supabase.from('classes').select('name, teacher_id').eq('id', classId).maybeSingle(),
+        supabase.from('profiles').select('full_name, email').eq('id', studentId).maybeSingle(),
+      ]);
+      const c = cls as { name: string; teacher_id: string } | null;
+      const p = me as { full_name: string | null; email: string | null } | null;
+      if (c?.teacher_id) {
+        await notifyQuizSubmitted({
+          attemptId,
+          activityId,
+          activityTitle: (act as { title: string } | null)?.title ?? 'a quiz',
+          classId,
+          className: c.name,
+          teacherId: c.teacher_id,
+          studentName: p?.full_name?.trim() || p?.email || 'A student',
+        });
+      }
+    } catch (e) {
+      console.error('[quizzes] submit notify error:', e);
+    }
   }
 
   return {

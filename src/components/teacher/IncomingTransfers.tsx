@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { ArrowRightLeft, Check, Loader2 } from 'lucide-react';
 import {
   listIncomingTransfers,

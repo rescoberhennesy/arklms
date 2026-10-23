@@ -135,6 +135,35 @@ export async function markAllNotificationsRead(): Promise<number> {
   return count ?? 0;
 }
 
+// Full list for the /notifications page. Paginates by created_at.
+export async function listMyNotifications(
+  opts: { before?: string | null; unreadOnly?: boolean; limit?: number } = {},
+): Promise<{ items: NotificationRow[]; hasMore: boolean }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { items: [], hasMore: false };
+
+  const limit = Math.min(opts.limit ?? 30, 100);
+  let q = supabase
+    .from('notifications')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(limit + 1);
+  if (opts.unreadOnly) q = q.is('read_at', null);
+  if (opts.before) q = q.lt('created_at', opts.before);
+
+  const { data, error } = await q;
+  if (error) {
+    console.error('[notifications] list error:', error.message);
+    return { items: [], hasMore: false };
+  }
+  const rows = ((data ?? []) as NotificationDbRow[]).map(mapNotification);
+  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
+}
+
 // =============================================================================
 // INSERTER HELPERS
 //
@@ -349,6 +378,32 @@ export async function notifySubmissionCreated(params: {
     ]);
   } catch (e) {
     console.error('[notifications] notifySubmissionCreated failed:', e);
+  }
+}
+
+// ----- (b, continued) Student submitted a QUIZ → class teacher -----
+export async function notifyQuizSubmitted(params: {
+  attemptId: string;
+  activityId: string;
+  activityTitle: string;
+  classId: string;
+  className: string;
+  teacherId: string;
+  studentName: string;
+}): Promise<void> {
+  try {
+    await bulkInsertNotifications([
+      {
+        userId: params.teacherId,
+        type: 'submission_new',
+        refId: params.attemptId,
+        title: `${params.studentName} submitted ${params.activityTitle}`,
+        body: `In ${params.className}`,
+        linkPath: `/teacher/classes/${params.classId}/activities/${params.activityId}/attempts/${params.attemptId}`,
+      },
+    ]);
+  } catch (e) {
+    console.error('[notifications] notifyQuizSubmitted failed:', e);
   }
 }
 

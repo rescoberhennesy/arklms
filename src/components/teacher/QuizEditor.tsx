@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { Pencil, Save, Loader2, Plus, Lock, Trash2, Sparkles } from 'lucide-react';
 import MarkdownEditor from '@/components/dashboard/MarkdownEditor';
 import MarkdownContent from '@/components/dashboard/MarkdownContent';
