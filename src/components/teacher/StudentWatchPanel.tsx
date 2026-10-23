@@ -4,7 +4,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { Sparkles, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import type { ClassStudentStatsResult, RiskLevel, StudentStats, Trend } from '@/lib/actions/analytics';
-import { Sparkline } from './AnalyticsCharts';
+import { Sparkline, ClassTrendChart, ScoreDistributionChart } from './AnalyticsCharts';
 import AiModal from './AiModal';
 
 interface Props {
@@ -42,7 +42,6 @@ function TrendIcon({ trend }: { trend: Trend }) {
 
 export default function StudentWatchPanel({ classId, initialData }: Props) {
   const data = initialData;
-  const passing = data.passingGrade ?? 75;
   const deped = data.gradingMethod === 'deped';
   const grade = (v: number | null) => (v === null ? '—' : deped ? String(Math.round(v)) : `${v.toFixed(1)}%`);
 
@@ -51,6 +50,10 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
   const [pending, startTransition] = useTransition();
   const [modalOpen, setModalOpen] = useState(false);
   const [filter, setFilter] = useState<RiskFilter>('all');
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  const selectedStudent = data.stats.find((s) => s.studentId === selectedStudentId) ?? null;
+  const overallPcts = data.stats.map((s) => s.overallAvgPct).filter((v): v is number => v !== null);
 
   function generate() {
     setError(null);
@@ -85,7 +88,6 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
 
   const rates = data.stats.map((s) => s.submissionRate).filter((v): v is number => v !== null);
   const avgRate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
-  const timeline = data.timeline.filter((t) => t.classAvgPct !== null);
 
   if (data.studentCount === 0) {
     return (
@@ -115,35 +117,20 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
         </button>
       </div>
 
-      {/* Per-activity bars */}
-      <section className={`${CARD} p-5`}>
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-[15px] font-bold text-zinc-900">How the class did per activity</h3>
-          <span className="text-xs text-zinc-400">Class average score · line = passing ({passing}%)</span>
-        </div>
-        {timeline.length === 0 ? (
-          <p className="py-6 text-center text-sm text-zinc-500">No graded work yet.</p>
-        ) : (
-          <ul className="space-y-2.5">
-            {timeline.map((t) => {
-              const v = t.classAvgPct as number;
-              const color = v >= passing ? 'bg-emerald-500' : v >= passing - 10 ? 'bg-amber-500' : 'bg-red-500';
-              return (
-                <li key={t.activityId} className="grid grid-cols-[minmax(0,180px)_1fr_48px] items-center gap-3">
-                  <span className="truncate text-sm text-zinc-700" title={t.title}>
-                    {t.title}
-                  </span>
-                  <span className="relative h-3 overflow-hidden rounded-full bg-zinc-100">
-                    <span className={`block h-full rounded-full ${color}`} style={{ width: `${Math.max(2, Math.min(100, v))}%` }} />
-                    <span className="absolute inset-y-0 w-px bg-zinc-500" style={{ left: `${passing}%` }} />
-                  </span>
-                  <span className="text-right text-sm font-bold text-zinc-900">{Math.round(v)}%</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      {/* Charts */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <ClassTrendChart
+          timeline={data.timeline}
+          studentScores={selectedStudent?.scores}
+          studentName={selectedStudent?.fullName}
+        />
+        <ScoreDistributionChart
+          title="Grade distribution"
+          subtitle="Each student's current grade"
+          pcts={overallPcts}
+          emptyText="No graded work yet."
+        />
+      </div>
 
       {/* Students */}
       <section className={`${CARD} overflow-hidden`}>
@@ -171,7 +158,7 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
               );
             })}
           </div>
-          <span className="text-xs text-zinc-400">Lowest first</span>
+          <span className="text-xs text-zinc-400">Lowest first · click a name to compare on the chart</span>
         </div>
 
         {rows.length === 0 ? (
@@ -179,7 +166,13 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
         ) : (
           <ul className="divide-y divide-zinc-100">
             {rows.map((s) => (
-              <StudentRow key={s.studentId} s={s} grade={grade} />
+              <StudentRow
+                key={s.studentId}
+                s={s}
+                grade={grade}
+                selected={s.studentId === selectedStudentId}
+                onSelect={() => setSelectedStudentId((cur) => (cur === s.studentId ? null : s.studentId))}
+              />
             ))}
           </ul>
         )}
@@ -208,7 +201,17 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
   );
 }
 
-function StudentRow({ s, grade }: { s: StudentStats; grade: (v: number | null) => string }) {
+function StudentRow({
+  s,
+  grade,
+  selected,
+  onSelect,
+}: {
+  s: StudentStats;
+  grade: (v: number | null) => string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const r = RISK[s.risk];
   const overall = s.overallAvgPct;
   const details = [
@@ -218,12 +221,22 @@ function StudentRow({ s, grade }: { s: StudentStats; grade: (v: number | null) =
   ].filter(Boolean);
 
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
-      <div className="min-w-[180px] flex-1">
-        <p className="font-semibold text-zinc-900">{s.fullName ?? 'Unknown'}</p>
+    <li
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5 transition ${
+        selected ? 'bg-red-50/50' : 'hover:bg-zinc-50/70'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        title={selected ? 'Hide from chart' : 'Compare on chart'}
+        className="min-w-[180px] flex-1 text-left"
+      >
+        <p className={`font-semibold ${selected ? 'text-red-700' : 'text-zinc-900'}`}>{s.fullName ?? 'Unknown'}</p>
         <p className="text-xs text-zinc-500">{details.join(' · ')}</p>
         {s.riskReasons.length > 0 && <p className="mt-0.5 text-xs text-zinc-400">Why: {s.riskReasons.join('; ')}</p>}
-      </div>
+      </button>
       <div className="flex items-center gap-2" title={`Trend: ${s.trend}`}>
         <Sparkline values={s.scores} trend={s.trend} />
         <TrendIcon trend={s.trend} />
