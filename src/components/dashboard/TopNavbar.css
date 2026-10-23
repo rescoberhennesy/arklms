@@ -5,7 +5,7 @@
 
 /* --- Navbar Glass Surface --- */
 .topnav-glass {
-  background: color-mix(in oklab, var(--color-neutral-0) 78%, transparent);
+    background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--color-border-subtle);

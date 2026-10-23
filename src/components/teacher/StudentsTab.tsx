@@ -23,22 +23,18 @@ interface StudentsTabProps {
   initialRoster: RosterEntry[];
 }
 
-// What the confirmation dialog is currently asking about
 type PendingConfirm =
   | { kind: 'remove'; studentId: string; name: string }
   | { kind: 'approve'; request: PendingJoinRequest }
   | { kind: 'reject'; request: PendingJoinRequest };
 
-// Relative-time formatter for last_active_at. Mirrors the granularity
-// used by the notification bell: minutes -> hours -> days -> date.
 function formatLastActive(iso: string | null): string {
   if (!iso) return 'Never';
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return 'Never';
   const diff = Date.now() - then;
-  if (diff < 0) return 'Just now'; // clock skew guard
+  if (diff < 60_000) return 'Just now';
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'Just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(diff / 3_600_000);
   if (hrs < 24) return `${hrs}h ago`;
@@ -47,27 +43,19 @@ function formatLastActive(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-// Dot color buckets:
-//   - green: active within the last 24h
-//   - gray:  seen, but more than 24h ago
-//   - hollow: never seen since the column shipped (last_active_at null)
 function activityDotClass(iso: string | null): string {
-  if (!iso) return 'border border-gray-300 bg-transparent';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return 'border border-gray-300 bg-transparent';
-  const diff = Date.now() - then;
-  if (diff < 24 * 3_600_000) return 'bg-green-500';
-  return 'bg-gray-300';
+  if (!iso) return 'border border-zinc-300 bg-transparent';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(diff)) return 'border border-zinc-300 bg-transparent';
+  return diff < 24 * 3_600_000 ? 'bg-emerald-500' : 'bg-zinc-300';
 }
 
-function confirmCopy(c: PendingConfirm | null): {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  destructive: boolean;
-} {
-  if (!c) return { title: '', message: '', confirmLabel: '', destructive: false };
+function fmtJoined(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
+function confirmCopy(c: PendingConfirm | null) {
+  if (!c) return { title: '', message: '', confirmLabel: '', destructive: false };
   if (c.kind === 'remove') {
     return {
       title: `Remove ${c.name} from this class?`,
@@ -77,7 +65,6 @@ function confirmCopy(c: PendingConfirm | null): {
       destructive: true,
     };
   }
-
   const name = c.request.student_full_name ?? 'this student';
   if (c.kind === 'reject') {
     return {
@@ -87,7 +74,6 @@ function confirmCopy(c: PendingConfirm | null): {
       destructive: true,
     };
   }
-
   return {
     title: `Approve ${name}?`,
     message: `${c.request.student_email ?? 'This student'} will be added to the class and can see everything you've published.`,
@@ -96,11 +82,10 @@ function confirmCopy(c: PendingConfirm | null): {
   };
 }
 
-export function StudentsTab({
-  classId,
-  initialPending,
-  initialRoster,
-}: StudentsTabProps) {
+const CARD =
+  'overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]';
+
+export function StudentsTab({ classId, initialPending, initialRoster }: StudentsTabProps) {
   const [pending, setPending] = useState(initialPending);
   const [roster, setRoster] = useState(initialRoster);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +111,6 @@ export function StudentsTab({
               email: request.student_email,
               avatar_url: request.student_avatar_url,
               enrolled_at: new Date().toISOString(),
-              // A just-approved student has no recorded activity yet.
               last_active_at: null,
             },
           ]);
@@ -156,61 +140,57 @@ export function StudentsTab({
 
   function handleConfirmed() {
     if (!confirm) return;
-    if (confirm.kind === 'remove') {
-      handleRemove(confirm.studentId);
-    } else {
-      handleDecide(confirm.request, confirm.kind === 'approve');
-    }
+    if (confirm.kind === 'remove') handleRemove(confirm.studentId);
+    else handleDecide(confirm.request, confirm.kind === 'approve');
   }
 
   const copy = confirmCopy(confirm);
 
   return (
     <div className="space-y-6">
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</div>}
 
       {pending.length > 0 && (
         <section>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <h2 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-zinc-900">
             <UserPlus className="h-4 w-4" />
             Pending requests ({pending.length})
           </h2>
-          <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <ul className={`${CARD} divide-y divide-zinc-100`}>
             {pending.map((req) => (
-              <li
-                key={req.id}
-                className="flex items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-900">
-                    {req.student_full_name ?? '(unnamed student)'}
-                  </p>
-                  <p className="truncate text-xs text-gray-500">
-                    {req.student_email}
-                  </p>
+              <li key={req.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <PersonAvatar
+                    id={req.student_id}
+                    name={req.student_full_name ?? req.student_email ?? 'Student'}
+                    url={req.student_avatar_url}
+                    size={36}
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-zinc-900">
+                      {req.student_full_name ?? '(unnamed student)'}
+                    </p>
+                    <p className="truncate text-xs text-zinc-500">{req.student_email}</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirm({ kind: 'approve', request: req })}
-                    disabled={busyId === req.id}
-                    className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Approve
-                  </button>
+                <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => setConfirm({ kind: 'reject', request: req })}
                     disabled={busyId === req.id}
-                    className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
                   >
                     <X className="h-3.5 w-3.5" />
                     Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirm({ kind: 'approve', request: req })}
+                    disabled={busyId === req.id}
+                    className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-red-600 px-3 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Approve
                   </button>
                 </div>
               </li>
@@ -219,93 +199,83 @@ export function StudentsTab({
         </section>
       )}
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">
-          Enrolled students ({roster.length})
-        </h2>
+      <section className="@container">
+        <h2 className="mb-3 text-[15px] font-bold text-zinc-900">Enrolled students ({roster.length})</h2>
 
         {roster.length === 0 ? (
-          <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
-            <p className="text-sm text-gray-600">
-              No students yet. Share the invite code or link to get started.
-            </p>
+          <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center text-sm text-zinc-500">
+            No students yet. Share the invite code or link to get started.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Student</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Last active</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Joined</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {roster.map((s) => (
-                  <tr key={s.student_id}>
-                    <td className="px-4 py-3">
-  <button
-    type="button"
-    onClick={() => setSelected(s)}
-    className="group flex items-center gap-3 text-left"
-    aria-label={`View ${s.full_name ?? s.email ?? 'student'}'s profile`}
-  >
-    <PersonAvatar id={s.student_id} name={s.full_name ?? s.email ?? 'Student'} url={s.avatar_url} size={32} />
-        <span className="min-w-0">
-      <span className="block text-sm font-medium text-gray-900 group-hover:underline">{s.full_name ?? '—'}</span>
-      {s.username && <span className="block text-xs text-gray-500">@{s.username}</span>}
-    </span>
-  </button>
-</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{s.email ?? '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          aria-hidden
-                          className={`h-2 w-2 shrink-0 rounded-full ${activityDotClass(
-                            s.last_active_at,
-                          )}`}
-                        />
-                        <span
-                          className={
-                            s.last_active_at ? 'text-gray-600' : 'text-gray-400'
-                          }
-                        >
-                          {formatLastActive(s.last_active_at)}
+          <div className={CARD}>
+            {/* Column labels (wide only) */}
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_120px_120px_44px] gap-4 border-b border-zinc-100 bg-zinc-50/60 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 @3xl:grid">
+              <span>Student</span>
+              <span>Email</span>
+              <span>Last active</span>
+              <span>Joined</span>
+              <span className="sr-only">Actions</span>
+            </div>
+
+            <ul className="divide-y divide-zinc-100">
+              {roster.map((s) => {
+                const name = s.full_name ?? s.email ?? 'Student';
+                return (
+                  <li
+                    key={s.student_id}
+                    className="flex items-center gap-3 px-4 py-3 @3xl:grid @3xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_120px_120px_44px] @3xl:gap-4"
+                  >
+                    {/* Student */}
+                    <button
+                      type="button"
+                      onClick={() => setSelected(s)}
+                      className="group flex min-w-0 flex-1 items-center gap-3 text-left"
+                      aria-label={`View ${name}'s profile`}
+                    >
+                      <PersonAvatar id={s.student_id} name={name} url={s.avatar_url} size={36} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-zinc-900 group-hover:underline">
+                          {s.full_name ?? '—'}
+                        </span>
+                        <span className="block truncate text-xs text-zinc-500">
+                          {s.username ? `@${s.username}` : s.email}
+                        </span>
+                        {/* Narrow-only details */}
+                        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500 @3xl:hidden">
+                          <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${activityDotClass(s.last_active_at)}`} />
+                          Active {formatLastActive(s.last_active_at).toLowerCase()} · Joined {fmtJoined(s.enrolled_at)}
                         </span>
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {new Date(s.enrolled_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setConfirm({
-                            kind: 'remove',
-                            studentId: s.student_id,
-                            name: s.full_name ?? s.email ?? 'this student',
-                          })
-                        }
-                        disabled={busyId === s.student_id}
-                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </button>
+
+                    {/* Wide-only columns */}
+                    <span className="hidden truncate text-sm text-zinc-700 @3xl:block">{s.email ?? '—'}</span>
+                    <span className="hidden items-center gap-1.5 whitespace-nowrap text-sm text-zinc-600 @3xl:flex">
+                      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${activityDotClass(s.last_active_at)}`} />
+                      {formatLastActive(s.last_active_at)}
+                    </span>
+                    <span className="hidden whitespace-nowrap text-sm text-zinc-500 @3xl:block">{fmtJoined(s.enrolled_at)}</span>
+
+                    {/* Remove */}
+                    <button
+                      type="button"
+                      onClick={() => setConfirm({ kind: 'remove', studentId: s.student_id, name })}
+                      disabled={busyId === s.student_id}
+                      aria-label={`Remove ${name}`}
+                      title="Remove from class"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </section>
 
-            {selected && (
+      {selected && (
         <ProfileCard
           id={selected.student_id}
           name={selected.full_name ?? selected.email ?? 'Student'}
@@ -315,12 +285,11 @@ export function StudentsTab({
           viewerRole="teacher"
           details={[
             { label: 'Last active', value: formatLastActive(selected.last_active_at) },
-            { label: 'Joined', value: new Date(selected.enrolled_at).toLocaleDateString() },
+            { label: 'Joined', value: fmtJoined(selected.enrolled_at) },
           ]}
           onClose={() => setSelected(null)}
         />
       )}
-
 
       <ConfirmDialog
         open={confirm !== null}

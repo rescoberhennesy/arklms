@@ -2,20 +2,10 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { AlertCircle, TrendingDown, TrendingUp, Minus } from 'lucide-react';
-import type {
-  ClassStudentStatsResult,
-  RiskLevel,
-  StudentStats,
-  Trend,
-} from '@/lib/actions/analytics';
-import {
-  ANALYTICS_CARD,
-  SummaryCard,
-  AiActionCard,
-  AiResultCard,
-} from './AnalyticsSideCards';
-import { ClassTrendChart, ScoreDistributionChart, Sparkline } from './AnalyticsCharts';
+import { Sparkles, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import type { ClassStudentStatsResult, RiskLevel, StudentStats, Trend } from '@/lib/actions/analytics';
+import { Sparkline } from './AnalyticsCharts';
+import AiModal from './AiModal';
 
 interface Props {
   classId: string;
@@ -24,47 +14,45 @@ interface Props {
 
 type ClassInsightDraft = {
   summary: string;
-  atRiskNotes: Array<{
-    studentName: string;
-    observation: string;
-    suggestion: string;
-  }>;
+  atRiskNotes: Array<{ studentName: string; observation: string; suggestion: string }>;
   bright_spots: string;
 };
 
 type RiskFilter = 'all' | 'at_risk' | 'watch';
 
-const RISK_STYLES: Record<RiskLevel, { pill: string; label: string; bar: string }> = {
+const RISK: Record<RiskLevel, { pill: string; label: string; bar: string }> = {
   at_risk: { pill: 'bg-red-50 text-red-700', label: 'At risk', bar: 'bg-red-500' },
   watch: { pill: 'bg-amber-50 text-amber-700', label: 'On watch', bar: 'bg-amber-500' },
-  safe: { pill: 'bg-green-50 text-green-700', label: 'On track', bar: 'bg-green-500' },
+  safe: { pill: 'bg-emerald-50 text-emerald-700', label: 'On track', bar: 'bg-emerald-500' },
 };
 
-function fmtPct(p: number | null): string {
-  return p === null ? '—' : `${p.toFixed(1)}%`;
-}
-function fmtRate(r: number | null): string {
-  return r === null ? '—' : `${(r * 100).toFixed(0)}%`;
+const CARD =
+  'rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]';
+
+function pct(p: number | null): string {
+  return p === null ? '—' : `${Math.round(p)}%`;
 }
 
 function TrendIcon({ trend }: { trend: Trend }) {
-  if (trend === 'improving') return <TrendingUp className="h-4 w-4 text-green-600" />;
+  if (trend === 'improving') return <TrendingUp className="h-4 w-4 text-emerald-600" />;
   if (trend === 'declining') return <TrendingDown className="h-4 w-4 text-red-600" />;
   if (trend === 'stable') return <Minus className="h-4 w-4 text-zinc-400" />;
-  return <span className="text-xs text-zinc-300">—</span>;
+  return null;
 }
 
 export default function StudentWatchPanel({ classId, initialData }: Props) {
-  const [data] = useState(initialData);
+  const data = initialData;
+  const passing = data.passingGrade ?? 75;
+  const deped = data.gradingMethod === 'deped';
+  const grade = (v: number | null) => (v === null ? '—' : deped ? String(Math.round(v)) : `${v.toFixed(1)}%`);
+
   const [insight, setInsight] = useState<ClassInsightDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [modalOpen, setModalOpen] = useState(false);
   const [filter, setFilter] = useState<RiskFilter>('all');
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
-  const selectedStudent = data.stats.find((s) => s.studentId === selectedStudentId) ?? null;
-
-  function handleGenerate() {
+  function generate() {
     setError(null);
     startTransition(async () => {
       try {
@@ -85,16 +73,19 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
     });
   }
 
-  // Lowest overall first, so the students who need help are on top.
+  function openAi() {
+    setModalOpen(true);
+    if (!insight && !pending) generate();
+  }
+
   const rows = useMemo(() => {
     const list = filter === 'all' ? data.stats : data.stats.filter((s) => s.risk === filter);
     return [...list].sort((a, b) => (a.overallAvgPct ?? 101) - (b.overallAvgPct ?? 101));
   }, [data.stats, filter]);
 
-  const overallPcts = useMemo(
-    () => data.stats.map((s) => s.overallAvgPct).filter((v): v is number => v !== null),
-    [data.stats],
-  );
+  const rates = data.stats.map((s) => s.submissionRate).filter((v): v is number => v !== null);
+  const avgRate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
+  const timeline = data.timeline.filter((t) => t.classAvgPct !== null);
 
   if (data.studentCount === 0) {
     return (
@@ -104,193 +95,159 @@ export default function StudentWatchPanel({ classId, initialData }: Props) {
     );
   }
 
-  const filters: { key: RiskFilter; label: string; count: number; alert?: boolean }[] = [
-    { key: 'all', label: 'All', count: data.studentCount },
-    { key: 'at_risk', label: 'At risk', count: data.atRiskCount, alert: data.atRiskCount > 0 },
-    { key: 'watch', label: 'On watch', count: data.watchCount },
-  ];
-
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
-      {/* Main column */}
-      <div className="min-w-0 space-y-4">
-        {error && (
-          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800">
-            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {insight && <InsightCard insight={insight} />}
-
-        {/* Charts */}
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <ClassTrendChart
-            timeline={data.timeline}
-            studentScores={selectedStudent?.scores}
-            studentName={selectedStudent?.fullName}
-          />
-          <ScoreDistributionChart
-            title="Grade distribution"
-            subtitle="Each student's overall average"
-            pcts={overallPcts}
-            emptyText="No graded work yet."
-          />
+    <div className="space-y-4">
+      {/* Stats + AI */}
+      <div className="flex flex-wrap items-stretch gap-2">
+        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Class average" value={grade(data.classAvgPct)} />
+          <Stat label="Submission rate" value={avgRate === null ? '—' : `${Math.round(avgRate * 100)}%`} />
+          <Stat label="At risk" value={String(data.atRiskCount)} tone={data.atRiskCount ? 'text-red-600' : undefined} />
+          <Stat label="On watch" value={String(data.watchCount)} tone={data.watchCount ? 'text-amber-600' : undefined} />
         </div>
-
-        <section className={`overflow-hidden ${ANALYTICS_CARD}`}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3.5">
-            <div role="tablist" aria-label="Filter students" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-              {filters.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={filter === f.key ? 'font-semibold text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}
-                >
-                  {f.label} <span className={f.alert ? 'text-red-600' : 'text-zinc-400'}>{f.count}</span>
-                </button>
-              ))}
-            </div>
-            <span className="text-xs text-zinc-400">Lowest overall first · click a name to compare</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-zinc-100 bg-zinc-50/70">
-                <tr className="text-left text-xs font-medium text-zinc-400">
-                  <th className="px-5 py-2.5 font-medium">Student</th>
-                  <th className="px-3 py-2.5 font-medium">Risk</th>
-                  <th className="px-3 py-2.5 font-medium">Overall</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Activities</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Quizzes</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Submitted</th>
-                  <th className="px-5 py-2.5 text-center font-medium">Trend</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">
-                      No students in this group.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((s) => (
-                    <StudentRow
-                      key={s.studentId}
-                      s={s}
-                      selected={s.studentId === selectedStudentId}
-                      onSelect={() =>
-                        setSelectedStudentId((cur) => (cur === s.studentId ? null : s.studentId))
-                      }
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <button
+          type="button"
+          onClick={openAi}
+          className="inline-flex min-h-11 items-center gap-2 self-center rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 hover:bg-red-100"
+        >
+          <Sparkles className="h-4 w-4" />
+          {insight ? 'View AI insights' : 'Get AI insights'}
+        </button>
       </div>
 
-      {/* Side column */}
-      <aside className="space-y-4 lg:sticky lg:top-20">
-        <SummaryCard
-          rows={[
-            { label: 'Students', value: String(data.studentCount), sub: 'Enrolled in this class' },
-            { label: 'Class average', value: fmtPct(data.classAvgPct), sub: 'Across graded work' },
-            { label: 'At risk', value: String(data.atRiskCount), tone: data.atRiskCount > 0 ? 'red' : undefined },
-            { label: 'On watch', value: String(data.watchCount), tone: data.watchCount > 0 ? 'amber' : undefined },
-          ]}
-        />
-        <AiActionCard
-          title="AI insights"
-          text="Reads the numbers and suggests interventions. The numbers themselves are computed, not AI-generated."
-          buttonLabel={insight ? 'Regenerate insights' : 'Generate insights'}
-          onClick={handleGenerate}
-          pending={pending}
-        />
-      </aside>
+      {/* Per-activity bars */}
+      <section className={`${CARD} p-5`}>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[15px] font-bold text-zinc-900">How the class did per activity</h3>
+          <span className="text-xs text-zinc-400">Class average score · line = passing ({passing}%)</span>
+        </div>
+        {timeline.length === 0 ? (
+          <p className="py-6 text-center text-sm text-zinc-500">No graded work yet.</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {timeline.map((t) => {
+              const v = t.classAvgPct as number;
+              const color = v >= passing ? 'bg-emerald-500' : v >= passing - 10 ? 'bg-amber-500' : 'bg-red-500';
+              return (
+                <li key={t.activityId} className="grid grid-cols-[minmax(0,180px)_1fr_48px] items-center gap-3">
+                  <span className="truncate text-sm text-zinc-700" title={t.title}>
+                    {t.title}
+                  </span>
+                  <span className="relative h-3 overflow-hidden rounded-full bg-zinc-100">
+                    <span className={`block h-full rounded-full ${color}`} style={{ width: `${Math.max(2, Math.min(100, v))}%` }} />
+                    <span className="absolute inset-y-0 w-px bg-zinc-500" style={{ left: `${passing}%` }} />
+                  </span>
+                  <span className="text-right text-sm font-bold text-zinc-900">{Math.round(v)}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* Students */}
+      <section className={`${CARD} overflow-hidden`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-5 py-3">
+          <div className="flex gap-1">
+            {(
+              [
+                ['all', 'All', data.studentCount],
+                ['at_risk', 'At risk', data.atRiskCount],
+                ['watch', 'On watch', data.watchCount],
+              ] as const
+            ).map(([key, label, count]) => {
+              const active = filter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
+                    active ? 'bg-zinc-900 font-semibold text-white' : 'font-medium text-zinc-600 hover:bg-zinc-100'
+                  }`}
+                >
+                  {label} <span className={active ? 'text-white/60' : 'text-zinc-400'}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-xs text-zinc-400">Lowest first</span>
+        </div>
+
+        {rows.length === 0 ? (
+          <p className="px-5 py-10 text-center text-sm text-zinc-500">No students in this group.</p>
+        ) : (
+          <ul className="divide-y divide-zinc-100">
+            {rows.map((s) => (
+              <StudentRow key={s.studentId} s={s} grade={grade} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <AiModal
+        open={modalOpen}
+        title="AI insights"
+        onClose={() => setModalOpen(false)}
+        pending={pending}
+        error={error}
+        onRegenerate={generate}
+      >
+        {insight && <InsightBody insight={insight} />}
+      </AiModal>
     </div>
   );
 }
 
-function StudentRow({
-  s,
-  selected,
-  onSelect,
-}: {
-  s: StudentStats;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const styles = RISK_STYLES[s.risk];
-  const overall = s.overallAvgPct;
+function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <tr className={`transition ${selected ? 'bg-zinc-100/80' : 'hover:bg-zinc-50/70'}`}>
-      <td className="px-5 py-3.5">
-        <button
-          type="button"
-          onClick={onSelect}
-          aria-pressed={selected}
-          className="text-left"
-          title={selected ? 'Hide from chart' : 'Compare on chart'}
-        >
-          <div className={`font-semibold ${selected ? 'text-red-700' : 'text-zinc-900'}`}>
-            {s.fullName ?? 'Unknown'}
-          </div>
-          <div className="max-w-[260px] truncate text-xs text-zinc-400">{s.email}</div>
-        </button>
-      </td>
-      <td className="px-3 py-3.5">
-        <span
-          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${styles.pill}`}
-          title={s.riskReasons.join('; ')}
-        >
-          {styles.label}
-        </span>
-      </td>
-      <td className="px-3 py-3.5">
-        <div className="flex min-w-[130px] items-center gap-2.5">
-          <span className="font-bold text-zinc-900">{fmtPct(overall)}</span>
-          {overall !== null && (
-            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
-              <span
-                className={`block h-full rounded-full ${styles.bar}`}
-                style={{ width: `${Math.max(2, Math.min(100, overall))}%` }}
-              />
-            </span>
-          )}
-        </div>
-      </td>
-      <td className="px-3 py-3.5 text-right text-zinc-700">{fmtPct(s.assignmentAvgPct)}</td>
-      <td className="px-3 py-3.5 text-right text-zinc-700">{fmtPct(s.quizAvgPct)}</td>
-      <td className="px-3 py-3.5 text-right text-zinc-700">
-        {fmtRate(s.submissionRate)}
-        <span className="ml-1 text-xs text-zinc-400">
-          ({s.dueCount - s.missingCount}/{s.dueCount})
-        </span>
-      </td>
-      <td className="px-5 py-3.5">
-        <div className="flex items-center justify-center gap-2" title={s.trend}>
-          <Sparkline values={s.scores} trend={s.trend} />
-          <TrendIcon trend={s.trend} />
-        </div>
-      </td>
-    </tr>
+    <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+      <p className={`text-xl font-bold ${tone ?? 'text-zinc-900'}`}>{value}</p>
+      <p className="text-xs text-zinc-500">{label}</p>
+    </div>
   );
 }
 
-function InsightCard({ insight }: { insight: ClassInsightDraft }) {
-  return (
-    <AiResultCard title="AI insight">
-      <p className="text-sm text-zinc-800">{insight.summary}</p>
+function StudentRow({ s, grade }: { s: StudentStats; grade: (v: number | null) => string }) {
+  const r = RISK[s.risk];
+  const overall = s.overallAvgPct;
+  const details = [
+    s.quizAvgPct !== null ? `Quizzes ${pct(s.quizAvgPct)}` : null,
+    s.assignmentAvgPct !== null ? `Activities ${pct(s.assignmentAvgPct)}` : null,
+    `${s.dueCount - s.missingCount}/${s.dueCount} submitted`,
+  ].filter(Boolean);
 
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+      <div className="min-w-[180px] flex-1">
+        <p className="font-semibold text-zinc-900">{s.fullName ?? 'Unknown'}</p>
+        <p className="text-xs text-zinc-500">{details.join(' · ')}</p>
+        {s.riskReasons.length > 0 && <p className="mt-0.5 text-xs text-zinc-400">Why: {s.riskReasons.join('; ')}</p>}
+      </div>
+      <div className="flex items-center gap-2" title={`Trend: ${s.trend}`}>
+        <Sparkline values={s.scores} trend={s.trend} />
+        <TrendIcon trend={s.trend} />
+      </div>
+      <div className="flex w-[160px] items-center gap-2.5">
+        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+          {overall !== null && (
+            <span className={`block h-full rounded-full ${r.bar}`} style={{ width: `${Math.max(2, Math.min(100, overall))}%` }} />
+          )}
+        </span>
+        <span className="w-12 text-right text-sm font-bold text-zinc-900">{grade(overall)}</span>
+      </div>
+      <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${r.pill}`}>{r.label}</span>
+    </li>
+  );
+}
+
+function InsightBody({ insight }: { insight: ClassInsightDraft }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm leading-relaxed text-zinc-800">{insight.summary}</p>
       {insight.atRiskNotes.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className="text-xs font-bold uppercase tracking-[0.08em] text-zinc-400">At-risk students</p>
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Students to check on</p>
           {insight.atRiskNotes.map((n, i) => (
             <div key={i} className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-3 text-sm">
               <p className="font-semibold text-zinc-900">{n.studentName}</p>
@@ -302,13 +259,12 @@ function InsightCard({ insight }: { insight: ClassInsightDraft }) {
           ))}
         </div>
       )}
-
       {insight.bright_spots && (
-        <div className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-900">
+        <div className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
           <span className="font-semibold">Bright spots: </span>
           {insight.bright_spots}
         </div>
       )}
-    </AiResultCard>
+    </div>
   );
 }

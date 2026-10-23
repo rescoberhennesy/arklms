@@ -2,8 +2,8 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-
 import { listMyClasses } from '@/lib/actions/classes';
+import { getGradebookView } from '@/lib/actions/gradebook';
 import type { TeacherClassListItem } from '@/types/class';
 
 // ============================================================================
@@ -17,21 +17,17 @@ export interface StudentStats {
   studentId: string;
   fullName: string | null;
   email: string | null;
-  // Averages computed only over GRADED activities of each kind (0-100 scale)
-  assignmentAvgPct: number | null;   // null = no graded assignments
-  quizAvgPct: number | null;          // null = no graded quizzes
-  overallAvgPct: number | null;       // null = no graded work at all
-  // Submission rate: counted over due activities only (graded + submitted-ungraded + missing)
-  submissionRate: number | null;      // 0-1, null = no due activities
-  dueCount: number;                   // total due activities (denominator)
+  assignmentAvgPct: number | null;
+  quizAvgPct: number | null;
+  /** Official grade from the gradebook (same as the Grades tab) */
+  overallAvgPct: number | null;
+  submissionRate: number | null;
+  dueCount: number;
   missingCount: number;
-  // Trend: last 3 vs earlier average pct, using graded + missing (0% for missing)
   trend: Trend;
-  trendDelta: number | null;          // recentAvg - earlierAvg in pct points, null if insufficient
-  // Computed risk
+  trendDelta: number | null;
   risk: RiskLevel;
-  riskReasons: string[];              // human-readable, fed to Gemini
-  /** Score per activity, in timeline order: % if graded, 0 if missing, null if submitted but not graded yet */
+  riskReasons: string[];
   scores: (number | null)[];
 }
 
@@ -40,7 +36,7 @@ export interface ClassTimelinePoint {
   title: string;
   kind: 'assignment' | 'quiz';
   date: string;
-  classAvgPct: number | null; // average of graded scores for this activity
+  classAvgPct: number | null;
   gradedCount: number;
 }
 
@@ -49,36 +45,28 @@ export interface ClassStudentStatsResult {
   className: string;
   studentCount: number;
   stats: StudentStats[];
-  // Class-level rollups for the AI prompt context
   classAvgPct: number | null;
   atRiskCount: number;
   watchCount: number;
-  /** Class average per activity, oldest first — for the trend chart */
   timeline: ClassTimelinePoint[];
+  passingGrade?: number;
+  gradingMethod?: 'raw' | 'deped';
 }
 
 // ============================================================================
-// HELPERS (pure functions, no I/O)
+// HELPERS
 // ============================================================================
 
-const TREND_MIN_POINTS = 4;          // need at least 4 graded+missing to compute trend
-const TREND_DELTA_THRESHOLD = 5;     // pct points
+const TREND_MIN_POINTS = 4;
+const TREND_DELTA_THRESHOLD = 5;
 
-function classifyTrend(
-  chronologicalScores: number[],
-): { trend: Trend; delta: number | null } {
-  if (chronologicalScores.length < TREND_MIN_POINTS) {
-    return { trend: 'insufficient_data', delta: null };
-  }
+function classifyTrend(chronologicalScores: number[]): { trend: Trend; delta: number | null } {
+  if (chronologicalScores.length < TREND_MIN_POINTS) return { trend: 'insufficient_data', delta: null };
   const recent = chronologicalScores.slice(-3);
   const earlier = chronologicalScores.slice(0, -3);
-  if (earlier.length === 0) {
-    return { trend: 'insufficient_data', delta: null };
-  }
+  if (earlier.length === 0) return { trend: 'insufficient_data', delta: null };
   const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  const recentAvg = avg(recent);
-  const earlierAvg = avg(earlier);
-  const delta = recentAvg - earlierAvg;
+  const delta = avg(recent) - avg(earlier);
   if (delta >= TREND_DELTA_THRESHOLD) return { trend: 'improving', delta };
   if (delta <= -TREND_DELTA_THRESHOLD) return { trend: 'declining', delta };
   return { trend: 'stable', delta };
@@ -88,81 +76,41 @@ function classifyRisk(stats: {
   overallAvgPct: number | null;
   submissionRate: number | null;
   trend: Trend;
+  passing: number;
 }): { risk: RiskLevel; reasons: string[] } {
   const reasons: string[] = [];
+  const p = stats.passing;
 
-  const lowScore =
-    stats.overallAvgPct !== null && stats.overallAvgPct < 70;
-  const lowSubmission =
-    stats.submissionRate !== null && stats.submissionRate < 0.6;
+  const lowScore = stats.overallAvgPct !== null && stats.overallAvgPct < p - 10;
+  const lowSubmission = stats.submissionRate !== null && stats.submissionRate < 0.6;
   const declining = stats.trend === 'declining';
 
-  if (lowScore) {
-    reasons.push(
-      `average score ${stats.overallAvgPct!.toFixed(1)}% (below 70%)`,
-    );
-  }
-  if (lowSubmission) {
-    reasons.push(
-      `submission rate ${(stats.submissionRate! * 100).toFixed(0)}% (below 60%)`,
-    );
-  }
-  if (declining) {
-    reasons.push('score trend declining');
-  }
+  if (lowScore) reasons.push(`grade ${stats.overallAvgPct!.toFixed(1)} (well below passing ${p})`);
+  if (lowSubmission) reasons.push(`submission rate ${(stats.submissionRate! * 100).toFixed(0)}% (below 60%)`);
+  if (declining) reasons.push('score trend declining');
+  if (lowScore || lowSubmission || declining) return { risk: 'at_risk', reasons };
 
-  if (lowScore || lowSubmission || declining) {
-    return { risk: 'at_risk', reasons };
-  }
-
-  // Watch: borderline (70-75% score OR 60-70% submission)
-  const borderlineScore =
-    stats.overallAvgPct !== null &&
-    stats.overallAvgPct >= 70 &&
-    stats.overallAvgPct < 75;
+  const nearScore = stats.overallAvgPct !== null && stats.overallAvgPct < p;
   const borderlineSubmission =
-    stats.submissionRate !== null &&
-    stats.submissionRate >= 0.6 &&
-    stats.submissionRate < 0.7;
+    stats.submissionRate !== null && stats.submissionRate >= 0.6 && stats.submissionRate < 0.7;
 
-  if (borderlineScore) {
-    reasons.push(
-      `average score ${stats.overallAvgPct!.toFixed(1)}% (borderline)`,
-    );
-  }
-  if (borderlineSubmission) {
-    reasons.push(
-      `submission rate ${(stats.submissionRate! * 100).toFixed(0)}% (borderline)`,
-    );
-  }
-
-  if (borderlineScore || borderlineSubmission) {
-    return { risk: 'watch', reasons };
-  }
+  if (nearScore) reasons.push(`grade ${stats.overallAvgPct!.toFixed(1)} (just below passing ${p})`);
+  if (borderlineSubmission) reasons.push(`submission rate ${(stats.submissionRate! * 100).toFixed(0)}% (borderline)`);
+  if (nearScore || borderlineSubmission) return { risk: 'watch', reasons };
 
   return { risk: 'safe', reasons: [] };
 }
 
 // ============================================================================
-// MAIN: PANEL 1 — STUDENT WATCH
+// PANEL 1 — STUDENT WATCH
 // ============================================================================
 
-export async function getClassStudentStats(
-  classId: string,
-): Promise<ClassStudentStatsResult> {
+export async function getClassStudentStats(classId: string): Promise<ClassStudentStatsResult> {
   const supabase = await createClient();
 
-  // 0. Class + auth gate (RLS already restricts to teacher of class)
-  const { data: klass, error: classErr } = await supabase
-    .from('classes')
-    .select('id, name')
-    .eq('id', classId)
-    .single();
-  if (classErr || !klass) {
-    throw new Error('Class not found or access denied');
-  }
+  const { data: klass, error: classErr } = await supabase.from('classes').select('id, name').eq('id', classId).single();
+  if (classErr || !klass) throw new Error('Class not found or access denied');
 
-  // 1. Roster
   const { data: enrollments, error: enrollErr } = await supabase
     .from('class_enrollments')
     .select('student_id, profiles!class_enrollments_student_id_fkey(id, full_name, email)')
@@ -178,11 +126,7 @@ export async function getClassStudentStats(
   };
   const students = ((enrollments ?? []) as EnrollmentRow[]).map((e) => {
     const p = Array.isArray(e.profiles) ? e.profiles[0] : e.profiles;
-    return {
-      studentId: e.student_id,
-      fullName: p?.full_name ?? null,
-      email: p?.email ?? null,
-    };
+    return { studentId: e.student_id, fullName: p?.full_name ?? null, email: p?.email ?? null };
   });
 
   if (students.length === 0) {
@@ -198,7 +142,6 @@ export async function getClassStudentStats(
     };
   }
 
-  // 2. Activities in class — only PUBLISHED + DUE (start_at <= now)
   const nowIso = new Date().toISOString();
   const { data: activities, error: actErr } = await supabase
     .from('activities')
@@ -221,7 +164,6 @@ export async function getClassStudentStats(
   };
   const acts = (activities ?? []) as ActRow[];
 
-  // Effective max points: quizzes use quiz_total_points when present, else max_points
   const actMax = new Map<string, number>();
   for (const a of acts) {
     const max =
@@ -235,7 +177,6 @@ export async function getClassStudentStats(
   const quizIds = acts.filter((a) => a.activity_kind === 'quiz').map((a) => a.id);
 
   if (acts.length === 0) {
-    // No due activities yet — everyone is "safe" by default with no data
     return {
       classId,
       className: klass.name,
@@ -263,8 +204,6 @@ export async function getClassStudentStats(
     };
   }
 
-  // 3. Assignment scores: activity_submissions joined to activity_grades
-  //    Only count grades that exist (graded). We separately check submissions for the rate.
   const studentIds = students.map((s) => s.studentId);
 
   type SubRow = {
@@ -279,12 +218,12 @@ export async function getClassStudentStats(
       .from('activity_submissions')
       .select('id, activity_id, student_id, activity_grades(score)')
       .in('activity_id', assignmentIds)
-      .in('student_id', studentIds);
+      .in('student_id', studentIds)
+      .eq('is_draft', false);
     if (error) throw new Error(`Assignment submissions query failed: ${error.message}`);
     assignmentSubs = (data ?? []) as SubRow[];
   }
 
-  // 4. Quiz attempts (only those actually submitted)
   type QuizRow = {
     activity_id: string;
     student_id: string;
@@ -304,20 +243,14 @@ export async function getClassStudentStats(
     quizAttempts = (data ?? []) as QuizRow[];
   }
 
-  // 5. Per-student aggregation
-  // Build lookups
   const assignmentByStudent = new Map<string, Map<string, { submitted: boolean; gradePct: number | null }>>();
   for (const s of students) assignmentByStudent.set(s.studentId, new Map());
   for (const sub of assignmentSubs) {
     const max = actMax.get(sub.activity_id);
     if (!max) continue;
-    const grade = Array.isArray(sub.activity_grades)
-      ? sub.activity_grades[0]
-      : sub.activity_grades;
+    const grade = Array.isArray(sub.activity_grades) ? sub.activity_grades[0] : sub.activity_grades;
     const pct = grade ? (Number(grade.score) / max) * 100 : null;
-    assignmentByStudent
-      .get(sub.student_id)
-      ?.set(sub.activity_id, { submitted: true, gradePct: pct });
+    assignmentByStudent.get(sub.student_id)?.set(sub.activity_id, { submitted: true, gradePct: pct });
   }
 
   const quizByStudent = new Map<string, Map<string, { submitted: boolean; gradePct: number | null }>>();
@@ -332,38 +265,31 @@ export async function getClassStudentStats(
           ? Number(qa.auto_score)
           : null;
     const pct = rawScore !== null ? (rawScore / max) * 100 : null;
-    quizByStudent
-      .get(qa.student_id)
-      ?.set(qa.activity_id, { submitted: true, gradePct: pct });
+    quizByStudent.get(qa.student_id)?.set(qa.activity_id, { submitted: true, gradePct: pct });
   }
 
-  // 6. Compute stats per student
+  // Official grades = same numbers as the Grades tab (weights + transmutation)
+  const gradebook = await getGradebookView(classId);
+  const officialByStudent = new Map(gradebook.students.map((g) => [g.studentId, g.finalPercent]));
+  const passing = gradebook.weights?.passingGrade ?? 75;
+  const gradingMethod = gradebook.weights?.gradingMethod ?? 'raw';
+
   const stats: StudentStats[] = students.map((s) => {
     const myAssignments = assignmentByStudent.get(s.studentId)!;
     const myQuizzes = quizByStudent.get(s.studentId)!;
 
-    // Assignment avg (graded only)
     const aGraded = assignmentIds
       .map((id) => myAssignments.get(id)?.gradePct)
       .filter((v): v is number => v !== null && v !== undefined);
-    const assignmentAvgPct =
-      aGraded.length > 0 ? aGraded.reduce((a, b) => a + b, 0) / aGraded.length : null;
+    const assignmentAvgPct = aGraded.length > 0 ? aGraded.reduce((a, b) => a + b, 0) / aGraded.length : null;
 
-    // Quiz avg (graded only)
     const qGraded = quizIds
       .map((id) => myQuizzes.get(id)?.gradePct)
       .filter((v): v is number => v !== null && v !== undefined);
-    const quizAvgPct =
-      qGraded.length > 0 ? qGraded.reduce((a, b) => a + b, 0) / qGraded.length : null;
+    const quizAvgPct = qGraded.length > 0 ? qGraded.reduce((a, b) => a + b, 0) / qGraded.length : null;
 
-    // Overall avg = mean of all graded pct (both kinds combined, equal weight per activity)
-    const allGraded = [...aGraded, ...qGraded];
-    const overallAvgPct =
-      allGraded.length > 0
-        ? allGraded.reduce((a, b) => a + b, 0) / allGraded.length
-        : null;
+    const overallAvgPct = officialByStudent.get(s.studentId) ?? null;
 
-    // Submission rate: over all due activities, how many did they engage with (submitted, graded, OR submitted-ungraded)
     let submitted = 0;
     let missing = 0;
     for (const a of acts) {
@@ -373,36 +299,24 @@ export async function getClassStudentStats(
     }
     const submissionRate = acts.length > 0 ? submitted / acts.length : null;
 
-    // Trend: graded + missing (missing = 0%), chronological by start_at
     const trendPoints: number[] = [];
     for (const a of acts) {
       const map = a.activity_kind === 'quiz' ? myQuizzes : myAssignments;
       const rec = map.get(a.id);
-      if (rec?.gradePct !== null && rec?.gradePct !== undefined) {
-        trendPoints.push(rec.gradePct);
-      } else if (!rec?.submitted) {
-        // missing -> 0%
-        trendPoints.push(0);
-      }
-      // else: submitted but not yet graded -> skip from trend
+      if (rec?.gradePct !== null && rec?.gradePct !== undefined) trendPoints.push(rec.gradePct);
+      else if (!rec?.submitted) trendPoints.push(0);
     }
 
-    // Per-activity scores aligned to the timeline (for charts)
     const scores: (number | null)[] = acts.map((a) => {
       const map = a.activity_kind === 'quiz' ? myQuizzes : myAssignments;
       const rec = map.get(a.id);
       if (rec?.gradePct !== null && rec?.gradePct !== undefined) return rec.gradePct;
-      if (!rec?.submitted) return 0; // missing
-      return null; // submitted, not graded yet
+      if (!rec?.submitted) return 0;
+      return null;
     });
 
     const { trend, delta: trendDelta } = classifyTrend(trendPoints);
-
-    const { risk, reasons: riskReasons } = classifyRisk({
-      overallAvgPct,
-      submissionRate,
-      trend,
-    });
+    const { risk, reasons: riskReasons } = classifyRisk({ overallAvgPct, submissionRate, trend, passing });
 
     return {
       studentId: s.studentId,
@@ -422,18 +336,11 @@ export async function getClassStudentStats(
     };
   });
 
-  // 7. Rollups
-  const overallScores = stats
-    .map((s) => s.overallAvgPct)
-    .filter((v): v is number => v !== null);
-  const classAvgPct =
-    overallScores.length > 0
-      ? overallScores.reduce((a, b) => a + b, 0) / overallScores.length
-      : null;
+  const overallScores = stats.map((s) => s.overallAvgPct).filter((v): v is number => v !== null);
+  const classAvgPct = overallScores.length > 0 ? overallScores.reduce((a, b) => a + b, 0) / overallScores.length : null;
   const atRiskCount = stats.filter((s) => s.risk === 'at_risk').length;
   const watchCount = stats.filter((s) => s.risk === 'watch').length;
 
-  // Class average per activity, oldest first (graded scores only)
   const timeline: ClassTimelinePoint[] = acts.map((a) => {
     const byStudent = a.activity_kind === 'quiz' ? quizByStudent : assignmentByStudent;
     const vals = students
@@ -452,9 +359,10 @@ export async function getClassStudentStats(
   return {
     classId,
     className: klass.name,
+    passingGrade: passing,
+    gradingMethod,
     studentCount: students.length,
     stats: stats.sort((a, b) => {
-      // Sort: at_risk first, then watch, then safe; within each tier, lowest score first
       const tier = (r: RiskLevel) => (r === 'at_risk' ? 0 : r === 'watch' ? 1 : 2);
       const t = tier(a.risk) - tier(b.risk);
       if (t !== 0) return t;
@@ -468,18 +376,21 @@ export async function getClassStudentStats(
 }
 
 // ============================================================================
-// MAIN: PANEL 2 — ACTIVITY DIAGNOSTICS
+// PANEL 2 — ACTIVITY DIAGNOSTICS
 // ============================================================================
 
 export interface QuestionDiagnostic {
   questionId: string;
   displayOrder: number;
   kind: string;
-  promptPreview: string;          // truncated prompt
+  promptPreview: string;
   totalResponses: number;
   correctCount: number;
-  correctRate: number;             // 0-1
-  isFlagged: boolean;              // correctRate < 0.5 AND totalResponses >= 3
+  correctRate: number;
+  isFlagged: boolean;
+  correctAnswer: string | null;
+  topWrongAnswer: string | null;
+  topWrongCount: number;
 }
 
 export interface QuizDiagnostics {
@@ -487,10 +398,9 @@ export interface QuizDiagnostics {
   activityId: string;
   activityTitle: string;
   maxPoints: number;
-  totalAttempts: number;           // submitted attempts
+  totalAttempts: number;
   meanScorePct: number | null;
   questions: QuestionDiagnostic[];
-  /** Each submitted attempt's score (0-100) — for the distribution chart */
   scorePcts: number[];
 }
 
@@ -502,50 +412,59 @@ export interface AssignmentDiagnostics {
   totalEnrolled: number;
   submissionCount: number;
   gradedCount: number;
-  submissionRate: number;          // submissionCount / totalEnrolled
-  // Score stats (graded only, 0-100 pct)
+  submissionRate: number;
   meanScorePct: number | null;
-  passRate: number | null;         // graded with pct >= 75 (DepEd passing)
-  failRate: number | null;         // graded with pct < 60
-  distribution: { bucket: string; count: number }[];  // 0-59, 60-69, 70-79, 80-89, 90-100
-  /** Each graded submission's score (0-100) — for the distribution chart */
+  passRate: number | null;
+  failRate: number | null;
+  distribution: { bucket: string; count: number }[];
   scorePcts: number[];
 }
 
 export type ActivityDiagnostics = QuizDiagnostics | AssignmentDiagnostics;
 
-export async function getActivityDiagnostics(
-  activityId: string,
-): Promise<ActivityDiagnostics> {
+export async function getActivityDiagnostics(activityId: string): Promise<ActivityDiagnostics> {
   const supabase = await createClient();
 
-  // 1. Activity (RLS restricts to teacher of class)
   const { data: act, error: actErr } = await supabase
     .from('activities')
     .select('id, class_id, title, activity_kind, max_points, quiz_total_points')
     .eq('id', activityId)
     .single();
-  if (actErr || !act) {
-    throw new Error('Activity not found or access denied');
-  }
+  if (actErr || !act) throw new Error('Activity not found or access denied');
 
   const effectiveMax =
-    act.activity_kind === 'quiz' &&
-    act.quiz_total_points &&
-    Number(act.quiz_total_points) > 0
+    act.activity_kind === 'quiz' && act.quiz_total_points && Number(act.quiz_total_points) > 0
       ? Number(act.quiz_total_points)
       : Number(act.max_points);
 
   if (act.activity_kind === 'quiz') {
     return getQuizDiagnostics(supabase, act.id, act.title, effectiveMax);
   }
-  return getAssignmentDiagnostics(
-    supabase,
-    act.id,
-    act.class_id,
-    act.title,
-    effectiveMax,
-  );
+  return getAssignmentDiagnostics(supabase, act.id, act.class_id, act.title, effectiveMax);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function describeCorrect(kind: string, c: any): string | null {
+  if (!c) return null;
+  if (kind === 'mc_single') return c.options?.[c.correct?.[0]] ?? null;
+  if (kind === 'mc_multi') return (c.correct ?? []).map((i: number) => c.options?.[i]).join(', ') || null;
+  if (kind === 'true_false') return c.correct ? 'True' : 'False';
+  if (kind === 'short_answer') return (c.acceptable ?? []).join(' / ') || null;
+  return null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function describeAnswer(kind: string, c: any, a: any): string | null {
+  if (!a) return null;
+  if (kind === 'mc_single')
+    return typeof a.selected === 'number' && a.selected >= 0 ? c?.options?.[a.selected] ?? null : null;
+  if (kind === 'mc_multi')
+    return Array.isArray(a.selected) && a.selected.length
+      ? [...a.selected].sort().map((i: number) => c?.options?.[i]).join(', ')
+      : null;
+  if (kind === 'true_false') return typeof a.selected === 'boolean' ? (a.selected ? 'True' : 'False') : null;
+  if (kind === 'short_answer') return typeof a.text === 'string' && a.text.trim() ? a.text.trim().toLowerCase() : null;
+  return null;
 }
 
 async function getQuizDiagnostics(
@@ -555,24 +474,16 @@ async function getQuizDiagnostics(
   activityTitle: string,
   maxPoints: number,
 ): Promise<QuizDiagnostics> {
-  // Questions
   const { data: questions, error: qErr } = await supabase
     .from('quiz_questions')
-    .select('id, question_kind, prompt, points, display_order')
+    .select('id, question_kind, prompt, points, display_order, config')
     .eq('activity_id', activityId)
     .order('display_order', { ascending: true });
   if (qErr) throw new Error(`Quiz questions query failed: ${qErr.message}`);
 
-  type QRow = {
-    id: string;
-    question_kind: string;
-    prompt: string;
-    points: number;
-    display_order: number;
-  };
+  type QRow = { id: string; question_kind: string; prompt: string; points: number; display_order: number; config: unknown };
   const qs = (questions ?? []) as QRow[];
 
-  // Submitted attempts for this quiz
   const { data: attempts, error: aErr } = await supabase
     .from('quiz_attempts')
     .select('id, auto_score, manual_score_override, submitted_at')
@@ -580,50 +491,59 @@ async function getQuizDiagnostics(
     .not('submitted_at', 'is', null);
   if (aErr) throw new Error(`Quiz attempts query failed: ${aErr.message}`);
 
-  type AttRow = {
-    id: string;
-    auto_score: number | null;
-    manual_score_override: number | null;
-    submitted_at: string;
-  };
+  type AttRow = { id: string; auto_score: number | null; manual_score_override: number | null; submitted_at: string };
   const atts = (attempts ?? []) as AttRow[];
   const attemptIds = atts.map((a) => a.id);
 
-  // Responses for those attempts
   type RespRow = {
     attempt_id: string;
     question_id: string;
     auto_correct: boolean | null;
+    manual_points: number | null;
+    answer: unknown;
   };
   let responses: RespRow[] = [];
   if (attemptIds.length > 0) {
     const { data, error } = await supabase
       .from('quiz_responses')
-      .select('attempt_id, question_id, auto_correct')
+      .select('attempt_id, question_id, auto_correct, manual_points, answer')
       .in('attempt_id', attemptIds);
     if (error) throw new Error(`Quiz responses query failed: ${error.message}`);
     responses = (data ?? []) as RespRow[];
   }
 
-  // Per-question correct rate
   const FLAG_THRESHOLD = 0.5;
   const MIN_RESPONSES_TO_FLAG = 3;
+  const qById = new Map(qs.map((q) => [q.id, q]));
 
-  const byQuestion = new Map<string, { total: number; correct: number }>();
+  const byQuestion = new Map<string, { total: number; correct: number; wrong: Map<string, number> }>();
   for (const r of responses) {
-    const bucket = byQuestion.get(r.question_id) ?? { total: 0, correct: 0 };
-    // Only count responses where auto_correct is non-null (objective questions
-    // OR essay/short-answer questions that have been manually graded into a boolean).
+    const q = qById.get(r.question_id);
+    if (!q) continue;
+    const b = byQuestion.get(r.question_id) ?? { total: 0, correct: 0, wrong: new Map<string, number>() };
     if (r.auto_correct !== null) {
-      bucket.total += 1;
-      if (r.auto_correct === true) bucket.correct += 1;
+      b.total += 1;
+      const adjustedFull = r.manual_points !== null && Number(r.manual_points) >= Number(q.points);
+      if (r.auto_correct === true || adjustedFull) b.correct += 1;
+      else {
+        const text = describeAnswer(q.question_kind, q.config, r.answer) ?? '(no answer)';
+        b.wrong.set(text, (b.wrong.get(text) ?? 0) + 1);
+      }
     }
-    byQuestion.set(r.question_id, bucket);
+    byQuestion.set(r.question_id, b);
   }
 
   const questionDiagnostics: QuestionDiagnostic[] = qs.map((q) => {
-    const b = byQuestion.get(q.id) ?? { total: 0, correct: 0 };
+    const b = byQuestion.get(q.id) ?? { total: 0, correct: 0, wrong: new Map<string, number>() };
     const rate = b.total > 0 ? b.correct / b.total : 0;
+    let topWrongAnswer: string | null = null;
+    let topWrongCount = 0;
+    for (const [text, n] of b.wrong) {
+      if (n > topWrongCount) {
+        topWrongAnswer = text;
+        topWrongCount = n;
+      }
+    }
     return {
       questionId: q.id,
       displayOrder: q.display_order,
@@ -633,10 +553,12 @@ async function getQuizDiagnostics(
       correctCount: b.correct,
       correctRate: rate,
       isFlagged: b.total >= MIN_RESPONSES_TO_FLAG && rate < FLAG_THRESHOLD,
+      correctAnswer: describeCorrect(q.question_kind, q.config),
+      topWrongAnswer,
+      topWrongCount,
     };
   });
 
-  // Mean total score pct
   const attemptScorePcts = atts
     .map((a) => {
       const raw =
@@ -649,9 +571,7 @@ async function getQuizDiagnostics(
     })
     .filter((v): v is number => v !== null);
   const meanScorePct =
-    attemptScorePcts.length > 0
-      ? attemptScorePcts.reduce((a, b) => a + b, 0) / attemptScorePcts.length
-      : null;
+    attemptScorePcts.length > 0 ? attemptScorePcts.reduce((a, b) => a + b, 0) / attemptScorePcts.length : null;
 
   return {
     kind: 'quiz',
@@ -673,7 +593,6 @@ async function getAssignmentDiagnostics(
   activityTitle: string,
   maxPoints: number,
 ): Promise<AssignmentDiagnostics> {
-  // Roster size
   const { count: enrolledCount, error: rosterErr } = await supabase
     .from('class_enrollments')
     .select('id', { count: 'exact', head: true })
@@ -681,48 +600,29 @@ async function getAssignmentDiagnostics(
   if (rosterErr) throw new Error(`Roster count failed: ${rosterErr.message}`);
   const totalEnrolled = enrolledCount ?? 0;
 
-  // Submissions + grades
   const { data: subs, error: subErr } = await supabase
     .from('activity_submissions')
     .select('id, activity_grades(score)')
-    .eq('activity_id', activityId);
+    .eq('activity_id', activityId)
+    .eq('is_draft', false);
   if (subErr) throw new Error(`Submissions query failed: ${subErr.message}`);
 
-  type SubRow = {
-    id: string;
-    activity_grades: { score: number }[] | { score: number } | null;
-  };
+  type SubRow = { id: string; activity_grades: { score: number }[] | { score: number } | null };
   const rows = (subs ?? []) as SubRow[];
   const submissionCount = rows.length;
 
   const gradedPcts: number[] = [];
   for (const s of rows) {
     const g = Array.isArray(s.activity_grades) ? s.activity_grades[0] : s.activity_grades;
-    if (g) {
-      gradedPcts.push((Number(g.score) / maxPoints) * 100);
-    }
+    if (g) gradedPcts.push((Number(g.score) / maxPoints) * 100);
   }
   const gradedCount = gradedPcts.length;
 
-  const meanScorePct =
-    gradedCount > 0 ? gradedPcts.reduce((a, b) => a + b, 0) / gradedCount : null;
-  const passRate =
-    gradedCount > 0
-      ? gradedPcts.filter((p) => p >= 75).length / gradedCount
-      : null;
-  const failRate =
-    gradedCount > 0
-      ? gradedPcts.filter((p) => p < 60).length / gradedCount
-      : null;
+  const meanScorePct = gradedCount > 0 ? gradedPcts.reduce((a, b) => a + b, 0) / gradedCount : null;
+  const passRate = gradedCount > 0 ? gradedPcts.filter((p) => p >= 75).length / gradedCount : null;
+  const failRate = gradedCount > 0 ? gradedPcts.filter((p) => p < 60).length / gradedCount : null;
 
-  // Distribution buckets
-  const buckets: Record<string, number> = {
-    '0-59': 0,
-    '60-69': 0,
-    '70-79': 0,
-    '80-89': 0,
-    '90-100': 0,
-  };
+  const buckets: Record<string, number> = { '0-59': 0, '60-69': 0, '70-79': 0, '80-89': 0, '90-100': 0 };
   for (const p of gradedPcts) {
     if (p < 60) buckets['0-59']++;
     else if (p < 70) buckets['60-69']++;
@@ -730,10 +630,7 @@ async function getAssignmentDiagnostics(
     else if (p < 90) buckets['80-89']++;
     else buckets['90-100']++;
   }
-  const distribution = Object.entries(buckets).map(([bucket, count]) => ({
-    bucket,
-    count,
-  }));
+  const distribution = Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
 
   return {
     kind: 'assignment',
@@ -763,9 +660,7 @@ export interface AnalyticsActivityOption {
   published: boolean;
 }
 
-export async function listActivitiesForAnalytics(
-  classId: string,
-): Promise<AnalyticsActivityOption[]> {
+export async function listActivitiesForAnalytics(classId: string): Promise<AnalyticsActivityOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('activities')
@@ -774,22 +669,15 @@ export async function listActivitiesForAnalytics(
     .eq('published', true)
     .order('start_at', { ascending: false });
   if (error) throw new Error(`Activities list failed: ${error.message}`);
-  return ((data ?? []) as Array<{
-    id: string;
-    title: string;
-    activity_kind: 'assignment' | 'quiz';
-    published: boolean;
-  }>).map((a) => ({
-    id: a.id,
-    title: a.title,
-    activityKind: a.activity_kind,
-    published: a.published,
-  }));
+  return (
+    (data ?? []) as Array<{ id: string; title: string; activity_kind: 'assignment' | 'quiz'; published: boolean }>
+  ).map((a) => ({ id: a.id, title: a.title, activityKind: a.activity_kind, published: a.published }));
 }
 
-/**
- * Same filter shape as the other three shortcut pages.
- */
+// ============================================================================
+// CROSS-CLASS (teacher Analytics shortcut page)
+// ============================================================================
+
 export interface MyClassAnalyticsFilters {
   classId?: string | null;
   section?: string | null;
@@ -797,11 +685,6 @@ export interface MyClassAnalyticsFilters {
   gradeLevel?: string | null;
 }
 
-/**
- * Per-class health summary for the top cards grid. Derived entirely from
- * what getClassStudentStats already returns plus a quick scan of activities
- * for ungraded/missing counts.
- */
 export interface ClassHealthCard {
   class: TeacherClassListItem;
   studentCount: number;
@@ -809,19 +692,10 @@ export interface ClassHealthCard {
   atRiskCount: number;
   watchCount: number;
   safeCount: number;
-  totalMissingSubmissions: number; // sum of missingCount across all students
-  /**
-   * Students who have submitted work but have no graded work yet
-   * (submissionRate > 0 but overallAvgPct null) — "needs grading attention".
-   */
+  totalMissingSubmissions: number;
   studentsAwaitingGrades: number;
 }
 
-/**
- * A single class-membership for an at-risk student in the cross-class
- * roll-up. One student can have many of these (one per class they're
- * at-risk in).
- */
 export interface AtRiskClassMembership {
   classId: string;
   className: string;
@@ -834,24 +708,13 @@ export interface AtRiskClassMembership {
   riskReasons: string[];
 }
 
-/**
- * One row in the cross-class at-risk students table. Grouped by student,
- * so a student in three at-risk classes appears once with three memberships.
- */
 export interface AtRiskStudentRow {
   studentId: string;
   fullName: string | null;
   email: string | null;
-  /** How many of the teacher's filtered classes this student is at-risk in. */
   atRiskClassCount: number;
-  /** How many they're in 'watch' status. */
   watchClassCount: number;
-  /** All the classes the student is flagged in (at_risk + watch combined). */
   memberships: AtRiskClassMembership[];
-  /**
-   * Worst overall avg pct across all their flagged classes — used for the
-   * default sort (lowest avg first). null if every flagged class has null.
-   */
   worstAvgPct: number | null;
 }
 
@@ -860,75 +723,45 @@ export interface AggregatedAnalytics {
   atRiskStudents: AtRiskStudentRow[];
 }
 
-/**
- * For the signed-in teacher: load every active class they own that matches
- * the supplied filters, compute per-class health summaries AND a
- * cross-class at-risk students roll-up.
- */
-export async function getMyClassAnalytics(
-  filters?: MyClassAnalyticsFilters,
-): Promise<AggregatedAnalytics> {
+export async function getMyClassAnalytics(filters?: MyClassAnalyticsFilters): Promise<AggregatedAnalytics> {
   const classesRes = await listMyClasses();
   if (!classesRes.ok) throw new Error(classesRes.error);
 
   const active = classesRes.data.filter((c) => !c.is_archived);
-
   const matched = active.filter((c) => {
     if (filters?.classId && c.id !== filters.classId) return false;
     if (filters?.section && c.section !== filters.section) return false;
     if (filters?.track && c.track !== filters.track) return false;
-    if (filters?.gradeLevel && c.grade_level !== filters.gradeLevel) {
-      return false;
-    }
+    if (filters?.gradeLevel && c.grade_level !== filters.gradeLevel) return false;
     return true;
   });
 
-  if (matched.length === 0) {
-    return { healthCards: [], atRiskStudents: [] };
-  }
+  if (matched.length === 0) return { healthCards: [], atRiskStudents: [] };
 
-  // Single fan-out: per-class student stats. Used for both outputs below.
-  const perClassStats = await Promise.all(
-    matched.map((c) => getClassStudentStats(c.id)),
-  );
+  const perClassStats = await Promise.all(matched.map((c) => getClassStudentStats(c.id)));
 
-  // ---- Build health cards ----
   const healthCards: ClassHealthCard[] = matched.map((c, i) => {
     const stats = perClassStats[i];
-    const safeCount =
-      stats.studentCount - stats.atRiskCount - stats.watchCount;
-    const totalMissingSubmissions = stats.stats.reduce(
-      (sum, s) => sum + s.missingCount,
-      0,
-    );
-    const studentsAwaitingGrades = stats.stats.filter(
-      (s) =>
-        s.overallAvgPct === null &&
-        s.submissionRate !== null &&
-        s.submissionRate > 0,
-    ).length;
-
     return {
       class: c,
       studentCount: stats.studentCount,
       classAvgPct: stats.classAvgPct,
       atRiskCount: stats.atRiskCount,
       watchCount: stats.watchCount,
-      safeCount: Math.max(0, safeCount),
-      totalMissingSubmissions,
-      studentsAwaitingGrades,
+      safeCount: Math.max(0, stats.studentCount - stats.atRiskCount - stats.watchCount),
+      totalMissingSubmissions: stats.stats.reduce((sum, s) => sum + s.missingCount, 0),
+      studentsAwaitingGrades: stats.stats.filter(
+        (s) => s.overallAvgPct === null && s.submissionRate !== null && s.submissionRate > 0,
+      ).length,
     };
   });
 
-  // ---- Build cross-class at-risk students roll-up ----
   const byStudent = new Map<string, AtRiskStudentRow>();
-
   for (let i = 0; i < matched.length; i++) {
     const c = matched[i];
     const stats = perClassStats[i];
     for (const s of stats.stats) {
       if (s.risk !== 'at_risk' && s.risk !== 'watch') continue;
-
       const membership: AtRiskClassMembership = {
         classId: c.id,
         className: stats.className,
@@ -940,16 +773,12 @@ export async function getMyClassAnalytics(
         trend: s.trend,
         riskReasons: s.riskReasons,
       };
-
       const existing = byStudent.get(s.studentId);
       if (existing) {
         existing.memberships.push(membership);
         if (s.risk === 'at_risk') existing.atRiskClassCount += 1;
         else existing.watchClassCount += 1;
-        if (
-          s.overallAvgPct !== null &&
-          (existing.worstAvgPct === null || s.overallAvgPct < existing.worstAvgPct)
-        ) {
+        if (s.overallAvgPct !== null && (existing.worstAvgPct === null || s.overallAvgPct < existing.worstAvgPct)) {
           existing.worstAvgPct = s.overallAvgPct;
         }
       } else {
@@ -967,15 +796,11 @@ export async function getMyClassAnalytics(
   }
 
   const atRiskStudents = Array.from(byStudent.values()).sort((a, b) => {
-    if (a.atRiskClassCount !== b.atRiskClassCount) {
-      return b.atRiskClassCount - a.atRiskClassCount;
-    }
+    if (a.atRiskClassCount !== b.atRiskClassCount) return b.atRiskClassCount - a.atRiskClassCount;
     const aTotal = a.atRiskClassCount + a.watchClassCount;
     const bTotal = b.atRiskClassCount + b.watchClassCount;
     if (aTotal !== bTotal) return bTotal - aTotal;
-    const aAvg = a.worstAvgPct ?? 101;
-    const bAvg = b.worstAvgPct ?? 101;
-    return aAvg - bAvg;
+    return (a.worstAvgPct ?? 101) - (b.worstAvgPct ?? 101);
   });
 
   return { healthCards, atRiskStudents };

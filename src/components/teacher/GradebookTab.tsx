@@ -123,7 +123,7 @@ export default function GradebookTab({ view, classId }: GradebookTabProps) {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex flex-wrap gap-1 rounded-2xl bg-zinc-100 p-1">
-          {(['overview', ...termsWithActivities] as TabKey[]).map((k) => (
+                    {(['overview', ...terms] as TabKey[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -245,6 +245,11 @@ export default function GradebookTab({ view, classId }: GradebookTabProps) {
               })}
             </tbody>
           </table>
+                  ) : view.activitiesByTerm[tab].length === 0 ? (
+          <p className="px-6 py-12 text-center text-sm text-zinc-500">
+            No {MODULE_TERM_LABELS[tab]} activities yet.
+          </p>
+        
         ) : (
           <table className="min-w-full text-sm">
             <thead>
