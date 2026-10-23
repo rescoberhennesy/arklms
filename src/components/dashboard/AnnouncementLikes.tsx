@@ -2,7 +2,8 @@
 
 import { useOptimistic, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ThumbsUp, ChevronDown } from 'lucide-react';
+import { ThumbsUp } from 'lucide-react';
+import Modal from '@/components/shared/Modal';
 import {
   type AnnouncementLike,
   setAnnouncementLiked,
@@ -99,37 +100,49 @@ export default function AnnouncementLikes({
               No likes yet
             </span>
           ) : (
-            <button
+                        <button
               type="button"
-              onClick={() => setShowList((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
-              aria-expanded={showList}
+              onClick={() => setShowList(true)}
+              aria-haspopup="dialog"
+              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50"
             >
               <ThumbsUp className="h-3.5 w-3.5 text-red-600" fill="currentColor" />
               {count} {count === 1 ? 'like' : 'likes'}
-              <ChevronDown
-                className={`h-3.5 w-3.5 transition-transform ${showList ? 'rotate-180' : ''}`}
-              />
+              <span className="text-zinc-400">· See who</span>
             </button>
           ))}
       </div>
 
-      {isTeacher && showList && count > 0 && (
-        <ul className="mt-2 max-h-60 divide-y divide-gray-100 overflow-auto rounded-lg border border-gray-200 bg-white">
-          {sorted.map((l) => (
-            <li key={l.user_id} className="flex items-center gap-2.5 px-3 py-2">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[10px] font-semibold text-red-700">
-                {initials(l.full_name)}
-              </div>
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">
-                {l.full_name ?? 'Unknown'}
-              </span>
-              <span className="shrink-0 text-[11px] text-gray-400">
-                {formatWhen(l.created_at)}
-              </span>
-            </li>
-          ))}
-        </ul>
+            {isTeacher && (
+        <Modal
+          open={showList}
+          title={
+            <span className="inline-flex items-center gap-2">
+              <ThumbsUp className="h-4 w-4 text-red-600" fill="currentColor" />
+              Liked by {count} {count === 1 ? 'student' : 'students'}
+            </span>
+          }
+          onClose={() => setShowList(false)}
+          size="max-w-md"
+        >
+          {sorted.length === 0 ? (
+            <p className="py-6 text-center text-sm text-zinc-500">No likes yet.</p>
+          ) : (
+            <ul className="-mx-2 max-h-[60vh] divide-y divide-zinc-100 overflow-y-auto">
+              {sorted.map((l) => (
+                <li key={l.user_id} className="flex items-center gap-3 px-2 py-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-700">
+                    {initials(l.full_name)}
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800">
+                    {l.full_name ?? 'Unknown'}
+                  </span>
+                  <span className="shrink-0 text-xs text-zinc-400">{formatWhen(l.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Modal>
       )}
     </div>
   );

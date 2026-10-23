@@ -523,7 +523,7 @@ export async function notifyActivityPublished(params: {
       console.error('[notifications] activity enrollments error:', error.message);
       return;
     }
-    const kindLabel = params.activityKind === 'quiz' ? 'quiz' : 'assignment';
+    const kindLabel = params.activityKind === 'quiz' ? 'quiz' : 'activity';
     const rows: InsertInput[] = ((enrollments ?? []) as Array<{ student_id: string }>).map(
       (r) => ({
         userId: r.student_id,

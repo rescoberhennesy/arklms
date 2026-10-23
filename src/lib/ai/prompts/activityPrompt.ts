@@ -93,12 +93,13 @@ RULES:
     "b.", "c.", … At least two and at most (choices − 1) are correct. End the
     question line with "(Choose all that apply.)".
   - true_false: a single clear statement that is either true or false.
-    Mix true and false (roughly half each). Avoid "always/never" traps and
+        REQUIRED: 40–60% of the items MUST be TRUE. Avoid "always/never" traps and
     double negatives.
   - true_false_modified: a single statement with exactly ONE key word or short
-    phrase in bold (**like this**). The statement is either true, or false
-    because of the bold part only (changing it would make it true). Mix true
-    and false (roughly half each). Never bold more than one part.
+        phrase in bold (**like this**). The statement is either true, or false
+    because of the bold part only (changing it would make it true).
+    REQUIRED: between 40% and 60% of the items MUST be TRUE (e.g. 4–6 of 10).
+    Count them before answering. Never bold more than one part.
   - identification: a description, definition or clue; the student writes the
     exact term, name or concept. Phrase it as a statement or "What is…/Who
     is…". Exactly ONE correct term.

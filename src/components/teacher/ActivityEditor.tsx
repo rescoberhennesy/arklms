@@ -670,14 +670,23 @@ export default function ActivityEditor({
                     Only you can see this
                   </span>
                 </div>
-                {answerKeyEditing && (
+                                {answerKeyEditing ? (
                   <InlineSaveBar
                     dirty={isAnswerKeyDirty}
                     busy={busy}
                     onCancel={handleCancelAnswerKey}
                     onSave={handleSaveAnswerKey}
                   />
-                )}
+                ) : savedAnswerKey.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => setAnswerKeyEditing(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                ) : null}
               </div>
               {answerKeyEditing ? (
                 <MarkdownEditor
